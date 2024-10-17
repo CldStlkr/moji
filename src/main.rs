@@ -1,3 +1,4 @@
+use core::panic;
 use csv::{Reader, StringRecord};
 use rand::Rng;
 use std::{
@@ -9,7 +10,6 @@ use std::{
 fn vectorize_word_list(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let file: File = File::open(path)?;
     let mut rdr: Reader<File> = Reader::from_reader(file);
-
     let mut word_list: Vec<String> = Vec::new();
 
     for result in rdr.records() {
@@ -25,7 +25,6 @@ fn vectorize_word_list(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
 fn vectorize_joyo_kanji(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let file: File = File::open(path)?;
     let mut rdr: Reader<File> = Reader::from_reader(file);
-
     let mut kanji_list: Vec<String> = Vec::new();
 
     for result in rdr.records() {
@@ -38,12 +37,14 @@ fn vectorize_joyo_kanji(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     Ok(kanji_list)
 }
 
-fn is_valid_word(guess: &str, word_list: Result<Vec<String>, Box<dyn Error>>) -> bool {
-    match word_list {
-        // user .iter().any() to compare &String and &str directly
-        Ok(words) => words.iter().any(|word| word == guess),
-        Err(_) => false,
+fn is_valid_word(guess: &str, word_list: &Vec<String>) -> bool {
+    for word in word_list.iter() {
+        if guess == word {
+            return true;
+        }
     }
+
+    false
 }
 
 fn is_valid_kanji(guess: &str, kanji: &str) -> bool {
@@ -51,44 +52,60 @@ fn is_valid_kanji(guess: &str, kanji: &str) -> bool {
 }
 
 fn main() {
-    let word_list = vectorize_word_list("./data/kanji_words.csv");
-    let kanji_list = vectorize_joyo_kanji("./data/joyo_kanji.csv");
-    match kanji_list {
-        Ok(kanji_list) => {
-            let mut rand = rand::thread_rng();
-            let random_index = rand.gen_range(0..kanji_list.len());
-            if let Some(random_kanji) = kanji_list.get(random_index) {
-                println!("Provide a word that contains this {} kanji.", random_kanji);
-                print!("\nType your word here: ");
+    let word_list: Vec<String> =
+        vectorize_word_list("./data/kanji_words.csv").expect("Failed to vectorize word list");
 
-                io::stdout().flush().expect("failed to flush stdout");
+    let kanji_list: Vec<String> =
+        vectorize_joyo_kanji("./data/joyo_kanji.csv").expect("Failed to vectorize kanji list");
 
-                let mut guess = String::new();
+    let mut looping: bool = true;
 
-                io::stdin()
-                    .read_line(&mut guess)
-                    .expect("failed to read line");
+    while looping {
+        let mut rand = rand::thread_rng();
+        let random_index = rand.gen_range(0..kanji_list.len());
+        if let Some(random_kanji) = kanji_list.get(random_index) {
+            println!("Provide a word that contains this {} kanji.", random_kanji);
+            print!("\nType your word here: ");
 
-                let guess = guess.trim();
+            io::stdout().flush().expect("failed to flush stdout");
 
-                // as of now no need to handle Result because it is handled in is_valid_word.
-                // not sure if that is good...
-                let good_on_kanji: bool = is_valid_kanji(guess, random_kanji);
-                let good_on_word: bool = is_valid_word(guess, word_list);
+            let mut guess = String::new();
+            io::stdin()
+                .read_line(&mut guess)
+                .expect("failed to read line");
+            let guess = guess.trim();
 
-                if good_on_kanji && good_on_word {
-                    println!("Good Guess!");
-                } else if good_on_kanji && !good_on_word {
-                    println!("Bad Guess: Correct kanji, but not a valid word...");
-                } else if !good_on_kanji && good_on_word {
-                    println!("Bad Guess: Valid word, but does not contain the correct kanji you were supposed to use...");
+            let good_kanji: bool = is_valid_kanji(guess, random_kanji);
+            let good_word: bool = is_valid_word(guess, &word_list);
+
+            if good_kanji && good_word {
+                println!("Good Guess!");
+            } else if good_kanji && !good_word {
+                println!("Bad Guess: Correct kanji, but not a valid word...");
+                looping = false;
+            } else if !good_kanji && good_word {
+                println!("Bad Guess: Valid word, but does not contain the correct kanji you were supposed to use...");
+                looping = false;
+            } else {
+                println!("Bad guess: Incorrect kanji and not a valid word.");
+
+                looping = false;
+            }
+            if !looping {
+                let mut correct_words: Vec<&str> = Vec::new();
+                for word in word_list.iter() {
+                    if word.contains(random_kanji) {
+                        correct_words.push(word);
+                    }
+                }
+                if !correct_words.is_empty() {
+                    println!("Here are some correct words: {:?}", correct_words);
                 } else {
-                    print!("Bad guess: Incorrect kanji and not a valid word");
+                    println!("No correct words found.");
                 }
             }
-        }
-        Err(err) => {
-            print!("Error: {}", err);
+        } else {
+            panic!("Could not pull random kanji from kanji list");
         }
     }
 }
