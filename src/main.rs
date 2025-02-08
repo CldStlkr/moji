@@ -1,22 +1,30 @@
-use core::panic;
+use actix_files as fs;
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use csv::{Reader, StringRecord};
 use rand::Rng;
-use std::{
-    error::Error,
-    fs::File,
-    io::{self, Write},
-};
+use serde::{Deserialize, Serialize};
+use std::{error::Error, fs::File};
+
+#[derive(Serialize)]
+struct KanjiPrompt {
+    kanji: String,
+}
+
+#[derive(Deserialize)]
+struct UserInput {
+    word: String,
+    kanji: String,
+}
 
 fn vectorize_word_list(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let file: File = File::open(path)?;
     let mut rdr: Reader<File> = Reader::from_reader(file);
-    let mut word_list: Vec<String> = Vec::new();
+    let mut word_list = Vec::new();
 
     for result in rdr.records() {
         let record: StringRecord = result?;
         let word: &str = record.get(0).unwrap_or("N/A");
-
-        word_list.push(String::from(word));
+        word_list.push(word.to_string());
     }
 
     Ok(word_list)
@@ -25,87 +33,82 @@ fn vectorize_word_list(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
 fn vectorize_joyo_kanji(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let file: File = File::open(path)?;
     let mut rdr: Reader<File> = Reader::from_reader(file);
-    let mut kanji_list: Vec<String> = Vec::new();
+    let mut kanji_list = Vec::new();
 
     for result in rdr.records() {
         let record: StringRecord = result?;
         let kanji: &str = record.get(0).unwrap_or("N/A");
-
-        kanji_list.push(String::from(kanji));
+        kanji_list.push(kanji.to_string());
     }
 
     Ok(kanji_list)
 }
 
-fn is_valid_word(guess: &str, word_list: &Vec<String>) -> bool {
-    for word in word_list.iter() {
-        if guess == word {
-            return true;
-        }
-    }
-
-    false
+fn is_valid_word(guess: &str, word_list: &[String]) -> bool {
+    word_list.contains(&guess.to_string())
 }
 
 fn is_valid_kanji(guess: &str, kanji: &str) -> bool {
     guess.contains(kanji)
 }
 
-fn main() {
-    let word_list: Vec<String> =
-        vectorize_word_list("./data/kanji_words.csv").expect("Failed to vectorize word list");
+async fn get_kanji(data: web::Data<AppState>) -> impl Responder {
+    let mut rng = rand::thread_rng();
+    let random_index = rng.gen_range(0..data.kanji_list.len());
+    let kanji = &data.kanji_list[random_index];
+    println!("Serving Kanji: {}", kanji);
+    HttpResponse::Ok().json(KanjiPrompt {
+        kanji: kanji.clone(),
+    })
+}
 
-    let kanji_list: Vec<String> =
-        vectorize_joyo_kanji("./data/joyo_kanji.csv").expect("Failed to vectorize kanji list");
+async fn check_word(data: web::Data<AppState>, input: web::Json<UserInput>) -> impl Responder {
+    let word_list = &data.word_list;
+    let input_word = input.word.trim();
+    let input_kanji = input.kanji.trim();
 
-    let mut looping: bool = true;
+    let good_kanji: bool = is_valid_kanji(&input_word, &input_kanji);
+    let good_word: bool = is_valid_word(&input_word, word_list);
+    let mut _cont: bool = true; //possible boolean use for discontinuing on incorrect guess
 
-    while looping {
-        let mut rand = rand::thread_rng();
-        let random_index = rand.gen_range(0..kanji_list.len());
-        if let Some(random_kanji) = kanji_list.get(random_index) {
-            println!("Provide a word that contains this {} kanji.", random_kanji);
-            print!("\nType your word here: ");
+    let response = if good_kanji && good_word {
+        "Good Guess!".to_string()
+    } else if good_kanji && !good_word {
+        "Bad Guess: Correct kanji, but not a valid word.".to_string()
+    } else if !good_kanji && good_word {
+        "Bad Guess: Valid word, but does not contain the correct kanji.".to_string()
+    } else {
+        "Bad guess: Incorrect kanji and not a valid word.".to_string()
+    };
 
-            io::stdout().flush().expect("failed to flush stdout");
+    HttpResponse::Ok().body(response)
+}
 
-            let mut guess = String::new();
-            io::stdin()
-                .read_line(&mut guess)
-                .expect("failed to read line");
-            let guess = guess.trim();
+struct AppState {
+    word_list: Vec<String>,
+    kanji_list: Vec<String>,
+}
 
-            let good_kanji: bool = is_valid_kanji(guess, random_kanji);
-            let good_word: bool = is_valid_word(guess, &word_list);
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let word_list =
+        vectorize_word_list("./data/kanji_words.csv").expect("Failed to load word list");
+    let kanji_list =
+        vectorize_joyo_kanji("./data/joyo_kanji.csv").expect("Failed to load kanji list");
 
-            if good_kanji && good_word {
-                println!("Good Guess!");
-            } else if good_kanji && !good_word {
-                println!("Bad Guess: Correct kanji, but not a valid word...");
-                looping = false;
-            } else if !good_kanji && good_word {
-                println!("Bad Guess: Valid word, but does not contain the correct kanji you were supposed to use...");
-                looping = false;
-            } else {
-                println!("Bad guess: Incorrect kanji and not a valid word.");
+    let data = web::Data::new(AppState {
+        word_list,
+        kanji_list,
+    });
 
-                looping = false;
-            }
-            if !looping {
-                let mut correct_words: Vec<&str> = Vec::new();
-                for word in word_list.iter() {
-                    if word.contains(random_kanji) {
-                        correct_words.push(word);
-                    }
-                }
-                if !correct_words.is_empty() {
-                    println!("Here are some correct words: {:?}", correct_words);
-                } else {
-                    println!("No correct words found.");
-                }
-            }
-        } else {
-            panic!("Could not pull random kanji from kanji list");
-        }
-    }
+    HttpServer::new(move || {
+        App::new()
+            .app_data(data.clone())
+            .route("/kanji", web::get().to(get_kanji)) // Define route first
+            .route("/check_word", web::post().to(check_word)) // Define route first
+            .service(fs::Files::new("/", "./static").index_file("index.html")) // Static files last
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await
 }

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Kanji Guessing Game</title>
+</head>
+<body>
+    <h1>Kanji Guessing Game</h1>
+    <div id="kanji"></div>
+    <input type="text" id="userInput" placeholder="Enter a word">
+    <button onclick="submitWord()">Submit</button>
+    <button onclick="getKanji(); clearInput()">New Kanji</button>
+    <div id="result"></div>
+
+    <script>
+
+    function clearInput() {
+      document.getElementById("userInput").value = "";
+    }
+        async function getKanji() {
+            const response = await fetch('/kanji');
+            const data = await response.json();
+            document.getElementById("kanji").innerText = `Kanji: ${data.kanji}`;
+            document.getElementById("kanji").dataset.kanji = data.kanji;
+        }
+
+        async function submitWord() {
+            const kanji = document.getElementById("kanji").dataset.kanji;
+            const word = document.getElementById("userInput").value;
+
+            const response = await fetch('/check_word', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word, kanji })
+            });
+            const result = await response.text();
+            document.getElementById("result").innerText = result;
+        }
+
+        // Load the first kanji when the page loads
+        getKanji();
+    </script>
+</body>
+</html>
