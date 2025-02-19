@@ -1,9 +1,14 @@
-use actix_files as fs;
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use axum::{
+    extract::{Json, State},
+    response::IntoResponse,
+    routing::{get, post},
+    Router,
+};
 use csv::{Reader, StringRecord};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fs::File};
+use std::{error::Error, fs::File, sync::Arc};
+use tower_http::services::ServeDir;
 
 #[derive(Serialize)]
 struct KanjiPrompt {
@@ -52,18 +57,29 @@ fn is_valid_kanji(guess: &str, kanji: &str) -> bool {
     guess.contains(kanji)
 }
 
-async fn get_kanji(data: web::Data<AppState>) -> impl Responder {
+#[derive(Clone)]
+struct AppState {
+    word_list: Vec<String>,
+    kanji_list: Vec<String>,
+}
+
+type SharedState = Arc<AppState>;
+
+async fn get_kanji(State(state): State<SharedState>) -> impl IntoResponse {
     let mut rng = rand::thread_rng();
-    let random_index = rng.gen_range(0..data.kanji_list.len());
-    let kanji = &data.kanji_list[random_index];
+    let random_index = rng.gen_range(0..state.kanji_list.len());
+    let kanji = &state.kanji_list[random_index];
     println!("Serving Kanji: {}", kanji);
-    HttpResponse::Ok().json(KanjiPrompt {
+    Json(KanjiPrompt {
         kanji: kanji.clone(),
     })
 }
 
-async fn check_word(data: web::Data<AppState>, input: web::Json<UserInput>) -> impl Responder {
-    let word_list = &data.word_list;
+async fn check_word(
+    State(state): State<SharedState>,
+    Json(input): Json<UserInput>,
+) -> impl IntoResponse {
+    let word_list = &state.word_list;
     let input_word = input.word.trim();
     let input_kanji = input.kanji.trim();
 
@@ -81,34 +97,30 @@ async fn check_word(data: web::Data<AppState>, input: web::Json<UserInput>) -> i
         "Bad guess: Incorrect kanji and not a valid word.".to_string()
     };
 
-    HttpResponse::Ok().body(response)
+    response
 }
 
-struct AppState {
-    word_list: Vec<String>,
-    kanji_list: Vec<String>,
-}
-
-#[actix_web::main]
+#[tokio::main]
 async fn main() -> std::io::Result<()> {
     let word_list =
         vectorize_word_list("./data/kanji_words.csv").expect("Failed to load word list");
     let kanji_list =
         vectorize_joyo_kanji("./data/joyo_kanji.csv").expect("Failed to load kanji list");
 
-    let data = web::Data::new(AppState {
+    let app_state = AppState {
         word_list,
         kanji_list,
-    });
+    };
+    let shared_state = Arc::new(app_state);
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(data.clone())
-            .route("/kanji", web::get().to(get_kanji)) // Define route first
-            .route("/check_word", web::post().to(check_word)) // Define route first
-            .service(fs::Files::new("/", "./static").index_file("index.html")) // Static files last
-    })
-    .bind("127.0.0.1:8080")?
-    .run()
-    .await
+    let app = Router::new()
+        .route("/kanji", get(get_kanji))
+        .route("/check_word", post(check_word))
+        .with_state(shared_state)
+        .fallback_service(ServeDir::new("./static").append_index_html_on_directories(true));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
+    println!("Server running on 127.0.0.1:8080");
+    axum::serve(listener, app).await?;
+    Ok(())
 }
