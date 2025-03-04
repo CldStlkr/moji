@@ -1,35 +1,63 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import LobbyComponent from './components/LobbyComponent';
+import GameComponent from './components/GameComponent';
+import './styles/Components.css';
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+// Define TypeScript interfaces that match your Rust models
+interface KanjiPrompt {
+  kanji: string;
 }
 
-export default App
+interface UserInput {
+  word: string;
+  kanji: string;
+}
+
+interface LobbyResponse {
+  message?: string;
+  lobby_id: string;
+  error?: string;
+}
+
+interface CheckWordResponse {
+  message: string;
+  score: number;
+  error?: string;
+}
+
+function App() {
+  const [lobbyId, setLobbyId] = useState<string>('');
+  const [isInGame, setIsInGame] = useState<boolean>(false);
+
+  const handleLobbyJoined = (newLobbyId: string) => {
+    setLobbyId(newLobbyId);
+    setIsInGame(true);
+  };
+
+  const handleExitGame = () => {
+    setIsInGame(false);
+    setLobbyId('');
+  };
+
+  return (
+    <div className="app-container">
+      <header>
+        <h1>Kanji Guessing Game</h1>
+      </header>
+
+      <main>
+        {!isInGame ? (
+          <LobbyComponent onLobbyJoined={handleLobbyJoined} />
+        ) : (
+          <GameComponent lobbyId={lobbyId} onExitGame={handleExitGame} />
+        )}
+      </main>
+
+      <footer>
+        <p>Learn Japanese Kanji through word recognition</p>
+      </footer>
+    </div>
+  );
+}
+
+export default App;
