@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO game_actions (game_id, user_id, action_type, action_data)\n            VALUES ($1, $2, $3, $4)\n            RETURNING id, game_id, user_id, action_type, action_data as \"action_data: Json<serde_json::Value>\", created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "game_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "action_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "action_data: Json<serde_json::Value>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "324809716b99db917929228c8d910e174aca53c65ef3844c083fcc3afcfef574"
+}

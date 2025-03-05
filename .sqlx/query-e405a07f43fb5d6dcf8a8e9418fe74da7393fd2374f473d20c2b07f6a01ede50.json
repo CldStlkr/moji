@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO game_sessions (lobby_id, player_count, settings)\n            VALUES ($1, $2, $3)\n            RETURNING id, lobby_id, created_at, ended_at, player_count, settings as \"settings: Json<GameSettings>\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "lobby_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "ended_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "player_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "settings: Json<GameSettings>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e405a07f43fb5d6dcf8a8e9418fe74da7393fd2374f473d20c2b07f6a01ede50"
+}

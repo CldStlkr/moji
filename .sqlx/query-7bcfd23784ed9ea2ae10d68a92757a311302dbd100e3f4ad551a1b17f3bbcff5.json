@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE game_sessions\n            SET ended_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7bcfd23784ed9ea2ae10d68a92757a311302dbd100e3f4ad551a1b17f3bbcff5"
+}

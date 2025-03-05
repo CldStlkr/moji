@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, lobby_id, created_at, ended_at, player_count, settings as \"settings: Json<GameSettings>\"\n            FROM game_sessions\n            WHERE lobby_id = $1 AND ended_at IS NULL\n            ORDER BY created_at DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "lobby_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "ended_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "player_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "settings: Json<GameSettings>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "b03993b4a4966e375b510a002617b5b127d70c032e669c9e0f34b163ecf4b0c1"
+}

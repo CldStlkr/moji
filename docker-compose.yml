@@ -1,0 +1,22 @@
+services:
+  db:
+    image: docker.io/library/postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: kanji 
+      POSTGRES_PASSWORD: kanji
+      POSTGRES_DB: kanji_game
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  
+  app:
+    build: .
+    network_mode: "host"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://kanji:kanji@localhost:5432/kanji_game
+volumes:
+  postgres_data:
