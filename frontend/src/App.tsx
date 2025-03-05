@@ -4,26 +4,26 @@ import GameComponent from './components/GameComponent';
 import './styles/Components.css';
 
 // Define TypeScript interfaces that match your Rust models
-interface KanjiPrompt {
-  kanji: string;
-}
-
-interface UserInput {
-  word: string;
-  kanji: string;
-}
-
-interface LobbyResponse {
-  message?: string;
-  lobby_id: string;
-  error?: string;
-}
-
-interface CheckWordResponse {
-  message: string;
-  score: number;
-  error?: string;
-}
+// interface KanjiPrompt {
+//   kanji: string;
+// }
+//
+// interface UserInput {
+//   word: string;
+//   kanji: string;
+// }
+//
+// interface LobbyResponse {
+//   message?: string;
+//   lobby_id: string;
+//   error?: string;
+// }
+//
+// interface CheckWordResponse {
+//   message: string;
+//   score: number;
+//   error?: string;
+// }
 
 function App() {
   const [lobbyId, setLobbyId] = useState<string>('');

@@ -1,5 +1,5 @@
 use crate::{
-    models::{KanjiPrompt, UserInput},
+    models::basic::{KanjiPrompt, UserInput},
     AppState, LobbyState,
 };
 use axum::{

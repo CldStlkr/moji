@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+
+# Development files
+.env
+.git
+.github
+.gitignore
+Dockerfile
+docker-compose.yml
+
+# Frontend build artifacts
+/frontend/node_modules
+/frontend/dist
+/frontend/.cache
+/frontend/coverage
+
+# Editor-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS-specific files
+.DS_Store
+Thumbs.db
