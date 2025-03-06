@@ -2,6 +2,7 @@ pub mod api;
 pub mod data;
 pub mod db;
 pub mod models;
+use rand::Rng;
 
 use data::{vectorize_joyo_kanji, vectorize_word_list};
 use db::DbPool;
@@ -46,7 +47,7 @@ pub struct LobbyState {
     pub word_list: Vec<String>,
     pub kanji_list: Vec<String>,
     pub user_score: Arc<Mutex<UserScore>>,
-    pub current_kanji: String,
+    pub current_kanji: Arc<Mutex<Option<String>>>,
 }
 
 impl LobbyState {
@@ -59,8 +60,25 @@ impl LobbyState {
             word_list: list_of_words.unwrap(),
             kanji_list: list_of_kanji.unwrap(),
             user_score: Arc::new(Mutex::new(UserScore::new())),
-            current_kanji: String::new(),
+            current_kanji: Arc::new(Mutex::new(None)),
         })
+    }
+
+    pub fn generate_random_kanji(&self) -> String {
+        let mut rng = rand::thread_rng();
+        let random_index = rng.gen_range(0..self.kanji_list.len());
+        let new_kanji = self.kanji_list[random_index].clone();
+
+        // Update the current kanji in the lobby state
+        let mut current_kanji = self.current_kanji.lock().unwrap();
+        *current_kanji = Some(new_kanji.clone());
+
+        new_kanji
+    }
+
+    pub fn get_current_kanji(&self) -> Option<String> {
+        let kanji = self.current_kanji.lock().unwrap();
+        kanji.clone()
     }
 }
 

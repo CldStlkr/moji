@@ -3,7 +3,7 @@ use axum::{
     Router,
 };
 use kanji_guesser::{
-    api::{check_word, create_lobby, get_kanji, join_lobby},
+    api::{check_word, create_lobby, generate_new_kanji, get_kanji, join_lobby},
     db::init_db_pool,
     AppState,
 };
@@ -48,6 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/lobby/create", post(create_lobby))
         .route("/lobby/join/{lobby_id}", get(join_lobby))
         .route("/kanji/{lobby_id}", get(get_kanji))
+        .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
         .route("/check_word/{lobby_id}", post(check_word))
         .with_state(app_state)
         .layer(TraceLayer::new_for_http())

@@ -72,6 +72,7 @@ const GameComponent: React.FC<GameComponentProps> = ({ lobbyId, onExitGame }) =>
     }
   };
 
+
   const submitWord = async () => {
     if (!word.trim() || isLoading || !kanji) return;
 
@@ -110,9 +111,37 @@ const GameComponent: React.FC<GameComponentProps> = ({ lobbyId, onExitGame }) =>
     }
   };
 
-  const handleNewKanji = () => {
-    getNewKanji();
-    setWord('');
+  const handleNewKanji = async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    setResult('');
+
+    try {
+      const response = await fetch(`/new_kanji/${lobbyId}`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+
+      const data: KanjiPrompt | { error: string } = await response.json();
+
+      if ('kanji' in data) {
+        setKanji(data.kanji);
+      } else if ('error' in data) {
+        setErrorMessage(data.error);
+      }
+    } catch (error) {
+      console.error('Failed to fetch new kanji:', error);
+      setErrorMessage('Could not connect to the server. Please try again.');
+    } finally {
+      setIsLoading(false);
+      // Focus on the input field after loading new kanji
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
