@@ -64,14 +64,37 @@ pub async fn get_kanji(
     Path(lobby_id): Path<String>,
 ) -> Result<Json<KanjiPrompt>, Json<serde_json::Value>> {
     let lobbies = app_state.lobbies.lock().unwrap();
+
     if let Some(lobby) = lobbies.get(&lobby_id) {
-        let mut rng = rand::thread_rng();
-        let random_index = rng.gen_range(0..lobby.kanji_list.len());
-        let kanji = &lobby.kanji_list[random_index];
-        println!("Serving Kanji: {} for lobby {}", &kanji, &lobby_id);
-        Ok(Json(KanjiPrompt {
-            kanji: kanji.clone(),
-        }))
+        // Try to get the current kanji first
+        let kanji = match lobby.get_current_kanji() {
+            Some(kanji) => kanji,
+            None => {
+                // Generate a new kanji if none exists
+                lobby.generate_random_kanji()
+            }
+        };
+
+        Ok(Json(KanjiPrompt { kanji }))
+    } else {
+        Err(Json(json!({
+            "error": "Lobby not found"
+        })))
+    }
+}
+
+pub async fn generate_new_kanji(
+    State(app_state): State<Arc<AppState>>,
+    Path(lobby_id): Path<String>,
+) -> Result<Json<KanjiPrompt>, Json<serde_json::Value>> {
+    let lobbies = app_state.lobbies.lock().unwrap();
+
+    if let Some(lobby) = lobbies.get(&lobby_id) {
+        // Always generate a new kanji
+        let kanji = lobby.generate_random_kanji();
+
+        println!("Generated new Kanji: {} for lobby {}", &kanji, &lobby_id);
+        Ok(Json(KanjiPrompt { kanji }))
     } else {
         Err(Json(json!({
             "error": "Lobby not found"
