@@ -7,7 +7,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -22,7 +22,7 @@ pub async fn create_lobby(
     })?;
 
     // Generate random 6-character alphanumeric lobby ID
-    let lobby_id: String = rand::thread_rng()
+    let lobby_id: String = rand::rng()
         .sample_iter(&Alphanumeric)
         .take(6)
         .map(char::from)
@@ -47,14 +47,14 @@ pub async fn join_lobby(
 ) -> impl IntoResponse {
     let lobbies = app_state.lobbies.lock().unwrap();
 
-    if let Some(_) = lobbies.get(&lobby_id) {
+    if lobbies.get(&lobby_id).is_some() {
         Json(json!({
             "message": "Joined lobby sucessfully!",
             "lobby_id": lobby_id
         }))
     } else {
         Json(json!({
-            "error": "json not found..."
+            "error": "Lobby not found"
         }))
     }
 }
@@ -92,8 +92,8 @@ pub async fn generate_new_kanji(
     if let Some(lobby) = lobbies.get(&lobby_id) {
         // Always generate a new kanji
         let kanji = lobby.generate_random_kanji();
-
         println!("Generated new Kanji: {} for lobby {}", &kanji, &lobby_id);
+
         Ok(Json(KanjiPrompt { kanji }))
     } else {
         Err(Json(json!({
@@ -111,6 +111,7 @@ pub async fn check_word(
 
     if let Some(lobby) = lobbies.get(&lobby_id) {
         let word_list = &lobby.word_list;
+
         let input_word = input.word.trim();
         let input_kanji = input.kanji.trim();
 

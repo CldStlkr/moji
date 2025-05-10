@@ -1,27 +1,30 @@
-# Rust build artifacts
-/target
-**/*.rs.bk
+# Rust target directories
+target/
+frontend/target/
+backend/target/
+
+# Trunk build output
+frontend/dist/
 
 # Development files
 .env
-.git
-.github
+.env.local
+.git/
 .gitignore
-Dockerfile
-docker-compose.yml
 
-# Frontend build artifacts
-/frontend/node_modules
-/frontend/dist
-/frontend/.cache
-/frontend/coverage
-
-# Editor-specific files
-.idea/
+# IDE files
 .vscode/
-*.swp
-*.swo
+.idea/
 
-# OS-specific files
+# OS files
 .DS_Store
 Thumbs.db
+
+# Node modules (if any)
+node_modules/
+
+# Logs
+*.log
+
+# Documentation
+*.md

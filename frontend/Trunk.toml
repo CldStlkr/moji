@@ -1,0 +1,25 @@
+[build]
+target = "index.html"
+release = true
+
+[watch]
+# Paths to watch. The `build.target`'s parent folder is watched by default.
+watch = ["src", "css", "Cargo.toml"]
+# Paths to ignore.
+ignore = []
+
+[serve]
+# The address to use for the serve HTTP server.
+# Default: 127.0.0.1
+address = "127.0.0.1"
+# The port to use for the serve HTTP server.
+# Default: 8080
+port = 8000
+# Open the serve server base URL in the default browser.
+# Default: false
+open = false
+
+[[proxy]]
+# This proxy setting forwards API requests to the backend server
+rewrite = "/api/"
+backend = "http://127.0.0.1:8080/"

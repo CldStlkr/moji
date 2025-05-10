@@ -10,13 +10,28 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - kanji_network
   
   app:
     build: .
-    network_mode: "host"
+    restart: always
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgres://kanji:kanji@localhost:5432/kanji_game
+      DATABASE_URL: postgres://kanji:kanji@db:5432/kanji_game
+      HOST: 0.0.0.0
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    networks:
+      - kanji_network
+    volumes:
+      - ./data:/usr/local/data:ro
+
+networks:
+  kanji_network:
+    driver: bridge
+
 volumes:
   postgres_data:
