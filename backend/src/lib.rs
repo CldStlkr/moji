@@ -2,13 +2,14 @@ pub mod api;
 pub mod data;
 pub mod db;
 pub mod models;
-use rand::Rng;
 
 use data::{vectorize_joyo_kanji, vectorize_word_list};
 use db::DbPool;
 use models::basic::UserScore;
+use rand::Rng;
 use std::{
     collections::HashMap,
+    env,
     sync::{Arc, Mutex},
 };
 
@@ -52,10 +53,23 @@ pub struct LobbyState {
 
 impl LobbyState {
     pub fn create() -> Result<Self, LobbyCreationError> {
-        let list_of_words = vectorize_word_list("./data/kanji_words.csv")
+        // Determine the data directory based on environment
+        let data_dir = if env::var("PRODUCTION").is_ok() {
+            // In production (Docker), data is in /usr/local/data
+            "/usr/local/data"
+        } else {
+            // In development, relative to the backend directory
+            "./data"
+        };
+
+        let word_list_path = format!("{}/kanji_words.csv", data_dir);
+        let kanji_list_path = format!("{}/joyo_kanji.csv", data_dir);
+
+        let list_of_words = vectorize_word_list(&word_list_path)
             .map_err(|_| LobbyCreationError::FailedToVectorizeWordListError);
-        let list_of_kanji = vectorize_joyo_kanji("./data/joyo_kanji.csv")
+        let list_of_kanji = vectorize_joyo_kanji(&kanji_list_path)
             .map_err(|_| LobbyCreationError::FailedToVectorizeKanjiListError);
+
         Ok(Self {
             word_list: list_of_words.unwrap(),
             kanji_list: list_of_kanji.unwrap(),
@@ -65,8 +79,8 @@ impl LobbyState {
     }
 
     pub fn generate_random_kanji(&self) -> String {
-        let mut rng = rand::thread_rng();
-        let random_index = rng.gen_range(0..self.kanji_list.len());
+        let mut rng = rand::rng();
+        let random_index = rng.random_range(0..self.kanji_list.len());
         let new_kanji = self.kanji_list[random_index].clone();
 
         // Update the current kanji in the lobby state
