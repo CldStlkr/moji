@@ -37,6 +37,12 @@ impl AppState {
     }
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub enum LobbyCreationError {
     FailedToVectorizeKanjiListError,

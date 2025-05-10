@@ -2,8 +2,7 @@ use crate::{api, UserInput};
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
-use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::spawn_local;
 
 #[component]
 pub fn GameComponent<F>(lobby_id: String, on_exit_game: F) -> impl IntoView
@@ -19,10 +18,14 @@ where
 
     let input_ref = NodeRef::<html::Input>::new();
 
+    // Store lobby_id in a signal so it can be accessed without moving
+    let (lobby_id_signal, _) = signal(lobby_id.clone());
+
     // Fetch initial kanji when component mounts
-    let lobby_id_clone = lobby_id.clone();
     Effect::new(move |_| {
-        let lobby_id = lobby_id_clone.clone();
+        let lobby_id = lobby_id_signal.get();
+        let input_ref = input_ref;
+
         spawn_local(async move {
             set_is_loading.set(true);
             set_error_message.set(String::new());
@@ -46,12 +49,12 @@ where
         });
     });
 
-    let submit_word = Action::new(move |_: &()| {
+    let submit_word = move |_: ev::MouseEvent| {
         let current_word = word.get();
         let current_kanji = kanji.get();
-        let lobby_id = lobby_id.clone();
+        let lobby_id = lobby_id_signal.get();
 
-        async move {
+        spawn_local(async move {
             if current_word.trim().is_empty() || current_kanji.is_empty() {
                 return;
             }
@@ -75,12 +78,14 @@ where
             }
 
             set_is_loading.set(false);
-        }
-    });
+        });
+    };
 
-    let new_kanji = Action::new(move |_: &()| {
-        let lobby_id = lobby_id.clone();
-        async move {
+    let new_kanji = move |_: ev::MouseEvent| {
+        let lobby_id = lobby_id_signal.get();
+        let input_ref = input_ref;
+
+        spawn_local(async move {
             set_is_loading.set(true);
             set_error_message.set(String::new());
             set_result.set(String::new());
@@ -100,22 +105,23 @@ where
             if let Some(input) = input_ref.get() {
                 let _ = input.focus();
             }
-        }
-    });
+        });
+    };
 
     let handle_key_press = move |ev: ev::KeyboardEvent| {
         if ev.key() == "Enter" && !is_loading.get() {
-            submit_word.dispatch(());
+            // Create a dummy MouseEvent to satisfy the type signature
+            submit_word(ev::MouseEvent::new("click").unwrap());
         }
     };
 
-    let copy_lobby_id = move |_| {
-        let lobby_id = lobby_id.clone();
+    let copy_lobby_id = move |_: ev::MouseEvent| {
+        let lobby_id = lobby_id_signal.get();
         spawn_local(async move {
             let window = web_sys::window().expect("global window");
             let navigator = window.navigator();
             let clipboard = navigator.clipboard();
-            let _ = clipboard.write_text(&lobby_id);
+            let _ = wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await;
         });
     };
 
@@ -182,14 +188,14 @@ where
 
                     <div class="game-buttons">
                         <button
-                            on:click=move |_| { submit_word.dispatch(()); }
+                            on:click=submit_word
                             disabled=move || is_loading.get() || word.get().trim().is_empty() || kanji.get().is_empty()
                             class="submit-btn"
                         >
                             "Submit"
                         </button>
                         <button
-                            on:click=move |_| { new_kanji.dispatch(()); }
+                            on:click=new_kanji
                             disabled=move || is_loading.get()
                             class="new-kanji-btn"
                         >

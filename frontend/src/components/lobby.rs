@@ -1,6 +1,7 @@
 use crate::api;
 use leptos::ev;
 use leptos::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 
 #[component]
 pub fn LobbyComponent<F>(on_lobby_joined: F) -> impl IntoView
@@ -11,32 +12,35 @@ where
     let (status, set_status) = signal(String::new());
     let (is_loading, set_is_loading) = signal(false);
 
-    let create_lobby = Action::new(move |_: &()| async move {
-        set_is_loading.set(true);
-        set_status.set("Creating lobby...".to_string());
+    let create_lobby = move |_: ev::MouseEvent| {
+        spawn_local(async move {
+            set_is_loading.set(true);
+            set_status.set("Creating lobby...".to_string());
 
-        let result = api::create_lobby().await;
+            let result = api::create_lobby().await;
 
-        match result {
-            Ok(response) => {
-                if let Some(error) = response.error {
-                    set_status.set(format!("Error: {}", error));
-                } else {
-                    set_status.set(format!("Lobby created: {}", response.lobby_id));
-                    on_lobby_joined(response.lobby_id);
+            match result {
+                Ok(response) => {
+                    if let Some(error) = response.error {
+                        set_status.set(format!("Error: {}", error));
+                    } else {
+                        set_status.set(format!("Lobby created: {}", response.lobby_id));
+                        on_lobby_joined(response.lobby_id);
+                    }
+                }
+                Err(e) => {
+                    set_status.set(format!("Error connecting to server: {}", e));
                 }
             }
-            Err(e) => {
-                set_status.set(format!("Error connecting to server: {}", e));
-            }
-        }
 
-        set_is_loading.set(false);
-    });
+            set_is_loading.set(false);
+        });
+    };
 
-    let join_lobby = Action::new(move |lobby_id: &String| {
-        let lobby_id = lobby_id.clone();
-        async move {
+    let join_lobby = move |_: ev::MouseEvent| {
+        let lobby_id = input_lobby_id.get();
+
+        spawn_local(async move {
             if lobby_id.trim().is_empty() {
                 set_status.set("Please enter a lobby ID".to_string());
                 return;
@@ -62,12 +66,12 @@ where
             }
 
             set_is_loading.set(false);
-        }
-    });
+        });
+    };
 
     let handle_key_press = move |ev: ev::KeyboardEvent| {
         if ev.key() == "Enter" {
-            join_lobby.dispatch(input_lobby_id.get());
+            join_lobby(ev::MouseEvent::new("click").unwrap());
         }
     };
 
@@ -77,7 +81,7 @@ where
 
             <div class="lobby-actions">
                 <button
-                    on:click=move |_| { create_lobby.dispatch(()); }
+                    on:click=create_lobby
                     disabled=move || is_loading.get()
                     class="create-lobby-btn"
                 >
@@ -95,7 +99,7 @@ where
                         class="lobby-input"
                     />
                     <button
-                        on:click=move |_| { join_lobby.dispatch(input_lobby_id.get()); }
+                        on:click=join_lobby
                         disabled=move || is_loading.get() || input_lobby_id.get().trim().is_empty()
                         class="join-lobby-btn"
                     >
