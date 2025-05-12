@@ -3,7 +3,10 @@ use axum::{
     Router,
 };
 use kanji_guesser::{
-    api::{check_word, create_lobby, generate_new_kanji, get_kanji, join_lobby},
+    api::{
+        check_word, create_lobby, generate_new_kanji, get_kanji, get_lobby_players,
+        get_player_info, join_lobby,
+    },
     db::init_db_pool,
     AppState,
 };
@@ -53,16 +56,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     tracing::info!("Serving frontend from: {:?}", frontend_dir);
-
     let index_path = frontend_dir.join("index.html");
 
-    // Build application router
+    // Build application router with updated routes
     let app = Router::new()
         .route("/lobby/create", post(create_lobby))
-        .route("/lobby/join/{lobby_id}", get(join_lobby))
-        .route("/kanji/{lobby_id}", get(get_kanji))
-        .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
-        .route("/check_word/{lobby_id}", post(check_word))
+        .route("/lobby/join/{ lobby_id }", post(join_lobby)) // Changed to POST
+        .route("/player/{ lobby_id }/{ player_id }", get(get_player_info)) // New endpoint
+        .route("/lobby/players/{ lobby_id }", get(get_lobby_players)) // New endpoint for leaderboard
+        .route("/kanji/{ lobby_id }", get(get_kanji))
+        .route("/new_kanji/{ lobby_id }", post(generate_new_kanji))
+        .route("/check_word/{ lobby_id }", post(check_word))
         .with_state(app_state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
@@ -91,7 +95,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start the server
     tracing::info!("Server running on {}", addr);
     tracing::info!("Frontend available at http://{}", addr);
-
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 

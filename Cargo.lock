@@ -1202,6 +1202,7 @@ dependencies = [
 name = "kanji-guesser-backend"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "chrono",
  "csv",
@@ -1210,6 +1211,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "thiserror 2.0.12",
  "tokio",
  "tower",
  "tower-http",
@@ -1229,6 +1231,7 @@ dependencies = [
  "leptos",
  "serde",
  "serde_json",
+ "thiserror 2.0.12",
  "uuid",
  "wasm-bindgen",
  "wasm-bindgen-futures",

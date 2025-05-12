@@ -5,7 +5,11 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
-pub fn GameComponent<F>(lobby_id: String, on_exit_game: F) -> impl IntoView
+pub fn GameComponent<F>(
+    lobby_id: String,
+    player_id: String, // Added player_id parameter
+    on_exit_game: F,
+) -> impl IntoView
 where
     F: Fn() + 'static + Copy,
 {
@@ -13,17 +17,20 @@ where
     let (word, set_word) = signal(String::new());
     let (result, set_result) = signal(String::new());
     let (score, set_score) = signal(0u32);
+    let (player_name, set_player_name) = signal(String::new()); // Store player name
     let (is_loading, set_is_loading) = signal(false);
     let (error_message, set_error_message) = signal(String::new());
 
     let input_ref = NodeRef::<html::Input>::new();
 
-    // Store lobby_id in a signal so it can be accessed without moving
+    // Store signals for use in async contexts
     let (lobby_id_signal, _) = signal(lobby_id.clone());
+    let (player_id_signal, _) = signal(player_id.clone());
 
-    // Fetch initial kanji when component mounts
+    // Fetch initial kanji and player info when component mounts
     Effect::new(move |_| {
         let lobby_id = lobby_id_signal.get();
+        let player_id = player_id_signal.get();
         let input_ref = input_ref;
 
         spawn_local(async move {
@@ -31,6 +38,18 @@ where
             set_error_message.set(String::new());
             set_result.set(String::new());
 
+            // Get player name and score
+            match api::get_player_info(&lobby_id, &player_id).await {
+                Ok(info) => {
+                    set_player_name.set(info.name);
+                    set_score.set(info.score);
+                }
+                Err(e) => {
+                    set_error_message.set(format!("Could not fetch player info: {}", e));
+                }
+            }
+
+            // Get current kanji
             match api::get_kanji(&lobby_id).await {
                 Ok(prompt) => {
                     set_kanji.set(prompt.kanji);
@@ -41,7 +60,6 @@ where
             }
 
             set_is_loading.set(false);
-
             // Focus input after loading
             if let Some(input) = input_ref.get() {
                 let _ = input.focus();
@@ -49,10 +67,12 @@ where
         });
     });
 
+    // Update submit_word to include player_id
     let submit_word = move |_: ev::MouseEvent| {
         let current_word = word.get();
         let current_kanji = kanji.get();
         let lobby_id = lobby_id_signal.get();
+        let player_id = player_id_signal.get();
 
         spawn_local(async move {
             if current_word.trim().is_empty() || current_kanji.is_empty() {
@@ -65,12 +85,14 @@ where
             let user_input = UserInput {
                 word: current_word.trim().to_string(),
                 kanji: current_kanji,
+                player_id,
             };
 
             match api::check_word(&lobby_id, user_input).await {
                 Ok(response) => {
                     set_result.set(response.message);
                     set_score.set(response.score);
+                    set_word.set(String::new()); // Clear input after submission
                 }
                 Err(e) => {
                     set_error_message.set(format!("Could not submit word: {}", e));
@@ -100,7 +122,6 @@ where
             }
 
             set_is_loading.set(false);
-
             // Focus input after loading new kanji
             if let Some(input) = input_ref.get() {
                 let _ = input.focus();
@@ -144,6 +165,10 @@ where
         <div class="game-container">
             <div class="game-header">
                 <h2>"Kanji Game"</h2>
+                // Add player info
+                <div class="player-info">
+                    "Player: " <span class="player-name">{move || player_name.get()}</span>
+                </div>
                 <div class="score-display">"Score: " {move || score.get()}</div>
                 <button on:click=move |_| on_exit_game() class="exit-game-btn">
                     "Exit Game"
@@ -194,6 +219,7 @@ where
                         >
                             "Submit"
                         </button>
+
                         <button
                             on:click=new_kanji
                             disabled=move || is_loading.get()

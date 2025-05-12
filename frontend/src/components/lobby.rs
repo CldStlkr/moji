@@ -1,70 +1,103 @@
-use crate::api;
 use leptos::ev;
+
+use crate::{api, JoinLobbyRequest};
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
 pub fn LobbyComponent<F>(on_lobby_joined: F) -> impl IntoView
 where
-    F: Fn(String) + 'static + Copy,
+    F: Fn(String, String) -> () + 'static + Copy, // Updated to handle player_id
 {
     let (input_lobby_id, set_input_lobby_id) = signal(String::new());
+    let (player_name, set_player_name) = signal(String::new()); // New player name state
     let (status, set_status) = signal(String::new());
     let (is_loading, set_is_loading) = signal(false);
 
     let create_lobby = move |_: ev::MouseEvent| {
+        let name = player_name.get();
+        if name.trim().is_empty() {
+            set_status.set("Please enter your name".to_string());
+            return;
+        }
+
         spawn_local(async move {
             set_is_loading.set(true);
             set_status.set("Creating lobby...".to_string());
 
-            let result = api::create_lobby().await;
+            let request = JoinLobbyRequest {
+                player_name: name.clone(),
+            };
 
+            let result = api::create_lobby(request).await;
             match result {
                 Ok(response) => {
-                    if let Some(error) = response.error {
+                    if let Some(error) = response.get("error").and_then(|e| e.as_str()) {
                         set_status.set(format!("Error: {}", error));
                     } else {
-                        set_status.set(format!("Lobby created: {}", response.lobby_id));
-                        on_lobby_joined(response.lobby_id);
+                        let lobby_id = response
+                            .get("lobby_id")
+                            .and_then(|id| id.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let player_id = response
+                            .get("player_id")
+                            .and_then(|id| id.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        set_status.set(format!("Lobby created: {}", lobby_id));
+                        on_lobby_joined(lobby_id, player_id);
                     }
                 }
                 Err(e) => {
                     set_status.set(format!("Error connecting to server: {}", e));
                 }
             }
-
             set_is_loading.set(false);
         });
     };
 
     let join_lobby = move |_: ev::MouseEvent| {
         let lobby_id = input_lobby_id.get();
+        let name = player_name.get();
+
+        if lobby_id.trim().is_empty() {
+            set_status.set("Please enter a lobby ID".to_string());
+            return;
+        }
+
+        if name.trim().is_empty() {
+            set_status.set("Please enter your name".to_string());
+            return;
+        }
 
         spawn_local(async move {
-            if lobby_id.trim().is_empty() {
-                set_status.set("Please enter a lobby ID".to_string());
-                return;
-            }
-
             set_is_loading.set(true);
             set_status.set(format!("Joining lobby {}...", lobby_id));
 
-            let result = api::join_lobby(&lobby_id).await;
+            let request = JoinLobbyRequest {
+                player_name: name.clone(),
+            };
 
+            let result = api::join_lobby(&lobby_id, request).await;
             match result {
                 Ok(response) => {
-                    if let Some(error) = response.error {
+                    if let Some(error) = response.get("error").and_then(|e| e.as_str()) {
                         set_status.set(format!("Error: {}", error));
                     } else {
-                        set_status.set(format!("Joined lobby: {}", response.lobby_id));
-                        on_lobby_joined(response.lobby_id);
+                        let player_id = response
+                            .get("player_id")
+                            .and_then(|id| id.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        set_status.set(format!("Joined lobby: {}", lobby_id));
+                        on_lobby_joined(lobby_id, player_id);
                     }
                 }
                 Err(e) => {
                     set_status.set(format!("Error connecting to server: {}", e));
                 }
             }
-
             set_is_loading.set(false);
         });
     };
@@ -78,11 +111,24 @@ where
     view! {
         <div class="lobby-container">
             <h2>"Join or Create a Game"</h2>
-
             <div class="lobby-actions">
+                // Add player name input
+                <div class="player-name-input">
+                    <label for="player-name">"Your Name:"</label>
+                    <input
+                        type="text"
+                        id="player-name"
+                        value=move || player_name.get()
+                        on:input=move |ev| set_player_name.set(event_target_value(&ev))
+                        placeholder="Enter your name"
+                        disabled=move || is_loading.get()
+                        class="name-input"
+                    />
+                </div>
+
                 <button
                     on:click=create_lobby
-                    disabled=move || is_loading.get()
+                    disabled=move || is_loading.get() || player_name.get().trim().is_empty()
                     class="create-lobby-btn"
                 >
                     "Create New Game"
@@ -100,14 +146,15 @@ where
                     />
                     <button
                         on:click=join_lobby
-                        disabled=move || is_loading.get() || input_lobby_id.get().trim().is_empty()
+                        disabled=move || is_loading.get() ||
+                                  input_lobby_id.get().trim().is_empty() ||
+                                  player_name.get().trim().is_empty()
                         class="join-lobby-btn"
                     >
                         "Join Game"
                     </button>
                 </div>
             </div>
-
             <Show when=move || !status.get().is_empty()>
                 <div class=move || {
                     let base_class = "status-message";
@@ -120,7 +167,6 @@ where
                     {move || status.get()}
                 </div>
             </Show>
-
             <div class="instructions">
                 <h3>"How to Play"</h3>
                 <p>"Create a new game or join an existing one with a lobby ID."</p>

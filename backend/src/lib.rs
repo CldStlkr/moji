@@ -1,11 +1,10 @@
 pub mod api;
 pub mod data;
 pub mod db;
+pub mod error;
 pub mod models;
-
 use data::{vectorize_joyo_kanji, vectorize_word_list};
 use db::DbPool;
-use models::basic::UserScore;
 use rand::Rng;
 use std::{
     collections::HashMap,
@@ -14,7 +13,7 @@ use std::{
 };
 
 // Re-export model types that are used in API endpoints
-pub use models::basic::{KanjiPrompt, UserInput};
+pub use models::basic::{CheckWordResponse, JoinLobbyRequest, KanjiPrompt, PlayerInfo, UserInput};
 
 pub struct AppState {
     pub lobbies: Arc<Mutex<HashMap<String, SharedState>>>,
@@ -49,11 +48,17 @@ pub enum LobbyCreationError {
     FailedToVectorizeWordListError,
 }
 
+#[derive(Clone, Debug)]
+pub struct PlayerData {
+    pub name: String,
+    pub score: u32,
+}
+
 #[derive(Clone)]
 pub struct LobbyState {
     pub word_list: Vec<String>,
     pub kanji_list: Vec<String>,
-    pub user_score: Arc<Mutex<UserScore>>,
+    pub players: Arc<Mutex<HashMap<String, PlayerData>>>,
     pub current_kanji: Arc<Mutex<Option<String>>>,
 }
 
@@ -73,15 +78,60 @@ impl LobbyState {
 
         let list_of_words = vectorize_word_list(&word_list_path)
             .map_err(|_| LobbyCreationError::FailedToVectorizeWordListError);
+
         let list_of_kanji = vectorize_joyo_kanji(&kanji_list_path)
             .map_err(|_| LobbyCreationError::FailedToVectorizeKanjiListError);
 
         Ok(Self {
             word_list: list_of_words.unwrap(),
             kanji_list: list_of_kanji.unwrap(),
-            user_score: Arc::new(Mutex::new(UserScore::new())),
+            players: Arc::new(Mutex::new(HashMap::new())),
             current_kanji: Arc::new(Mutex::new(None)),
         })
+    }
+
+    // Add player to lobby
+    pub fn add_player(&self, player_id: String, player_name: String) {
+        let mut players = self.players.lock().unwrap();
+        players.insert(
+            player_id,
+            PlayerData {
+                name: player_name,
+                score: 0,
+            },
+        );
+    }
+
+    // Update player score
+    pub fn increment_player_score(&self, player_id: &str) -> u32 {
+        let mut players = self.players.lock().unwrap();
+        if let Some(player_data) = players.get_mut(player_id) {
+            player_data.score += 1;
+            player_data.score
+        } else {
+            0 // Player not found
+        }
+    }
+
+    // Get player score
+    pub fn get_player_score(&self, player_id: &str) -> u32 {
+        let players = self.players.lock().unwrap();
+        players.get(player_id).map_or(0, |data| data.score)
+    }
+
+    // Get player name
+    pub fn get_player_name(&self, player_id: &str) -> Option<String> {
+        let players = self.players.lock().unwrap();
+        players.get(player_id).map(|data| data.name.clone())
+    }
+
+    // Get all players and scores (for a leaderboard)
+    pub fn get_all_players(&self) -> Vec<(String, PlayerData)> {
+        let players = self.players.lock().unwrap();
+        players
+            .iter()
+            .map(|(id, data)| (id.clone(), data.clone()))
+            .collect()
     }
 
     pub fn generate_random_kanji(&self) -> String {
@@ -92,7 +142,6 @@ impl LobbyState {
         // Update the current kanji in the lobby state
         let mut current_kanji = self.current_kanji.lock().unwrap();
         *current_kanji = Some(new_kanji.clone());
-
         new_kanji
     }
 
