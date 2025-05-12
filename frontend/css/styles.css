@@ -93,6 +93,32 @@ footer {
   margin: 1.5rem 0;
 }
 
+/* Player Name Input Styles - NEW */
+.player-name-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.player-name-input label {
+  font-weight: 600;
+  color: var(--neutral-dark);
+}
+
+.name-input {
+  padding: 10px 12px;
+  border: 2px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.name-input:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
 .create-lobby-btn {
   background-color: var(--primary-color);
   color: white;
@@ -158,6 +184,25 @@ footer {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* Player Info Styles - NEW */
+.player-info {
+  background-color: #e8f4ff;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.95rem;
+  color: var(--primary-dark);
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.player-name {
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .score-display {
@@ -284,4 +329,60 @@ footer {
   border-top: 1px solid #eee;
   color: var(--neutral-medium);
   font-size: 0.9rem;
+}
+
+/* Players List/Leaderboard - NEW */
+.players-list {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+}
+
+.players-list h3 {
+  margin-top: 0;
+  color: var(--primary-color);
+  font-size: 1.1rem;
+  border-bottom: 1px solid var(--neutral-light);
+  padding-bottom: 0.5rem;
+}
+
+.player-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--neutral-light);
+}
+
+.player-item:last-child {
+  border-bottom: none;
+}
+
+.player-item .name {
+  font-weight: 500;
+}
+
+.player-item .score {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+  .game-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .join-lobby {
+    flex-direction: column;
+  }
+  
+  .game-buttons {
+    flex-direction: column;
+  }
+  
+  .kanji {
+    font-size: 5rem;
+  }
 }

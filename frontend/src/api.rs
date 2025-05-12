@@ -1,22 +1,26 @@
-use crate::{CheckWordResponse, KanjiPrompt, LobbyResponse, UserInput};
+use crate::{CheckWordResponse, JoinLobbyRequest, KanjiPrompt, PlayerInfo, UserInput};
 use gloo_net::http::Request;
 
 const API_BASE: &str = "";
 
-pub async fn create_lobby() -> Result<LobbyResponse, gloo_net::Error> {
+pub async fn create_lobby(request: JoinLobbyRequest) -> Result<serde_json::Value, gloo_net::Error> {
     let response = Request::post(&format!("{}/lobby/create", API_BASE))
         .header("Content-Type", "application/json")
+        .json(&request)?
         .send()
         .await?;
-
     response.json().await
 }
 
-pub async fn join_lobby(lobby_id: &str) -> Result<LobbyResponse, gloo_net::Error> {
-    let response = Request::get(&format!("{}/lobby/join/{}", API_BASE, lobby_id))
+pub async fn join_lobby(
+    lobby_id: &str,
+    request: JoinLobbyRequest,
+) -> Result<serde_json::Value, gloo_net::Error> {
+    let response = Request::post(&format!("{}/lobby/join/{}", API_BASE, lobby_id))
+        .header("Content-Type", "application/json")
+        .json(&request)?
         .send()
         .await?;
-
     response.json().await
 }
 
@@ -24,7 +28,6 @@ pub async fn get_kanji(lobby_id: &str) -> Result<KanjiPrompt, gloo_net::Error> {
     let response = Request::get(&format!("{}/kanji/{}", API_BASE, lobby_id))
         .send()
         .await?;
-
     if response.ok() {
         response.json().await
     } else {
@@ -38,7 +41,6 @@ pub async fn generate_new_kanji(lobby_id: &str) -> Result<KanjiPrompt, gloo_net:
     let response = Request::post(&format!("{}/new_kanji/{}", API_BASE, lobby_id))
         .send()
         .await?;
-
     if response.ok() {
         response.json().await
     } else {
@@ -52,12 +54,25 @@ pub async fn check_word(
     lobby_id: &str,
     user_input: UserInput,
 ) -> Result<CheckWordResponse, gloo_net::Error> {
-    let body = serde_json::to_string(&user_input)
-        .map_err(|e| gloo_net::Error::JsError(js_sys::Error::new(&e.to_string()).into()))?;
-
     let response = Request::post(&format!("{}/check_word/{}", API_BASE, lobby_id))
         .header("Content-Type", "application/json")
-        .body(body)?
+        .json(&user_input)?
+        .send()
+        .await?;
+    if response.ok() {
+        response.json().await
+    } else {
+        Err(gloo_net::Error::JsError(
+            js_sys::Error::new("Failed to check word").into(),
+        ))
+    }
+}
+
+pub async fn get_player_info(
+    lobby_id: &str,
+    player_id: &str,
+) -> Result<PlayerInfo, gloo_net::Error> {
+    let response = Request::get(&format!("{}/player/{}/{}", API_BASE, lobby_id, player_id))
         .send()
         .await?;
 
@@ -65,7 +80,21 @@ pub async fn check_word(
         response.json().await
     } else {
         Err(gloo_net::Error::JsError(
-            js_sys::Error::new("Failed to check word").into(),
+            js_sys::Error::new("Failed to get player info").into(),
+        ))
+    }
+}
+
+pub async fn get_lobby_players(lobby_id: &str) -> Result<serde_json::Value, gloo_net::Error> {
+    let response = Request::get(&format!("{}/lobby/players/{}", API_BASE, lobby_id))
+        .send()
+        .await?;
+
+    if response.ok() {
+        response.json().await
+    } else {
+        Err(gloo_net::Error::JsError(
+            js_sys::Error::new("Failed to get lobby players").into(),
         ))
     }
 }

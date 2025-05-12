@@ -1,11 +1,10 @@
-use leptos::mount::mount_to_body;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 mod api;
 mod components;
-
+mod error;
 use components::game::GameComponent;
 use components::lobby::LobbyComponent;
 
@@ -18,15 +17,18 @@ pub struct KanjiPrompt {
 pub struct UserInput {
     pub word: String,
     pub kanji: String,
+    pub player_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LobbyResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
-    pub lobby_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+pub struct JoinLobbyRequest {
+    pub player_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerInfo {
+    pub name: String,
+    pub score: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,22 +42,26 @@ pub struct CheckWordResponse {
 #[component]
 fn App() -> impl IntoView {
     let (lobby_id, set_lobby_id) = signal(String::new());
+    let (player_id, set_player_id) = signal(String::new()); // Added player_id signal
     let (is_in_game, set_is_in_game) = signal(false);
 
-    let handle_lobby_joined = move |new_lobby_id: String| {
+    // Updated to handle both lobby_id and player_id
+    let handle_lobby_joined = move |new_lobby_id: String, new_player_id: String| {
         set_lobby_id.set(new_lobby_id);
+        set_player_id.set(new_player_id);
         set_is_in_game.set(true);
     };
 
     let handle_exit_game = move || {
         set_is_in_game.set(false);
         set_lobby_id.set(String::new());
+        set_player_id.set(String::new());
     };
 
     view! {
         <div class="app-container">
             <header>
-                <h1>"Kanji Guessing Game"</h1>
+                <h1>"文字 Master"</h1>
             </header>
             <main>
                 <Show
@@ -63,6 +69,7 @@ fn App() -> impl IntoView {
                     fallback=move || view! {
                         <GameComponent
                             lobby_id=lobby_id.get()
+                            player_id=player_id.get() // Pass player_id to GameComponent
                             on_exit_game=handle_exit_game
                         />
                     }

@@ -1,5 +1,5 @@
 pub mod basic;
-pub use basic::{KanjiPrompt, UserInput, UserScore};
+pub use basic::{KanjiPrompt, UserInput};
 
 // Export database-related models
 pub mod game;
