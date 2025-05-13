@@ -16,8 +16,8 @@ pub enum AppError {
     #[error("Lobby with ID {0} not found")]
     LobbyNotFound(String),
 
-    #[error("Player with ID {0} not found in lobby {1}")]
-    PlayerNotFound(String, String),
+    #[error("Player with ID {0} not found in lobby")]
+    PlayerNotFound(String),
 
     #[error("Failed to access shared state: {0}")]
     LockError(String),
@@ -40,9 +40,7 @@ impl Clone for AppError {
         match self {
             AppError::Database(e) => AppError::InternalError(format!("Database error: {}", e)),
             AppError::LobbyNotFound(id) => AppError::LobbyNotFound(id.clone()),
-            AppError::PlayerNotFound(player_id, lobby_id) => {
-                AppError::PlayerNotFound(player_id.clone(), lobby_id.clone())
-            }
+            AppError::PlayerNotFound(player_id) => AppError::PlayerNotFound(player_id.clone()),
             AppError::LockError(msg) => AppError::LockError(msg.clone()),
             AppError::InvalidInput(msg) => AppError::InvalidInput(msg.clone()),
             AppError::DataLoadError(msg) => AppError::DataLoadError(msg.clone()),
@@ -63,7 +61,7 @@ impl<T> From<PoisonError<T>> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match self {
-            AppError::LobbyNotFound(_) | AppError::PlayerNotFound(_, _) => StatusCode::NOT_FOUND,
+            AppError::LobbyNotFound(_) | AppError::PlayerNotFound(_) => StatusCode::NOT_FOUND,
             AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
             AppError::AuthError(_) => StatusCode::UNAUTHORIZED,
             AppError::Database(_)
