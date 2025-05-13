@@ -1,4 +1,5 @@
 use axum::{
+    error_handling::{HandleError, HandleErrorLayer},
     routing::{get, post},
     Router,
 };
@@ -8,9 +9,11 @@ use kanji_guesser::{
         get_player_info, join_lobby,
     },
     db::init_db_pool,
+    error::handle_anyhow_error,
     AppState,
 };
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
@@ -61,15 +64,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build application router with updated routes
     let app = Router::new()
         .route("/lobby/create", post(create_lobby))
-        .route("/lobby/join/{ lobby_id }", post(join_lobby)) // Changed to POST
-        .route("/player/{ lobby_id }/{ player_id }", get(get_player_info)) // New endpoint
-        .route("/lobby/players/{ lobby_id }", get(get_lobby_players)) // New endpoint for leaderboard
-        .route("/kanji/{ lobby_id }", get(get_kanji))
-        .route("/new_kanji/{ lobby_id }", post(generate_new_kanji))
-        .route("/check_word/{ lobby_id }", post(check_word))
+        .route("/lobby/join/{lobby_id}", post(join_lobby)) // Changed to POST
+        .route("/player/{lobby_id}/{player_id}", get(get_player_info)) // New endpoint
+        .route("/lobby/players/{lobby_id}", get(get_lobby_players)) // New endpoint for leaderboard
+        .route("/kanji/{lobby_id}", get(get_kanji))
+        .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
+        .route("/check_word/{lobby_id}", post(check_word))
         .with_state(app_state)
-        .layer(TraceLayer::new_for_http())
-        .layer(cors)
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(handle_anyhow_error))
+                .layer(TraceLayer::new_for_http())
+                .layer(cors),
+        )
         .fallback_service(
             ServeDir::new(&frontend_dir).not_found_service(ServeFile::new(&index_path)),
         );
