@@ -126,8 +126,6 @@ impl LobbyState {
             .get(player_id)
             .map(|data| data.score)
             .ok_or_else(|| AppError::PlayerNotFound(player_id.to_string()))
-            .map_err(Into::into) // Converts AppError into anyhow error, for some reason '?'
-                                 // not working
     }
 
     // Get player name
@@ -140,8 +138,6 @@ impl LobbyState {
             .get(player_id)
             .map(|data| data.name.clone())
             .ok_or_else(|| AppError::PlayerNotFound(player_id.to_string()))
-            .map_err(Into::into) // Converts AppError into anyhow error, for some reason '?'
-                                 // not working
     }
 
     // Get all players and scores (for a leaderboard)
@@ -204,7 +200,6 @@ pub fn get_lobby(app_state: &Arc<AppState>, lobby_id: &str) -> Result<SharedStat
         .get(lobby_id)
         .cloned()
         .ok_or_else(|| AppError::LobbyNotFound(lobby_id.to_string()))
-        .map_err(Into::into)
 }
 
 pub type SharedState = Arc<LobbyState>;
