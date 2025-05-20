@@ -7,7 +7,6 @@ use crate::{
 use axum::{
     debug_handler,
     extract::{Json, Path, State},
-    response::IntoResponse,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -16,18 +15,18 @@ use std::sync::Arc;
 pub async fn create_lobby(
     State(app_state): State<Arc<AppState>>,
     Json(request): Json<JoinLobbyRequest>,
-) -> Result<impl IntoResponse> {
+) -> Result<Json<serde_json::Value>> {
     let mut lobbies = app_state
         .lobbies
         .lock()
-        .map_err(|e| (AppError::LockError(e.to_string())))?;
+        .map_err(|e| AppError::LockError(e.to_string()))?;
 
     // Generate random 6-character alphanumeric lobby ID
     let lobby_id: String = generate_lobby_id();
     // Generate random player ID
     let player_id: String = generate_player_id();
     let lobby_state =
-        Arc::new(LobbyState::create().map_err(|e| (AppError::InternalError(e.to_string())))?);
+        Arc::new(LobbyState::create().map_err(|e| AppError::InternalError(e.to_string()))?);
 
     // Add the player who created the lobby
     lobby_state.add_player(player_id.clone(), request.player_name)?;
@@ -41,11 +40,12 @@ pub async fn create_lobby(
     })))
 }
 
+#[debug_handler]
 pub async fn join_lobby(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,
     Json(request): Json<JoinLobbyRequest>,
-) -> Result<impl IntoResponse> {
+) -> Result<Json<serde_json::Value>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
 
     // Generate a unique player ID
@@ -61,6 +61,7 @@ pub async fn join_lobby(
     })))
 }
 
+#[debug_handler]
 pub async fn get_player_info(
     State(app_state): State<Arc<AppState>>,
     Path((lobby_id, player_id)): Path<(String, String)>,
@@ -72,6 +73,7 @@ pub async fn get_player_info(
     Ok(Json(PlayerInfo { name, score }))
 }
 
+#[debug_handler]
 pub async fn get_lobby_players(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,
@@ -94,6 +96,7 @@ pub async fn get_lobby_players(
     })))
 }
 
+#[debug_handler]
 pub async fn get_kanji(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,
@@ -111,6 +114,7 @@ pub async fn get_kanji(
     Ok(Json(KanjiPrompt { kanji }))
 }
 
+#[debug_handler]
 pub async fn generate_new_kanji(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,
@@ -122,6 +126,7 @@ pub async fn generate_new_kanji(
     Ok(Json(KanjiPrompt { kanji }))
 }
 
+#[debug_handler]
 pub async fn check_word(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,

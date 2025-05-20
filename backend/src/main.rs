@@ -1,5 +1,4 @@
 use axum::{
-    error_handling::{HandleError, HandleErrorLayer},
     routing::{get, post},
     Router,
 };
@@ -9,7 +8,6 @@ use kanji_guesser::{
         get_player_info, join_lobby,
     },
     db::init_db_pool,
-    error::handle_anyhow_error,
     AppState,
 };
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
@@ -73,7 +71,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(app_state)
         .layer(
             ServiceBuilder::new()
-                .layer(HandleErrorLayer::new(handle_anyhow_error))
                 .layer(TraceLayer::new_for_http())
                 .layer(cors),
         )
