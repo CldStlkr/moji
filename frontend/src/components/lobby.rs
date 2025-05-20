@@ -1,13 +1,16 @@
+use crate::{
+    api,
+    error::{get_user_friendly_message, log_error, ClientError},
+    JoinLobbyRequest,
+};
 use leptos::ev;
-
-use crate::{api, JoinLobbyRequest};
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
 pub fn LobbyComponent<F>(on_lobby_joined: F) -> impl IntoView
 where
-    F: Fn(String, String) -> () + 'static + Copy, // Updated to handle player_id
+    F: Fn(String, String) + 'static + Copy, // Updated to handle player_id
 {
     let (input_lobby_id, set_input_lobby_id) = signal(String::new());
     let (player_name, set_player_name) = signal(String::new()); // New player name state
@@ -29,28 +32,33 @@ where
                 player_name: name.clone(),
             };
 
-            let result = api::create_lobby(request).await;
-            match result {
+            match api::create_lobby(request).await {
                 Ok(response) => {
-                    if let Some(error) = response.get("error").and_then(|e| e.as_str()) {
-                        set_status.set(format!("Error: {}", error));
+                    let lobby_id = response
+                        .get("lobby_id")
+                        .and_then(|id| id.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let player_id = response
+                        .get("player_id")
+                        .and_then(|id| id.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    if lobby_id.is_empty() || player_id.is_empty() {
+                        log_error(
+                            "Invalid response",
+                            &ClientError::Data("Missing lobby_id or player_id".into()),
+                        );
+                        set_status.set("Invalid response from server".to_string());
                     } else {
-                        let lobby_id = response
-                            .get("lobby_id")
-                            .and_then(|id| id.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let player_id = response
-                            .get("player_id")
-                            .and_then(|id| id.as_str())
-                            .unwrap_or("")
-                            .to_string();
                         set_status.set(format!("Lobby created: {}", lobby_id));
                         on_lobby_joined(lobby_id, player_id);
                     }
                 }
                 Err(e) => {
-                    set_status.set(format!("Error connecting to server: {}", e));
+                    log_error("Failed to create lobby", &e);
+                    set_status.set(get_user_friendly_message(&e));
                 }
             }
             set_is_loading.set(false);
@@ -79,23 +87,28 @@ where
                 player_name: name.clone(),
             };
 
-            let result = api::join_lobby(&lobby_id, request).await;
-            match result {
+            match api::join_lobby(&lobby_id, request).await {
+                // Changed to join_lobby
                 Ok(response) => {
-                    if let Some(error) = response.get("error").and_then(|e| e.as_str()) {
-                        set_status.set(format!("Error: {}", error));
+                    let player_id = response
+                        .get("player_id")
+                        .and_then(|id| id.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if player_id.is_empty() {
+                        log_error(
+                            "Invalid response",
+                            &ClientError::Data("Missing player_id".into()),
+                        );
+                        set_status.set("Invalid response from server".to_string());
                     } else {
-                        let player_id = response
-                            .get("player_id")
-                            .and_then(|id| id.as_str())
-                            .unwrap_or("")
-                            .to_string();
                         set_status.set(format!("Joined lobby: {}", lobby_id));
                         on_lobby_joined(lobby_id, player_id);
                     }
                 }
                 Err(e) => {
-                    set_status.set(format!("Error connecting to server: {}", e));
+                    log_error("Failed to join lobby", &e); // Updated error message
+                    set_status.set(get_user_friendly_message(&e));
                 }
             }
             set_is_loading.set(false);

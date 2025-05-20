@@ -61,7 +61,7 @@ fn App() -> impl IntoView {
     view! {
         <div class="app-container">
             <header>
-                <h1>"文字 Master"</h1>
+                <h1>"文字"</h1>
             </header>
             <main>
                 <Show
