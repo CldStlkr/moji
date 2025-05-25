@@ -1,7 +1,11 @@
 use crate::{
-    error::{AppError, Result},
+    error::AppError,
     generate_lobby_id, generate_player_id, get_lobby,
-    models::basic::{CheckWordResponse, JoinLobbyRequest, KanjiPrompt, PlayerInfo, UserInput},
+    models::basic::{
+        CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, StartGameRequest,
+        UpdateSettingsRequest, UserInput,
+    },
+    types::Result,
     AppState, LobbyState,
 };
 use axum::{
@@ -28,8 +32,8 @@ pub async fn create_lobby(
     let lobby_state =
         Arc::new(LobbyState::create().map_err(|e| AppError::InternalError(e.to_string()))?);
 
-    // Add the player who created the lobby
-    lobby_state.add_player(player_id.clone(), request.player_name)?;
+    // Add the player who created the lobby (will automatically become leader)
+    let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
 
     lobbies.insert(lobby_id.clone(), lobby_state);
 
@@ -52,7 +56,7 @@ pub async fn join_lobby(
     let player_id: String = generate_player_id();
 
     // Add player to the lobby
-    lobby.add_player(player_id.clone(), request.player_name.clone())?;
+    let _ = lobby.add_player(player_id.clone(), request.player_name.clone())?;
 
     Ok(Json(json!({
         "message": "Joined lobby successfully!",
@@ -61,16 +65,68 @@ pub async fn join_lobby(
     })))
 }
 
+// Get complete lobby information
+#[debug_handler]
+pub async fn get_lobby_info(
+    State(app_state): State<Arc<AppState>>,
+    Path(lobby_id): Path<String>,
+) -> Result<Json<LobbyInfo>> {
+    let lobby = get_lobby(&app_state, &lobby_id)?;
+    let lobby_info = lobby.get_lobby_info(&lobby_id)?;
+    Ok(Json(lobby_info))
+}
+
+// Update lobby settings (leader only)
+#[debug_handler]
+pub async fn update_lobby_settings(
+    State(app_state): State<Arc<AppState>>,
+    Path(lobby_id): Path<String>,
+    Json(request): Json<UpdateSettingsRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let lobby = get_lobby(&app_state, &lobby_id)?;
+    lobby.update_settings(&request.player_id, request.settings)?;
+
+    Ok(Json(json!({
+        "message": "Settings updated successfully"
+    })))
+}
+
+// Start game (leader only)
+#[debug_handler]
+pub async fn start_game(
+    State(app_state): State<Arc<AppState>>,
+    Path(lobby_id): Path<String>,
+    Json(request): Json<StartGameRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let lobby = get_lobby(&app_state, &lobby_id)?;
+    lobby.start_game(&request.player_id)?;
+
+    Ok(Json(json!({
+        "message": "Game started successfully"
+    })))
+}
+
 #[debug_handler]
 pub async fn get_player_info(
     State(app_state): State<Arc<AppState>>,
     Path((lobby_id, player_id)): Path<(String, String)>,
-) -> Result<Json<PlayerInfo>> {
+) -> Result<Json<PlayerData>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
-    let name = lobby.get_player_name(&player_id)?;
-    let score = lobby.get_player_score(&player_id)?;
 
-    Ok(Json(PlayerInfo { name, score }))
+    // Get the full player data from the lobby
+    let players = lobby.get_all_players()?;
+    let player = players
+        .iter()
+        .find(|p| p.id == player_id)
+        .ok_or_else(|| AppError::PlayerNotFound(player_id.clone()))?;
+
+    // Convert internal PlayerData to API PlayerData
+    Ok(Json(PlayerData {
+        id: player.id.clone(),
+        name: player.name.clone(),
+        score: player.score,
+        joined_at: player.joined_at.to_rfc3339(),
+    }))
 }
 
 #[debug_handler]
@@ -80,13 +136,16 @@ pub async fn get_lobby_players(
 ) -> Result<Json<serde_json::Value>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
     let players = lobby.get_all_players()?;
+
+    // Convert internal PlayerData to API PlayerData
     let player_data: Vec<_> = players
         .into_iter()
-        .map(|(id, data)| {
+        .map(|p| {
             json!({
-                "id": id,
-                "name": data.name,
-                "score": data.score
+                "id": p.id,
+                "name": p.name,
+                "score": p.score,
+                "joined_at": p.joined_at.to_rfc3339()
             })
         })
         .collect();
@@ -142,16 +201,26 @@ pub async fn check_word(
     let good_kanji = input_word.contains(input_kanji);
     let good_word = word_list.contains(&input_word.to_string());
 
-    let message = if good_kanji && good_word {
+    let (message, new_kanji) = if good_kanji && good_word {
         // Update the specific player's score
         let _ = lobby.increment_player_score(&player_id)?;
-        "Good guess!".to_string()
+        let new_kanji = lobby.generate_random_kanji()?;
+        ("Good guess!".to_string(), Some(new_kanji))
     } else if good_kanji {
-        "Bad Guess: Correct kanji, but not a valid word.".to_string()
+        (
+            "Bad Guess: Correct kanji, but not a valid word.".to_string(),
+            None,
+        )
     } else if good_word {
-        "Bad Guess: Valid word, but does not contain the correct kanji.".to_string()
+        (
+            "Bad Guess: Valid word, but does not contain the correct kanji.".to_string(),
+            None,
+        )
     } else {
-        "Bad guess: Incorrect kanji and not a valid word.".to_string()
+        (
+            "Bad guess: Incorrect kanji and not a valid word.".to_string(),
+            None,
+        )
     };
 
     // Get the current score for this player
@@ -161,5 +230,6 @@ pub async fn check_word(
         message,
         score,
         error: None,
+        kanji: new_kanji,
     }))
 }

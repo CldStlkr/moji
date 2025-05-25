@@ -1,6 +1,6 @@
 use crate::{
     api,
-    error::{get_user_friendly_message, log_error, ClientError},
+    error::{get_user_friendly_message, log_error},
     JoinLobbyRequest,
 };
 use leptos::ev;
@@ -10,12 +10,16 @@ use wasm_bindgen_futures::spawn_local;
 #[component]
 pub fn LobbyComponent<F>(on_lobby_joined: F) -> impl IntoView
 where
-    F: Fn(String, String) + 'static + Copy, // Updated to handle player_id
+    F: Fn(String, String) + 'static + Copy,
 {
     let (input_lobby_id, set_input_lobby_id) = signal(String::new());
-    let (player_name, set_player_name) = signal(String::new()); // New player name state
+    let (player_name, set_player_name) = signal(String::new());
     let (status, set_status) = signal(String::new());
     let (is_loading, set_is_loading) = signal(false);
+
+    // Add lobby info display
+    let (show_lobby_info, set_show_lobby_info) = signal(false);
+    let (lobby_info, set_lobby_info) = signal(String::new()); // Just display as text for now
 
     let create_lobby = move |_: ev::MouseEvent| {
         let name = player_name.get();
@@ -46,12 +50,26 @@ where
                         .to_string();
 
                     if lobby_id.is_empty() || player_id.is_empty() {
-                        log_error(
-                            "Invalid response",
-                            &ClientError::Data("Missing lobby_id or player_id".into()),
-                        );
                         set_status.set("Invalid response from server".to_string());
                     } else {
+                        // Try to get lobby info and display it
+                        match api::get_lobby_info(&lobby_id).await {
+                            Ok(info) => {
+                                let info_text = format!(
+                                    "Lobby: {}\nLeader: {}\nPlayers: {}\nStatus: {:?}",
+                                    info.lobby_id,
+                                    info.leader_id,
+                                    info.players.len(),
+                                    info.status
+                                );
+                                set_lobby_info.set(info_text);
+                                set_show_lobby_info.set(true);
+                            }
+                            Err(e) => {
+                                log_error("Failed to get lobby info", &e);
+                            }
+                        }
+
                         set_status.set(format!("Lobby created: {}", lobby_id));
                         on_lobby_joined(lobby_id, player_id);
                     }
@@ -73,7 +91,6 @@ where
             set_status.set("Please enter a lobby ID".to_string());
             return;
         }
-
         if name.trim().is_empty() {
             set_status.set("Please enter your name".to_string());
             return;
@@ -88,26 +105,40 @@ where
             };
 
             match api::join_lobby(&lobby_id, request).await {
-                // Changed to join_lobby
                 Ok(response) => {
                     let player_id = response
                         .get("player_id")
                         .and_then(|id| id.as_str())
                         .unwrap_or("")
                         .to_string();
+
                     if player_id.is_empty() {
-                        log_error(
-                            "Invalid response",
-                            &ClientError::Data("Missing player_id".into()),
-                        );
                         set_status.set("Invalid response from server".to_string());
                     } else {
+                        // Try to get lobby info and display it
+                        match api::get_lobby_info(&lobby_id).await {
+                            Ok(info) => {
+                                let info_text = format!(
+                                    "Lobby: {}\nLeader: {}\nPlayers: {}\nStatus: {:?}",
+                                    info.lobby_id,
+                                    info.leader_id,
+                                    info.players.len(),
+                                    info.status
+                                );
+                                set_lobby_info.set(info_text);
+                                set_show_lobby_info.set(true);
+                            }
+                            Err(e) => {
+                                log_error("Failed to get lobby info", &e);
+                            }
+                        }
+
                         set_status.set(format!("Joined lobby: {}", lobby_id));
                         on_lobby_joined(lobby_id, player_id);
                     }
                 }
                 Err(e) => {
-                    log_error("Failed to join lobby", &e); // Updated error message
+                    log_error("Failed to join lobby", &e);
                     set_status.set(get_user_friendly_message(&e));
                 }
             }
@@ -125,7 +156,6 @@ where
         <div class="lobby-container">
             <h2>"Join or Create a Game"</h2>
             <div class="lobby-actions">
-                // Add player name input
                 <div class="player-name-input">
                     <label for="player-name">"Your Name:"</label>
                     <input
@@ -168,6 +198,7 @@ where
                     </button>
                 </div>
             </div>
+
             <Show when=move || !status.get().is_empty()>
                 <div class=move || {
                     let base_class = "status-message";
@@ -180,6 +211,17 @@ where
                     {move || status.get()}
                 </div>
             </Show>
+
+            // NEW: Simple lobby info display
+            <Show when=move || show_lobby_info.get()>
+                <div class="lobby-info-section">
+                    <h3>"Lobby Information"</h3>
+                    <pre class="lobby-info-display">
+                        {move || lobby_info.get()}
+                    </pre>
+                </div>
+            </Show>
+
             <div class="instructions">
                 <h3>"How to Play"</h3>
                 <p>"Create a new game or join an existing one with a lobby ID."</p>
