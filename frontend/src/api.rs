@@ -1,5 +1,8 @@
 use crate::error::{parse_error_response, ClientError};
-use crate::{CheckWordResponse, JoinLobbyRequest, KanjiPrompt, PlayerInfo, UserInput};
+use crate::{
+    CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, StartGameRequest,
+    UpdateSettingsRequest, UserInput,
+};
 use gloo_net::http::Request;
 
 const API_BASE: &str = "";
@@ -8,6 +11,40 @@ pub type ApiResult<T> = Result<T, ClientError>;
 
 pub async fn create_lobby(request: JoinLobbyRequest) -> ApiResult<serde_json::Value> {
     make_request("POST", format!("{}/lobby/create", API_BASE), Some(&request)).await
+}
+
+pub async fn get_lobby_info(lobby_id: &str) -> ApiResult<LobbyInfo> {
+    make_request::<(), _>("GET", format!("{}/lobby/{}/info", API_BASE, lobby_id), None).await
+}
+
+pub async fn update_lobby_settings(
+    lobby_id: &str,
+    request: UpdateSettingsRequest,
+) -> ApiResult<serde_json::Value> {
+    make_request(
+        "POST",
+        format!("{}/lobby/{}/settings", API_BASE, lobby_id),
+        Some(&request),
+    )
+    .await
+}
+
+pub async fn start_game(lobby_id: &str, request: StartGameRequest) -> ApiResult<serde_json::Value> {
+    make_request(
+        "POST",
+        format!("{}/lobby/{}/start", API_BASE, lobby_id),
+        Some(&request),
+    )
+    .await
+}
+
+pub async fn get_lobby_players(lobby_id: &str) -> ApiResult<serde_json::Value> {
+    make_request::<(), _>(
+        "GET",
+        format!("{}/lobby/players/{}", API_BASE, lobby_id),
+        None,
+    )
+    .await
 }
 
 pub async fn join_lobby(lobby_id: &str, request: JoinLobbyRequest) -> ApiResult<serde_json::Value> {
@@ -36,7 +73,7 @@ pub async fn check_word(lobby_id: &str, user_input: UserInput) -> ApiResult<Chec
     .await
 }
 
-pub async fn get_player_info(lobby_id: &str, player_id: &str) -> ApiResult<PlayerInfo> {
+pub async fn get_player_info(lobby_id: &str, player_id: &str) -> ApiResult<PlayerData> {
     make_request::<(), _>(
         "GET",
         format!("{}/player/{}/{}", API_BASE, lobby_id, player_id),

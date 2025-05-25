@@ -82,9 +82,6 @@ impl IntoResponse for AppError {
     }
 }
 
-/// Type alias for standard anyhow Result in API functions
-pub type Result<T> = std::result::Result<T, AppError>;
-
 ///// Handler to convert anyhow errors into responses
 //pub async fn handle_anyhow_error(err: anyhow::Error) -> impl IntoResponse {
 //    if let Some(app_err) = err.downcast_ref::<AppError>() {

@@ -93,9 +93,22 @@ where
                     set_result.set(response.message);
                     set_score.set(response.score);
                     set_word.set(String::new()); // Clear input after submission
+
+                    if let Some(new_kanji) = response.kanji {
+                        set_kanji.set(new_kanji);
+                    }
+
+                    if let Some(input) = input_ref.get() {
+                        input.set_value("");
+                        let _ = input.focus();
+                    }
                 }
                 Err(e) => {
                     set_error_message.set(format!("Could not submit word: {}", e));
+                    set_word.set(String::new());
+                    if let Some(input) = input_ref.get() {
+                        input.set_value("");
+                    }
                 }
             }
 
@@ -218,14 +231,6 @@ where
                             class="submit-btn"
                         >
                             "Submit"
-                        </button>
-
-                        <button
-                            on:click=new_kanji
-                            disabled=move || is_loading.get()
-                            class="new-kanji-btn"
-                        >
-                            "New Kanji"
                         </button>
                     </div>
                 </div>
