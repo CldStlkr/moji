@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::error::{parse_error_response, ClientError};
 use crate::{
     CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, StartGameRequest,
