@@ -1,7 +1,8 @@
-use crate::{api, UserInput};
+use crate::api;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
+use shared::UserInput;
 use wasm_bindgen_futures::spawn_local;
 
 #[component]

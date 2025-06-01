@@ -1,10 +1,10 @@
 use crate::{
     api,
     error::{get_user_friendly_message, log_error},
-    JoinLobbyRequest, LobbyInfo,
 };
 use leptos::ev;
 use leptos::prelude::*;
+use shared::{GameStatus, JoinLobbyRequest, LobbyInfo, PlayerId, StartGameRequest};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
@@ -21,7 +21,7 @@ where
     let (in_lobby, set_in_lobby) = signal(false);
     let (lobby_info, set_lobby_info) = signal::<Option<LobbyInfo>>(None);
     let (current_lobby_id, set_current_lobby_id) = signal(String::new());
-    let (current_player_id, set_current_player_id) = signal(String::new());
+    let (current_player_id, set_current_player_id) = signal(PlayerId(String::new()));
 
     // Polling for lobby updates
     let start_polling = move |lobby_id: String| {
@@ -38,7 +38,7 @@ where
                 match api::get_lobby_info(&lobby_id).await {
                     Ok(info) => {
                         // Check if game has started
-                        if matches!(info.status, crate::GameStatus::Playing) {
+                        if matches!(info.status, GameStatus::Playing) {
                             // Game has started, transition to game
                             let lobby_id = current_lobby_id.get();
                             let player_id = current_player_id.get();
@@ -163,8 +163,24 @@ where
         let lobby_id = current_lobby_id.get();
         let player_id = current_player_id.get();
 
+        let req = StartGameRequest { player_id };
+
+        spawn_local(async move {
+            set_is_loading.set(true);
+
+            match api::start_game(&lobby_id, req).await {
+                Ok(_) => {
+                    on_lobby_joined(lobby_id, player_id);
+                }
+                Err(e) => {
+                    log_error("Failed to start game", &e);
+                    set_status.set(get_user_friendly_message(&e));
+                }
+            }
+
+            set_is_loading.set(false);
+        });
         // Transition to game
-        on_lobby_joined(lobby_id, player_id);
     };
 
     let leave_lobby = move |_: ev::MouseEvent| {

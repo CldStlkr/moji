@@ -17,8 +17,8 @@ use std::{
 };
 
 // Re-export model types that are used in API endpoints
-pub use models::basic::{
-    CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, KanjiPrompt, UserInput,
+pub use shared::{
+    CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, KanjiPrompt, PlayerId, UserInput,
 };
 pub use types::{Result, Shared, SharedState};
 
@@ -26,7 +26,7 @@ pub use types::{Result, Shared, SharedState};
 
 #[derive(Clone, Debug)]
 pub struct PlayerData {
-    pub id: String,
+    pub id: PlayerId,
     pub name: String,
     pub score: u32,
     pub joined_at: DateTime<Utc>, // DateTime internally
@@ -82,7 +82,7 @@ impl LobbyState {
         };
 
         let word_list_path = format!("{}/kanji_words.csv", data_dir);
-        let kanji_list_path = format!("{}/joyo_kanji.csv", data_dir);
+        let kanji_list_path = format!("{}/N5_kanji.csv", data_dir);
 
         let list_of_words = vectorize_word_list(&word_list_path)
             .map_err(|e| AppError::DataLoadError(e.to_string()))?;
@@ -126,7 +126,7 @@ impl LobbyState {
         Ok(())
     }
 
-    pub fn get_lobby_info(&self, lobby_id: &str) -> Result<crate::models::basic::LobbyInfo> {
+    pub fn get_lobby_info(&self, lobby_id: &str) -> Result<shared::LobbyInfo> {
         let players_guard = self
             .players
             .lock()
@@ -145,19 +145,19 @@ impl LobbyState {
             .map_err(|e| AppError::LockError(e.to_string()))?;
 
         // Convert internal PlayerData to API PlayerData
-        let api_players: Vec<crate::models::basic::PlayerData> = players_guard
+        let api_players: Vec<shared::PlayerData> = players_guard
             .iter()
-            .map(|p| crate::models::basic::PlayerData {
-                id: p.id.clone(),
+            .map(|p| shared::PlayerData {
+                id: PlayerId(p.id.0.clone()),
                 name: p.name.clone(),
                 score: p.score,
                 joined_at: p.joined_at.to_rfc3339(),
             })
             .collect();
 
-        Ok(crate::models::basic::LobbyInfo {
+        Ok(shared::LobbyInfo {
             lobby_id: lobby_id.to_string(),
-            leader_id: leader.clone(),
+            leader_id: PlayerId(leader.clone()),
             players: api_players,
             settings: settings.clone(),
             status: status.clone(),
@@ -206,7 +206,7 @@ impl LobbyState {
         }
 
         players.push(PlayerData {
-            id: player_id,
+            id: PlayerId(player_id),
             name: player_name,
             score: 0,
             joined_at: Utc::now(),
@@ -215,41 +215,42 @@ impl LobbyState {
     }
 
     // Get player score
-    pub fn get_player_score(&self, player_id: &str) -> Result<u32> {
+    pub fn get_player_score(&self, player_id: &PlayerId) -> Result<u32> {
         let players = self
             .players
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
+
         players
             .iter()
-            .find(|p| p.id == player_id)
+            .find(|p| &p.id == player_id)
             .map(|p| p.score)
-            .ok_or_else(|| AppError::PlayerNotFound(String::from(player_id)))
+            .ok_or_else(|| AppError::PlayerNotFound(player_id.0.clone()))
     }
 
     // Get player name
-    pub fn get_player_name(&self, player_id: &str) -> Result<String> {
+    pub fn get_player_name(&self, player_id: &PlayerId) -> Result<String> {
         let players = self
             .players
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
         players
             .iter()
-            .find(|p| p.id == player_id)
+            .find(|p| &p.id == player_id)
             .map(|p| p.name.clone())
-            .ok_or_else(|| AppError::PlayerNotFound(player_id.to_string()))
+            .ok_or_else(|| AppError::PlayerNotFound(player_id.0.clone()))
     }
 
     // Update player score
-    pub fn increment_player_score(&self, player_id: &str) -> Result<u32> {
+    pub fn increment_player_score(&self, player_id: &PlayerId) -> Result<u32> {
         let mut players = self
             .players
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
         let player = players
             .iter_mut()
-            .find(|p| p.id == player_id)
-            .ok_or_else(|| AppError::PlayerNotFound(String::from(player_id)))?;
+            .find(|p| &p.id == player_id)
+            .ok_or_else(|| AppError::PlayerNotFound(player_id.0.clone()))?;
 
         player.score += 1;
 
@@ -330,17 +331,17 @@ mod tests {
     #[test]
     fn test_increment_player_score() {
         let lobby_state = LobbyState::create().unwrap();
-        let player_id = "test_player";
+        let player_id = PlayerId(String::from("test_player"));
         lobby_state
-            .add_player(player_id.to_string(), "Test Player".to_string())
+            .add_player(player_id.0.clone(), "Test Player".to_string())
             .unwrap();
 
         // Initial score should be 0
-        assert_eq!(lobby_state.get_player_score(player_id).unwrap(), 0);
+        assert_eq!(lobby_state.get_player_score(&player_id).unwrap(), 0);
 
         // After increment, should be 1
-        assert_eq!(lobby_state.increment_player_score(player_id).unwrap(), 1);
-        assert_eq!(lobby_state.get_player_score(player_id).unwrap(), 1);
+        assert_eq!(lobby_state.increment_player_score(&player_id).unwrap(), 1);
+        assert_eq!(lobby_state.get_player_score(&player_id).unwrap(), 1);
     }
 
     #[test]
@@ -387,13 +388,13 @@ mod tests {
         assert_eq!(players.len(), 2);
 
         // Option 1: Simple verification - check names exist
-        let names: Vec<&String> = players.iter().map(|p| &p.name).collect();
+        let names: Vec<&String> = players.iter().map(|p| &p.id.0).collect();
         assert!(names.contains(&&"Alice".to_string()));
         assert!(names.contains(&&"Bob".to_string()));
 
         // Option 2: More thorough verification - find specific players
-        let alice = players.iter().find(|p| p.id == "player1");
-        let bob = players.iter().find(|p| p.id == "player2");
+        let alice = players.iter().find(|p| p.id.0 == "player1");
+        let bob = players.iter().find(|p| p.id.0 == "player2");
 
         assert!(alice.is_some());
         assert!(bob.is_some());
@@ -405,9 +406,9 @@ mod tests {
         assert_eq!(bob.unwrap().score, 0);
 
         // Option 4: Verify order is maintained (first player added is first in Vec)
-        assert_eq!(players[0].id, "player1");
+        assert_eq!(players[0].id, PlayerId(String::from("player1")));
         assert_eq!(players[0].name, "Alice");
-        assert_eq!(players[1].id, "player2");
+        assert_eq!(players[1].id, PlayerId(String::from("player2")));
         assert_eq!(players[1].name, "Bob");
     }
 
@@ -416,7 +417,7 @@ mod tests {
         let lobby_state = LobbyState::create().unwrap();
 
         // Attempt to get score for non-existent player
-        let result = lobby_state.get_player_score("nonexistent");
+        let result = lobby_state.get_player_score(&PlayerId(String::from("nonexistent")));
         assert!(result.is_err());
 
         // Verify error type

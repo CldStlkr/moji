@@ -1,18 +1,16 @@
 use crate::{
-    error::AppError,
-    generate_lobby_id, generate_player_id, get_lobby,
-    models::basic::{
-        CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, StartGameRequest,
-        UpdateSettingsRequest, UserInput,
-    },
-    types::Result,
-    AppState, LobbyState,
+    error::AppError, generate_lobby_id, generate_player_id, get_lobby, types::Result, AppState,
+    LobbyState,
 };
 use axum::{
     debug_handler,
     extract::{Json, Path, State},
 };
 use serde_json::json;
+use shared::{
+    CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, StartGameRequest,
+    UpdateSettingsRequest, UserInput,
+};
 use std::sync::Arc;
 
 #[debug_handler]
@@ -84,7 +82,7 @@ pub async fn update_lobby_settings(
     Json(request): Json<UpdateSettingsRequest>,
 ) -> Result<Json<serde_json::Value>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
-    lobby.update_settings(&request.player_id, request.settings)?;
+    lobby.update_settings(&request.player_id.0, request.settings)?;
 
     Ok(Json(json!({
         "message": "Settings updated successfully"
@@ -99,7 +97,7 @@ pub async fn start_game(
     Json(request): Json<StartGameRequest>,
 ) -> Result<Json<serde_json::Value>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
-    lobby.start_game(&request.player_id)?;
+    lobby.start_game(&request.player_id.0)?;
 
     Ok(Json(json!({
         "message": "Game started successfully"
@@ -117,7 +115,7 @@ pub async fn get_player_info(
     let players = lobby.get_all_players()?;
     let player = players
         .iter()
-        .find(|p| p.id == player_id)
+        .find(|p| p.id.0 == player_id)
         .ok_or_else(|| AppError::PlayerNotFound(player_id.clone()))?;
 
     // Convert internal PlayerData to API PlayerData

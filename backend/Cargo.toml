@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+shared = { path = "../shared", features = ["ssr"] }
 axum = { version = "0.8.4", features = ["json", "macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"

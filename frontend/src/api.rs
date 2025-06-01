@@ -1,12 +1,11 @@
 #![allow(dead_code)]
 
 use crate::error::{parse_error_response, ClientError};
-use crate::{
+use gloo_net::http::Request;
+use shared::{
     CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, StartGameRequest,
     UpdateSettingsRequest, UserInput,
 };
-use gloo_net::http::Request;
-
 const API_BASE: &str = "";
 
 pub type ApiResult<T> = Result<T, ClientError>;
