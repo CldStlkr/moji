@@ -64,7 +64,7 @@ pub struct LobbyState {
     pub word_list: Vec<String>,
     pub kanji_list: Vec<String>,
     pub players: Shared<Vec<PlayerData>>,
-    pub lobby_leader: Shared<String>,
+    pub lobby_leader: Shared<PlayerId>,
     pub settings: Shared<GameSettings>,
     pub game_status: Shared<GameStatus>,
     pub current_kanji: Shared<Option<String>>,
@@ -94,22 +94,22 @@ impl LobbyState {
             word_list: list_of_words,
             kanji_list: list_of_kanji,
             players: Shared::new(Vec::new()),
-            lobby_leader: Shared::new(String::new()),
+            lobby_leader: Shared::new(PlayerId::default()),
             settings: Shared::new(GameSettings::default()),
             game_status: Shared::new(GameStatus::Lobby),
             current_kanji: Shared::new(None),
         })
     }
 
-    pub fn is_leader(&self, player_id: &str) -> Result<bool> {
+    pub fn is_leader(&self, player_id: &PlayerId) -> Result<bool> {
         let leader = self
             .lobby_leader
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
-        Ok(leader.as_str() == player_id)
+        Ok(leader.to_string() == player_id.to_string())
     }
 
-    pub fn update_settings(&self, player_id: &str, new_settings: GameSettings) -> Result<()> {
+    pub fn update_settings(&self, player_id: &PlayerId, new_settings: GameSettings) -> Result<()> {
         if !self.is_leader(player_id)? {
             return Err(AppError::AuthError(
                 "Only lobby leader can change settings".to_string(),
@@ -157,14 +157,14 @@ impl LobbyState {
 
         Ok(shared::LobbyInfo {
             lobby_id: lobby_id.to_string(),
-            leader_id: PlayerId(leader.clone()),
+            leader_id: leader.clone(),
             players: api_players,
             settings: settings.clone(),
             status: status.clone(),
         })
     }
 
-    pub fn start_game(&self, player_id: &str) -> Result<()> {
+    pub fn start_game(&self, player_id: &PlayerId) -> Result<()> {
         if !self.is_leader(player_id)? {
             return Err(AppError::AuthError(
                 "Only lobby leader can start the game".to_string(),
@@ -190,7 +190,7 @@ impl LobbyState {
     }
 
     // Add player to lobby
-    pub fn add_player(&self, player_id: String, player_name: String) -> Result<bool> {
+    pub fn add_player(&self, player_id: PlayerId, player_name: String) -> Result<bool> {
         let mut players = self
             .players
             .lock()
@@ -206,7 +206,7 @@ impl LobbyState {
         }
 
         players.push(PlayerData {
-            id: PlayerId(player_id),
+            id: player_id,
             name: player_name,
             score: 0,
             joined_at: Utc::now(),
@@ -297,8 +297,8 @@ pub fn generate_random_id(length: usize) -> String {
         .collect()
 }
 
-pub fn generate_player_id() -> String {
-    generate_random_id(10)
+pub fn generate_player_id() -> PlayerId {
+    PlayerId::from(generate_random_id(10))
 }
 
 pub fn generate_lobby_id() -> String {
@@ -333,7 +333,7 @@ mod tests {
         let lobby_state = LobbyState::create().unwrap();
         let player_id = PlayerId(String::from("test_player"));
         lobby_state
-            .add_player(player_id.0.clone(), "Test Player".to_string())
+            .add_player(player_id.clone(), "Test Player".to_string())
             .unwrap();
 
         // Initial score should be 0
@@ -378,17 +378,17 @@ mod tests {
 
         // Add players and verify they're returned
         lobby_state
-            .add_player("player1".to_string(), "Alice".to_string())
+            .add_player(PlayerId::from("player1"), "Alice".to_string())
             .unwrap();
         lobby_state
-            .add_player("player2".to_string(), "Bob".to_string())
+            .add_player(PlayerId::from("player2"), "Bob".to_string())
             .unwrap();
 
         let players = lobby_state.get_all_players().unwrap();
         assert_eq!(players.len(), 2);
 
         // Option 1: Simple verification - check names exist
-        let names: Vec<&String> = players.iter().map(|p| &p.id.0).collect();
+        let names: Vec<&String> = players.iter().map(|p| &p.name).collect();
         assert!(names.contains(&&"Alice".to_string()));
         assert!(names.contains(&&"Bob".to_string()));
 
@@ -459,10 +459,10 @@ mod tests {
 
         // Add players to lobby
         retrieved_lobby
-            .add_player("p1".to_string(), "Player 1".to_string())
+            .add_player(PlayerId::from("p1"), "Player 1".to_string())
             .unwrap();
         retrieved_lobby
-            .add_player("p2".to_string(), "Player 2".to_string())
+            .add_player(PlayerId::from("p2"), "Player 2".to_string())
             .unwrap();
 
         // Generate kanji and check word
@@ -479,17 +479,17 @@ mod tests {
 
         // First player becomes leader
         let is_leader1 = lobby_state
-            .add_player("player1".to_string(), "Alice".to_string())
+            .add_player(PlayerId::from("player1"), "Alice".to_string())
             .unwrap();
         assert!(is_leader1);
-        assert!(lobby_state.is_leader("player1").unwrap());
+        assert!(lobby_state.is_leader(&PlayerId::from("player1")).unwrap());
 
         // Second player is not leader
         let is_leader2 = lobby_state
-            .add_player("player2".to_string(), "Bob".to_string())
+            .add_player(PlayerId::from("player2"), "Bob".to_string())
             .unwrap();
         assert!(!is_leader2);
-        assert!(!lobby_state.is_leader("player2").unwrap());
+        assert!(!lobby_state.is_leader(&PlayerId::from("player2")).unwrap());
     }
 
     #[test]
@@ -497,10 +497,10 @@ mod tests {
         let lobby_state = LobbyState::create().unwrap();
 
         lobby_state
-            .add_player("leader".to_string(), "Leader".to_string())
+            .add_player(PlayerId::from("leader"), "Leader".to_string())
             .unwrap();
         lobby_state
-            .add_player("player".to_string(), "Player".to_string())
+            .add_player(PlayerId::from("player"), "Player".to_string())
             .unwrap();
 
         let new_settings = GameSettings {
@@ -511,11 +511,13 @@ mod tests {
 
         // Leader can update settings
         assert!(lobby_state
-            .update_settings("leader", new_settings.clone())
+            .update_settings(&PlayerId::from("leader"), new_settings.clone())
             .is_ok());
 
         // Non-leader cannot update settings
-        assert!(lobby_state.update_settings("player", new_settings).is_err());
+        assert!(lobby_state
+            .update_settings(&PlayerId::from("player"), new_settings)
+            .is_err());
     }
 
     #[test]
@@ -523,14 +525,14 @@ mod tests {
         let lobby_state = LobbyState::create().unwrap();
 
         lobby_state
-            .add_player("leader".to_string(), "Leader".to_string())
+            .add_player(PlayerId::from("leader"), "Leader".to_string())
             .unwrap();
         lobby_state
-            .add_player("player".to_string(), "Player".to_string())
+            .add_player(PlayerId::from("player"), "Player".to_string())
             .unwrap();
 
         // Leader can start game
-        assert!(lobby_state.start_game("leader").is_ok());
+        assert!(lobby_state.start_game(&PlayerId::from("leader")).is_ok());
 
         // Game status should change to Playing
         let status = lobby_state.game_status.lock().unwrap();

@@ -1,9 +1,14 @@
-//! Shared domain types for Kanji-Guesser.
+//! Shared domain types for Moji.
 //! Compiles to `no_std` + `serde` in WASM, and
 //! gets extra DB derives when the `ssr` feature is enabled.
 
 #![cfg_attr(not(feature = "ssr"), no_std)]
 
+extern crate alloc;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use serde::{Deserialize, Serialize};
 
 /// A prompt sent from the server to each client at the start of a round.
@@ -21,8 +26,41 @@ pub struct UserInput {
 }
 
 /// Wrapper-type so we don’t pass raw strings everywhere.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PlayerId(pub String);
+
+impl core::str::FromStr for PlayerId {
+    type Err = core::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(PlayerId(s.to_string()))
+    }
+}
+
+impl core::fmt::Display for PlayerId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<&str> for PlayerId {
+    fn from(s: &str) -> Self {
+        Self(s.into())
+    }
+}
+
+impl From<String> for PlayerId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<PlayerId> for String {
+    fn from(id: PlayerId) -> Self {
+        id.0
+    }
+}
 
 /// Sent when a player creates / joins a lobby.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,7 +100,7 @@ pub struct GameSettings {
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            difficulty_levels: vec![
+            difficulty_levels: alloc::vec![
                 "N1".into(),
                 "N2".into(),
                 "N3".into(),
