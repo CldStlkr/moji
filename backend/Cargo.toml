@@ -1,5 +1,5 @@
 [package]
-name = "kanji-guesser-backend"
+name = "moji-backend"
 version = "0.1.0"
 edition = "2021"
 
@@ -33,9 +33,9 @@ anyhow = "1.0.98"
 # criterion = "0.5"
 
 [lib]
-name = "kanji_guesser"
+name = "moji"
 path = "src/lib.rs"
 
 [[bin]]
-name = "kanji-guesser-server"
+name = "moji-server"
 path = "src/main.rs"

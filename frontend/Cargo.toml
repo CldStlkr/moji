@@ -1,5 +1,5 @@
 [package]
-name = "kanji-guesser-frontend"
+name = "moji-frontend"
 version = "0.1.0"
 edition = "2021"
 

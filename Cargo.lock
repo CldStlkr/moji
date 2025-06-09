@@ -1238,49 +1238,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kanji-guesser-backend"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "csv",
- "dotenv",
- "rand 0.9.1",
- "serde",
- "serde_json",
- "shared",
- "sqlx",
- "thiserror 2.0.12",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "kanji-guesser-frontend"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "gloo-net",
- "gloo-timers",
- "js-sys",
- "leptos",
- "serde",
- "serde_json",
- "shared",
- "thiserror 2.0.12",
- "uuid",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1569,6 +1526,49 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "moji-backend"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "csv",
+ "dotenv",
+ "rand 0.9.1",
+ "serde",
+ "serde_json",
+ "shared",
+ "sqlx",
+ "thiserror 2.0.12",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "moji-frontend"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "gloo-net",
+ "gloo-timers",
+ "js-sys",
+ "leptos",
+ "serde",
+ "serde_json",
+ "shared",
+ "thiserror 2.0.12",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]

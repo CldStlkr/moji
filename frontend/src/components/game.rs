@@ -2,11 +2,11 @@ use crate::api;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use shared::UserInput;
+use shared::{PlayerId, UserInput};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
-pub fn GameComponent<F>(lobby_id: String, player_id: String, on_exit_game: F) -> impl IntoView
+pub fn GameComponent<F>(lobby_id: String, player_id: PlayerId, on_exit_game: F) -> impl IntoView
 where
     F: Fn() + 'static + Copy,
 {
@@ -28,6 +28,7 @@ where
     // Polling for kanji updates
     let start_kanji_polling = move || {
         let lobby_id = lobby_id_signal.get();
+        let player_id = player_id_signal.get();
         spawn_local(async move {
             loop {
                 // Poll every 1 second for more responsive gameplay
@@ -60,7 +61,8 @@ where
                                 player_data.get("id").and_then(|id| id.as_str()),
                                 player_data.get("score").and_then(|s| s.as_u64()),
                             ) {
-                                if id == player_id_signal.get() {
+                                // Compare with PlayerId
+                                if PlayerId::from(id) == player_id {
                                     set_score.set(score_val as u32);
                                 }
                             }
@@ -68,6 +70,55 @@ where
                     }
                 }
             }
+        });
+    };
+
+    // Extract submit logic into a separate function to avoid MouseEvent creation
+    let perform_submit = move || {
+        let current_word = word.get();
+        let current_kanji = kanji.get();
+        let lobby_id = lobby_id_signal.get();
+        let player_id = player_id_signal.get();
+
+        spawn_local(async move {
+            if current_word.trim().is_empty() || current_kanji.is_empty() {
+                return;
+            }
+
+            set_is_loading.set(true);
+            set_error_message.set(String::new());
+
+            let user_input = UserInput {
+                word: current_word.trim().to_string(),
+                kanji: current_kanji,
+                player_id,
+            };
+
+            match api::check_word(&lobby_id, user_input).await {
+                Ok(response) => {
+                    set_result.set(response.message);
+                    set_score.set(response.score);
+                    set_word.set(String::new()); // Clear input after submission
+
+                    if let Some(new_kanji) = response.kanji {
+                        set_kanji.set(new_kanji);
+                    }
+
+                    if let Some(input) = input_ref.get() {
+                        input.set_value("");
+                        let _ = input.focus();
+                    }
+                }
+                Err(e) => {
+                    set_error_message.set(format!("Could not submit word: {}", e));
+                    set_word.set(String::new());
+                    if let Some(input) = input_ref.get() {
+                        input.set_value("");
+                    }
+                }
+            }
+
+            set_is_loading.set(false);
         });
     };
 
@@ -120,58 +171,13 @@ where
         set_is_polling.set(false);
     });
 
-    // Update submit_word to include player_id
     let submit_word = move |_: ev::MouseEvent| {
-        let current_word = word.get();
-        let current_kanji = kanji.get();
-        let lobby_id = lobby_id_signal.get();
-        let player_id = player_id_signal.get();
-
-        spawn_local(async move {
-            if current_word.trim().is_empty() || current_kanji.is_empty() {
-                return;
-            }
-
-            set_is_loading.set(true);
-            set_error_message.set(String::new());
-
-            let user_input = UserInput {
-                word: current_word.trim().to_string(),
-                kanji: current_kanji,
-                player_id,
-            };
-
-            match api::check_word(&lobby_id, user_input).await {
-                Ok(response) => {
-                    set_result.set(response.message);
-                    set_score.set(response.score);
-                    set_word.set(String::new()); // Clear input after submission
-
-                    if let Some(new_kanji) = response.kanji {
-                        set_kanji.set(new_kanji);
-                    }
-
-                    if let Some(input) = input_ref.get() {
-                        input.set_value("");
-                        let _ = input.focus();
-                    }
-                }
-                Err(e) => {
-                    set_error_message.set(format!("Could not submit word: {}", e));
-                    set_word.set(String::new());
-                    if let Some(input) = input_ref.get() {
-                        input.set_value("");
-                    }
-                }
-            }
-
-            set_is_loading.set(false);
-        });
+        perform_submit();
     };
 
     let handle_key_press = move |ev: ev::KeyboardEvent| {
         if ev.key() == "Enter" && !is_loading.get() {
-            submit_word(ev::MouseEvent::new("click").unwrap());
+            perform_submit();
         }
     };
 

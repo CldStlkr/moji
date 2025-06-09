@@ -10,7 +10,7 @@ use wasm_bindgen_futures::spawn_local;
 #[component]
 pub fn LobbyComponent<F>(on_lobby_joined: F) -> impl IntoView
 where
-    F: Fn(String, String) + 'static + Copy + Send + Sync,
+    F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
 {
     let (input_lobby_id, set_input_lobby_id) = signal(String::new());
     let (player_name, set_player_name) = signal(String::new());
@@ -21,7 +21,7 @@ where
     let (in_lobby, set_in_lobby) = signal(false);
     let (lobby_info, set_lobby_info) = signal::<Option<LobbyInfo>>(None);
     let (current_lobby_id, set_current_lobby_id) = signal(String::new());
-    let (current_player_id, set_current_player_id) = signal(PlayerId(String::new()));
+    let (current_player_id, set_current_player_id) = signal(PlayerId::default());
 
     // Polling for lobby updates
     let start_polling = move |lobby_id: String| {
@@ -78,13 +78,14 @@ where
                         .and_then(|id| id.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let player_id = response
-                        .get("player_id")
-                        .and_then(|id| id.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                    let player_id = PlayerId::from(
+                        response
+                            .get("player_id")
+                            .and_then(|id| id.as_str())
+                            .unwrap_or(""),
+                    );
 
-                    if lobby_id.is_empty() || player_id.is_empty() {
+                    if lobby_id.is_empty() || player_id.0.is_empty() {
                         set_status.set("Invalid response from server".to_string());
                     } else {
                         set_current_lobby_id.set(lobby_id.clone());
@@ -130,13 +131,14 @@ where
 
             match api::join_lobby(&lobby_id, request).await {
                 Ok(response) => {
-                    let player_id = response
-                        .get("player_id")
-                        .and_then(|id| id.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                    let player_id = PlayerId::from(
+                        response
+                            .get("player_id")
+                            .and_then(|id| id.as_str())
+                            .unwrap_or(""),
+                    );
 
-                    if player_id.is_empty() {
+                    if player_id.0.is_empty() {
                         set_status.set("Invalid response from server".to_string());
                     } else {
                         set_current_lobby_id.set(lobby_id.clone());
@@ -163,24 +165,8 @@ where
         let lobby_id = current_lobby_id.get();
         let player_id = current_player_id.get();
 
-        let req = StartGameRequest { player_id };
-
-        spawn_local(async move {
-            set_is_loading.set(true);
-
-            match api::start_game(&lobby_id, req).await {
-                Ok(_) => {
-                    on_lobby_joined(lobby_id, player_id);
-                }
-                Err(e) => {
-                    log_error("Failed to start game", &e);
-                    set_status.set(get_user_friendly_message(&e));
-                }
-            }
-
-            set_is_loading.set(false);
-        });
         // Transition to game
+        on_lobby_joined(lobby_id, player_id);
     };
 
     let leave_lobby = move |_: ev::MouseEvent| {

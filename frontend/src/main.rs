@@ -6,15 +6,16 @@ mod components;
 mod error;
 use components::game::GameComponent;
 use components::lobby::LobbyComponent;
+use shared::PlayerId;
 
 #[component]
 fn App() -> impl IntoView {
     let (lobby_id, set_lobby_id) = signal(String::new());
-    let (player_id, set_player_id) = signal(String::new()); // Added player_id signal
+    let (player_id, set_player_id) = signal(PlayerId::default()); // Added player_id signal
     let (is_in_game, set_is_in_game) = signal(false);
 
     // Updated to handle both lobby_id and player_id
-    let handle_lobby_joined = move |new_lobby_id: String, new_player_id: String| {
+    let handle_lobby_joined = move |new_lobby_id: String, new_player_id: PlayerId| {
         set_lobby_id.set(new_lobby_id);
         set_player_id.set(new_player_id);
         set_is_in_game.set(true);
@@ -23,7 +24,7 @@ fn App() -> impl IntoView {
     let handle_exit_game = move || {
         set_is_in_game.set(false);
         set_lobby_id.set(String::new());
-        set_player_id.set(String::new());
+        set_player_id.set(PlayerId::default());
     };
 
     view! {

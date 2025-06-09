@@ -2,7 +2,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use kanji_guesser::{
+use moji::{
     api::{
         check_word, create_lobby, generate_new_kanji, get_kanji, get_lobby_info, get_lobby_players,
         get_player_info, join_lobby, start_game, update_lobby_settings,
