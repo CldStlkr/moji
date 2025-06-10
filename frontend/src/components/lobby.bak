@@ -1,0 +1,57 @@
+use crate::components::{HomeScreen, PreGameLobby};
+use leptos::prelude::*;
+
+#[derive(Clone, Copy, PartialEq)]
+enum LobbyState {
+    Home,
+    PreGame,
+    InGame,
+}
+
+#[component]
+pub fn LobbyComponent<F>(on_game_ready: F) -> impl IntoView
+where
+    F: Fn(String, String) + 'static + Copy + Send + Sync,
+{
+    let (lobby_state, set_lobby_state) = signal(LobbyState::Home);
+    let (current_lobby_id, set_current_lobby_id) = signal(String::new());
+    let (current_player_id, set_current_player_id) = signal(String::new());
+
+    let handle_lobby_entered = move |lobby_id: String, player_id: String| {
+        set_current_lobby_id.set(lobby_id);
+        set_current_player_id.set(player_id);
+        set_lobby_state.set(LobbyState::PreGame);
+    };
+
+    let handle_game_start = move || {
+        set_lobby_state.set(LobbyState::InGame);
+        on_game_ready(current_lobby_id.get(), current_player_id.get());
+    };
+
+    let handle_leave_lobby = move || {
+        set_lobby_state.set(LobbyState::Home);
+        set_current_lobby_id.set(String::new());
+        set_current_player_id.set(String::new());
+    };
+
+    view! {
+        <div class="lobby-container">
+            {move || match lobby_state.get() {
+                LobbyState::Home => view! {
+                    <HomeScreen on_lobby_entered=handle_lobby_entered />
+                }.into_view(),
+                LobbyState::PreGame => view! {
+                    <PreGameLobby
+                        lobby_id=current_lobby_id.get()
+                        player_id=current_player_id.get()
+                        on_game_start=handle_game_start
+                        on_leave_lobby=handle_leave_lobby
+                    />
+                }.into_view(),
+                LobbyState::InGame => view! {
+                    <div>"Game starting..."</div>
+                }.into_view(),
+            }}
+        </div>
+    }
+}

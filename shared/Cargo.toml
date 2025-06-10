@@ -1,0 +1,16 @@
+[package]
+name = "shared"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+sqlx = { version = "0.8.6", optional = true, features = [
+  "macros",
+  "postgres",
+  "runtime-tokio-native-tls",
+] }
+serde = { version = "1.0", features = ["derive"] }
+
+[features]
+ssr = ["dep:sqlx"]

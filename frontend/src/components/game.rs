@@ -1,15 +1,12 @@
-use crate::{api, UserInput};
+use crate::api;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
+use shared::{PlayerId, UserInput};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
-pub fn GameComponent<F>(
-    lobby_id: String,
-    player_id: String, // Added player_id parameter
-    on_exit_game: F,
-) -> impl IntoView
+pub fn GameComponent<F>(lobby_id: String, player_id: PlayerId, on_exit_game: F) -> impl IntoView
 where
     F: Fn() + 'static + Copy,
 {
@@ -17,15 +14,113 @@ where
     let (word, set_word) = signal(String::new());
     let (result, set_result) = signal(String::new());
     let (score, set_score) = signal(0u32);
-    let (player_name, set_player_name) = signal(String::new()); // Store player name
+    let (player_name, set_player_name) = signal(String::new());
     let (is_loading, set_is_loading) = signal(false);
     let (error_message, set_error_message) = signal(String::new());
+    let (is_polling, set_is_polling) = signal(true);
 
     let input_ref = NodeRef::<html::Input>::new();
 
     // Store signals for use in async contexts
     let (lobby_id_signal, _) = signal(lobby_id.clone());
     let (player_id_signal, _) = signal(player_id.clone());
+
+    // Polling for kanji updates
+    let start_kanji_polling = move || {
+        let lobby_id = lobby_id_signal.get();
+        let player_id = player_id_signal.get();
+        spawn_local(async move {
+            loop {
+                // Poll every 1 second for more responsive gameplay
+                gloo_timers::future::TimeoutFuture::new(1000).await;
+
+                if !is_polling.get() {
+                    break;
+                }
+
+                match api::get_kanji(&lobby_id).await {
+                    Ok(prompt) => {
+                        let new_kanji = prompt.kanji;
+                        // Only update if kanji has changed
+                        if new_kanji != kanji.get() && !new_kanji.is_empty() {
+                            set_kanji.set(new_kanji);
+                            // Clear the result when new kanji appears
+                            set_result.set(String::new());
+                        }
+                    }
+                    Err(_) => {
+                        // Silently ignore errors during polling
+                    }
+                }
+
+                // Also poll for updated player scores
+                if let Ok(players) = api::get_lobby_players(&lobby_id).await {
+                    if let Some(players_array) = players.get("players").and_then(|p| p.as_array()) {
+                        for player_data in players_array {
+                            if let (Some(id), Some(score_val)) = (
+                                player_data.get("id").and_then(|id| id.as_str()),
+                                player_data.get("score").and_then(|s| s.as_u64()),
+                            ) {
+                                // Compare with PlayerId
+                                if PlayerId::from(id) == player_id {
+                                    set_score.set(score_val as u32);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    };
+
+    // Extract submit logic into a separate function to avoid MouseEvent creation
+    let perform_submit = move || {
+        let current_word = word.get();
+        let current_kanji = kanji.get();
+        let lobby_id = lobby_id_signal.get();
+        let player_id = player_id_signal.get();
+
+        spawn_local(async move {
+            if current_word.trim().is_empty() || current_kanji.is_empty() {
+                return;
+            }
+
+            set_is_loading.set(true);
+            set_error_message.set(String::new());
+
+            let user_input = UserInput {
+                word: current_word.trim().to_string(),
+                kanji: current_kanji,
+                player_id,
+            };
+
+            match api::check_word(&lobby_id, user_input).await {
+                Ok(response) => {
+                    set_result.set(response.message);
+                    set_score.set(response.score);
+                    set_word.set(String::new()); // Clear input after submission
+
+                    if let Some(new_kanji) = response.kanji {
+                        set_kanji.set(new_kanji);
+                    }
+
+                    if let Some(input) = input_ref.get() {
+                        input.set_value("");
+                        let _ = input.focus();
+                    }
+                }
+                Err(e) => {
+                    set_error_message.set(format!("Could not submit word: {}", e));
+                    set_word.set(String::new());
+                    if let Some(input) = input_ref.get() {
+                        input.set_value("");
+                    }
+                }
+            }
+
+            set_is_loading.set(false);
+        });
+    };
 
     // Fetch initial kanji and player info when component mounts
     Effect::new(move |_| {
@@ -60,80 +155,35 @@ where
             }
 
             set_is_loading.set(false);
+
             // Focus input after loading
             if let Some(input) = input_ref.get() {
                 let _ = input.focus();
             }
+
+            // Start polling for kanji updates
+            start_kanji_polling();
         });
     });
 
-    // Update submit_word to include player_id
+    // Clean up polling when component unmounts
+    on_cleanup(move || {
+        set_is_polling.set(false);
+    });
+
     let submit_word = move |_: ev::MouseEvent| {
-        let current_word = word.get();
-        let current_kanji = kanji.get();
-        let lobby_id = lobby_id_signal.get();
-        let player_id = player_id_signal.get();
-
-        spawn_local(async move {
-            if current_word.trim().is_empty() || current_kanji.is_empty() {
-                return;
-            }
-
-            set_is_loading.set(true);
-            set_error_message.set(String::new());
-
-            let user_input = UserInput {
-                word: current_word.trim().to_string(),
-                kanji: current_kanji,
-                player_id,
-            };
-
-            match api::check_word(&lobby_id, user_input).await {
-                Ok(response) => {
-                    set_result.set(response.message);
-                    set_score.set(response.score);
-                    set_word.set(String::new()); // Clear input after submission
-                }
-                Err(e) => {
-                    set_error_message.set(format!("Could not submit word: {}", e));
-                }
-            }
-
-            set_is_loading.set(false);
-        });
-    };
-
-    let new_kanji = move |_: ev::MouseEvent| {
-        let lobby_id = lobby_id_signal.get();
-        let input_ref = input_ref;
-
-        spawn_local(async move {
-            set_is_loading.set(true);
-            set_error_message.set(String::new());
-            set_result.set(String::new());
-
-            match api::generate_new_kanji(&lobby_id).await {
-                Ok(prompt) => {
-                    set_kanji.set(prompt.kanji);
-                }
-                Err(e) => {
-                    set_error_message.set(format!("Could not fetch new kanji: {}", e));
-                }
-            }
-
-            set_is_loading.set(false);
-            // Focus input after loading new kanji
-            if let Some(input) = input_ref.get() {
-                let _ = input.focus();
-            }
-        });
+        perform_submit();
     };
 
     let handle_key_press = move |ev: ev::KeyboardEvent| {
         if ev.key() == "Enter" && !is_loading.get() {
-            // Create a dummy MouseEvent to satisfy the type signature
-            submit_word(ev::MouseEvent::new("click").unwrap());
+            perform_submit();
         }
+    };
+
+    let handle_exit_game = move |_: ev::MouseEvent| {
+        set_is_polling.set(false);
+        on_exit_game();
     };
 
     let copy_lobby_id = move |_: ev::MouseEvent| {
@@ -165,12 +215,11 @@ where
         <div class="game-container">
             <div class="game-header">
                 <h2>"Kanji Game"</h2>
-                // Add player info
                 <div class="player-info">
                     "Player: " <span class="player-name">{move || player_name.get()}</span>
                 </div>
                 <div class="score-display">"Score: " {move || score.get()}</div>
-                <button on:click=move |_| on_exit_game() class="exit-game-btn">
+                <button on:click=handle_exit_game class="exit-game-btn">
                     "Exit Game"
                 </button>
             </div>
@@ -219,14 +268,6 @@ where
                         >
                             "Submit"
                         </button>
-
-                        <button
-                            on:click=new_kanji
-                            disabled=move || is_loading.get()
-                            class="new-kanji-btn"
-                        >
-                            "New Kanji"
-                        </button>
                     </div>
                 </div>
 
@@ -245,7 +286,7 @@ where
 
             <div class="game-instructions">
                 <p>"Type a Japanese word containing the displayed kanji."</p>
-                <p>"Click \"Submit\" to check your answer or \"New Kanji\" to get a different character."</p>
+                <p>"Click \"Submit\" to check your answer."</p>
             </div>
         </div>
     }
