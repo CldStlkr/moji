@@ -1,5 +1,5 @@
 use crate::{
-    api,
+    api::{create_lobby, get_lobby_info, join_lobby, start_game},
     error::{get_user_friendly_message, log_error},
 };
 use leptos::ev;
@@ -26,30 +26,42 @@ where
     // Polling for lobby updates
     let start_polling = move |lobby_id: String| {
         spawn_local(async move {
+            let mut consecutive_errors = 0;
             loop {
                 // Poll every 2 seconds
-                gloo_timers::future::TimeoutFuture::new(2000).await;
+                gloo_timers::future::TimeoutFuture::new(1000).await;
 
                 // Check if we're still in a lobby
                 if !in_lobby.get() {
                     break;
                 }
 
-                match api::get_lobby_info(&lobby_id).await {
+                match get_lobby_info(&lobby_id).await {
                     Ok(info) => {
+                        consecutive_errors = 0;
                         // Check if game has started
                         if matches!(info.status, GameStatus::Playing) {
                             // Game has started, transition to game
                             let lobby_id = current_lobby_id.get();
                             let player_id = current_player_id.get();
-                            set_in_lobby.set(false); // Stop polling
+
+                            // Trigger game transition first
                             on_lobby_joined(lobby_id, player_id);
+
+                            set_in_lobby.set(false); // Stop polling
                             break;
                         }
                         set_lobby_info.set(Some(info));
                     }
                     Err(e) => {
+                        consecutive_errors += 1;
                         log_error("Failed to fetch lobby info", &e);
+
+                        if consecutive_errors >= 5 {
+                            set_status.set("Lost connection to lobby".to_string());
+                            set_in_lobby.set(false);
+                            break;
+                        }
                     }
                 }
             }
@@ -71,7 +83,7 @@ where
                 player_name: name.clone(),
             };
 
-            match api::create_lobby(request).await {
+            match create_lobby(request).await {
                 Ok(response) => {
                     let lobby_id = response
                         .get("lobby_id")
@@ -129,7 +141,7 @@ where
                 player_name: name.clone(),
             };
 
-            match api::join_lobby(&lobby_id, request).await {
+            match join_lobby(&lobby_id, request).await {
                 Ok(response) => {
                     let player_id = PlayerId::from(
                         response
@@ -165,8 +177,27 @@ where
         let lobby_id = current_lobby_id.get();
         let player_id = current_player_id.get();
 
-        // Transition to game
-        on_lobby_joined(lobby_id, player_id);
+        spawn_local(async move {
+            set_is_loading.set(true);
+            set_status.set("Starting game...".to_string());
+
+            let request = StartGameRequest {
+                player_id: player_id.clone(),
+            };
+
+            match start_game(&lobby_id, request).await {
+                Ok(_) => {
+                    // API call successfull, but don't transition yet
+                    // Let the polling loop detect the status change and transition
+                    set_status.set("Game starting...".to_string());
+                }
+                Err(e) => {
+                    log_error("Failed to start game", &e);
+                    set_status.set(get_user_friendly_message(&e));
+                }
+            }
+            set_is_loading.set(false);
+        });
     };
 
     let leave_lobby = move |_: ev::MouseEvent| {
@@ -227,7 +258,7 @@ where
                                     let player_count = info.players.len();
                                     let max_players = info.settings.max_players;
                                     let leader_id = info.leader_id.clone();
-                                    let status = info.status.clone();
+                                    let status = info.status;
 
                                     view! {
                                         <div class="lobby-details">
