@@ -12,9 +12,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - kanji_network
-  
+
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev # For development
     restart: always
     depends_on:
       - db
@@ -22,6 +24,8 @@ services:
       DATABASE_URL: postgres://kanji:kanji@db:5432/kanji_game
       HOST: 0.0.0.0
       PORT: 8080
+      RUST_LOG: debug # More verbose logging
+      PRODUCTION: 0 # 0 for Development mode
     ports:
       - "8080:8080"
     networks:
