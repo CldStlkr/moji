@@ -160,7 +160,7 @@ impl LobbyState {
             leader_id: leader.clone(),
             players: api_players,
             settings: settings.clone(),
-            status: status.clone(),
+            status: *status,
         })
     }
 

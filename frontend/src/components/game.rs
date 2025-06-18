@@ -1,8 +1,9 @@
 use crate::api;
+use crate::components::player_scores::CompactPlayerScoresComponent; // Add this import
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use shared::{PlayerId, UserInput};
+use shared::{PlayerData, PlayerId, UserInput};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
@@ -18,6 +19,7 @@ where
     let (is_loading, set_is_loading) = signal(false);
     let (error_message, set_error_message) = signal(String::new());
     let (is_polling, set_is_polling) = signal(true);
+    let (all_players, set_all_players) = signal::<Vec<PlayerData>>(Vec::new()); // Add this
 
     let input_ref = NodeRef::<html::Input>::new();
 
@@ -25,7 +27,7 @@ where
     let (lobby_id_signal, _) = signal(lobby_id.clone());
     let (player_id_signal, _) = signal(player_id.clone());
 
-    // Polling for kanji updates
+    // Updated polling to get all player data
     let start_kanji_polling = move || {
         let lobby_id = lobby_id_signal.get();
         let player_id = player_id_signal.get();
@@ -53,27 +55,43 @@ where
                     }
                 }
 
-                // Also poll for updated player scores
-                if let Ok(players) = api::get_lobby_players(&lobby_id).await {
-                    if let Some(players_array) = players.get("players").and_then(|p| p.as_array()) {
+                // Poll for updated player scores - now get all players
+                if let Ok(players_response) = api::get_lobby_players(&lobby_id).await {
+                    if let Some(players_array) =
+                        players_response.get("players").and_then(|p| p.as_array())
+                    {
+                        let mut players_data = Vec::new();
+
                         for player_data in players_array {
-                            if let (Some(id), Some(score_val)) = (
+                            if let (Some(id_str), Some(name), Some(score_val), Some(joined_at)) = (
                                 player_data.get("id").and_then(|id| id.as_str()),
+                                player_data.get("name").and_then(|n| n.as_str()),
                                 player_data.get("score").and_then(|s| s.as_u64()),
+                                player_data.get("joined_at").and_then(|j| j.as_str()),
                             ) {
-                                // Compare with PlayerId
-                                if PlayerId::from(id) == player_id {
+                                let player_id_parsed = PlayerId::from(id_str);
+                                players_data.push(PlayerData {
+                                    id: player_id_parsed.clone(),
+                                    name: name.to_string(),
+                                    score: score_val as u32,
+                                    joined_at: joined_at.to_string(),
+                                });
+
+                                // Update current player's score if it matches
+                                if player_id_parsed == player_id {
                                     set_score.set(score_val as u32);
                                 }
                             }
                         }
+
+                        set_all_players.set(players_data);
                     }
                 }
             }
         });
     };
 
-    // Extract submit logic into a separate function to avoid MouseEvent creation
+    // Rest of your existing functions remain the same...
     let perform_submit = move || {
         let current_word = word.get();
         let current_kanji = kanji.get();
@@ -98,7 +116,7 @@ where
                 Ok(response) => {
                     set_result.set(response.message);
                     set_score.set(response.score);
-                    set_word.set(String::new()); // Clear input after submission
+                    set_word.set(String::new());
 
                     if let Some(new_kanji) = response.kanji {
                         set_kanji.set(new_kanji);
@@ -122,7 +140,7 @@ where
         });
     };
 
-    // Fetch initial kanji and player info when component mounts
+    // Your existing Effect, submit_word, handle_key_press, handle_exit_game, copy_lobby_id functions...
     Effect::new(move |_| {
         let lobby_id = lobby_id_signal.get();
         let player_id = player_id_signal.get();
@@ -133,7 +151,6 @@ where
             set_error_message.set(String::new());
             set_result.set(String::new());
 
-            // Get player name and score
             match api::get_player_info(&lobby_id, &player_id).await {
                 Ok(info) => {
                     set_player_name.set(info.name);
@@ -144,7 +161,6 @@ where
                 }
             }
 
-            // Get current kanji
             match api::get_kanji(&lobby_id).await {
                 Ok(prompt) => {
                     set_kanji.set(prompt.kanji);
@@ -156,17 +172,14 @@ where
 
             set_is_loading.set(false);
 
-            // Focus input after loading
             if let Some(input) = input_ref.get() {
                 let _ = input.focus();
             }
 
-            // Start polling for kanji updates
             start_kanji_polling();
         });
     });
 
-    // Clean up polling when component unmounts
     on_cleanup(move || {
         set_is_polling.set(false);
     });
@@ -236,57 +249,70 @@ where
                 </button>
             </div>
 
-            <div class="game-area">
-                <div class="kanji-display">
-                    <Show
-                        when=move || is_loading.get()
-                        fallback=move || view! {
-                            <div class="kanji">{move || kanji.get()}</div>
-                        }
-                    >
-                        <div class="loading">"Loading..."</div>
+            // Add the player scores sidebar
+            <div class="game-layout">
+                <div class="game-area">
+                    <div class="kanji-display">
+                        <Show
+                            when=move || is_loading.get()
+                            fallback=move || view! {
+                                <div class="kanji">{move || kanji.get()}</div>
+                            }
+                        >
+                            <div class="loading">"Loading..."</div>
+                        </Show>
+                    </div>
+
+                    <div class="input-area">
+                        <input
+                            node_ref=input_ref
+                            type="text"
+                            value=move || word.get()
+                            on:input=move |ev| set_word.set(event_target_value(&ev))
+                            on:keydown=handle_key_press
+                            placeholder="Enter a Japanese word with this kanji"
+                            disabled=move || is_loading.get()
+                            class="word-input"
+                        />
+
+                        <div class="game-buttons">
+                            <button
+                                on:click=submit_word
+                                disabled=move || is_loading.get() || word.get().trim().is_empty() || kanji.get().is_empty()
+                                class="submit-btn"
+                            >
+                                "Submit"
+                            </button>
+                        </div>
+                    </div>
+
+                    <Show when=move || !result.get().is_empty()>
+                        <div class=get_result_class>
+                            {move || result.get()}
+                        </div>
+                    </Show>
+
+                    <Show when=move || !error_message.get().is_empty()>
+                        <div class="error-message">
+                            {move || error_message.get()}
+                        </div>
+                    </Show>
+
+                    <div class="game-instructions">
+                        <p>"Type a Japanese word containing the displayed kanji."</p>
+                        <p>"Click \"Submit\" to check your answer."</p>
+                    </div>
+                </div>
+
+                // Add the scores sidebar
+                <div class="scores-sidebar">
+                    <Show when=move || !all_players.get().is_empty()>
+                        <CompactPlayerScoresComponent
+                            players=all_players.get()
+                            current_player_id=player_id_signal
+                        />
                     </Show>
                 </div>
-
-                <div class="input-area">
-                    <input
-                        node_ref=input_ref
-                        type="text"
-                        value=move || word.get()
-                        on:input=move |ev| set_word.set(event_target_value(&ev))
-                        on:keydown=handle_key_press
-                        placeholder="Enter a Japanese word with this kanji"
-                        disabled=move || is_loading.get()
-                        class="word-input"
-                    />
-
-                    <div class="game-buttons">
-                        <button
-                            on:click=submit_word
-                            disabled=move || is_loading.get() || word.get().trim().is_empty() || kanji.get().is_empty()
-                            class="submit-btn"
-                        >
-                            "Submit"
-                        </button>
-                    </div>
-                </div>
-
-                <Show when=move || !result.get().is_empty()>
-                    <div class=get_result_class>
-                        {move || result.get()}
-                    </div>
-                </Show>
-
-                <Show when=move || !error_message.get().is_empty()>
-                    <div class="error-message">
-                        {move || error_message.get()}
-                    </div>
-                </Show>
-            </div>
-
-            <div class="game-instructions">
-                <p>"Type a Japanese word containing the displayed kanji."</p>
-                <p>"Click \"Submit\" to check your answer."</p>
             </div>
         </div>
     }
