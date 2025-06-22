@@ -22,15 +22,33 @@ RUN cargo build --release --bin moji-server
 # Frontend build stage  
 FROM chef AS frontend-builder
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install trunk
+RUN cargo install trunk wasm-bindgen-cli # Pre-install wasm to avoid 503 errors
+
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:$PATH"
+
 WORKDIR /usr/src
 COPY --from=planner /usr/src/recipe.json recipe.json
+
+# Copy package.json and bun.lock and install dependencies first (for better caching)
+COPY frontend/package.json frontend/bun.lock ./frontend/
+WORKDIR /usr/src/frontend
+RUN bun install
+
 # Build dependencies first (cached layer)
+WORKDIR /usr/src
 RUN cargo chef cook --release --recipe-path recipe.json --bin moji-frontend
+
 # Copy source and build
 COPY . .
+
+# Build CSS first using Bun with Tailwind v4 (with minification for production)
 WORKDIR /usr/src/frontend
-RUN trunk build
+RUN bunx tailwindcss -i ./input.css -o ./styles.css --minify
+
+# Build the frontend (release build)
+RUN trunk build --release
 
 # Final stage
 FROM debian:bookworm-slim

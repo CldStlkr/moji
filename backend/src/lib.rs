@@ -204,10 +204,21 @@ impl LobbyState {
         if is_leader {
             *leader = player_id.clone();
         }
+        let trimmed_name = player_name.trim();
+        if trimmed_name.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Player name cannot be empty".to_string(),
+            ));
+        }
+
+        let normalized_name = trimmed_name
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ");
 
         players.push(PlayerData {
             id: player_id,
-            name: player_name,
+            name: normalized_name.to_string(),
             score: 0,
             joined_at: Utc::now(),
         });

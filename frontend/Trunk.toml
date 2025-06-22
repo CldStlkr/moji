@@ -4,7 +4,7 @@ release = false
 
 [watch]
 # Paths to watch. The `build.target`'s parent folder is watched by default.
-watch = ["src", "css", "Cargo.toml"]
+watch = ["src", "Cargo.toml"]
 # Paths to ignore.
 ignore = []
 
