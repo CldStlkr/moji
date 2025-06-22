@@ -1,3 +1,50 @@
+# Rust
 /target
-
 *.bak
+Cargo.lock
+
+# Frontend build artifacts
+frontend/dist/
+frontend/styles.css
+
+# Node.js / Bun
+frontend/node_modules/
+frontend/bun.lockb
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/

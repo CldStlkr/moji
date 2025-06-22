@@ -122,52 +122,54 @@ where
     };
 
     view! {
-        <h2>"Join or Create a Game"</h2>
-        <div class="lobby-actions">
-            <div class="player-name-input">
-                <label for="player-name">"Your Name:"</label>
-                <input
-                    type="text"
-                    id="player-name"
-                    value=move || player_name.get()
-                    on:input=move |ev| set_player_name.set(event_target_value(&ev))
-                    placeholder="Enter your name"
-                    disabled=move || is_loading.get()
-                    class="name-input"
-                />
-            </div>
+        <div class="card max-w-2xl mx-auto my-8">
+            <h2 class="text-3xl font-bold text-gray-800 mb-8 text-center">"Join or Create a Game"</h2>
+            <div class="space-y-6">
+                <div class="space-y-2">
+                    <label for="player-name" class="block font-semibold text-gray-800 text-lg">"Your Name:"</label>
+                    <input
+                        type="text"
+                        id="player-name"
+                        value=move || player_name.get()
+                        on:input=move |ev| set_player_name.set(event_target_value(&ev))
+                        placeholder="Enter your name"
+                        disabled=move || is_loading.get()
+                        class="input-field w-full"
+                    />
+                </div>
 
-            <button
-                on:click=create_lobby_action
-                disabled=move || is_loading.get() || player_name.get().trim().is_empty()
-                class="create-lobby-btn"
-            >
-                "Create New Game"
-            </button>
-
-            <div class="join-lobby">
-                <input
-                    type="text"
-                    value=move || input_lobby_id.get()
-                    on:input=move |ev| set_input_lobby_id.set(event_target_value(&ev))
-                    on:keydown=handle_key_press
-                    placeholder="Enter Lobby ID"
-                    disabled=move || is_loading.get()
-                    class="lobby-input"
-                />
                 <button
-                    on:click=join_lobby_action
-                    disabled=move || is_loading.get() ||
-                                  input_lobby_id.get().trim().is_empty() ||
-                                  player_name.get().trim().is_empty()
-                    class="join-lobby-btn"
+                    on:click=create_lobby_action
+                    disabled=move || is_loading.get() || player_name.get().trim().is_empty()
+                    class="btn-primary w-full text-lg"
                 >
-                    "Join Game"
+                    "Create New Game"
                 </button>
-            </div>
-        </div>
 
-        <StatusMessage status=status />
-        <GameInstructions />
+                <div class="flex gap-3 flex-col sm:flex-row">
+                    <input
+                        type="text"
+                        value=move || input_lobby_id.get()
+                        on:input=move |ev| set_input_lobby_id.set(event_target_value(&ev))
+                        on:keydown=handle_key_press
+                        placeholder="Enter Lobby ID"
+                        disabled=move || is_loading.get()
+                        class="input-field flex-1"
+                    />
+                    <button
+                        on:click=join_lobby_action
+                        disabled=move || is_loading.get() ||
+                                      input_lobby_id.get().trim().is_empty() ||
+                                      player_name.get().trim().is_empty()
+                        class="btn-secondary whitespace-nowrap"
+                    >
+                        "Join Game"
+                    </button>
+                </div>
+            </div>
+
+            <StatusMessage status=status />
+            <GameInstructions />
+        </div>
     }
 }

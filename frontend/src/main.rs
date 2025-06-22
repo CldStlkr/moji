@@ -28,9 +28,9 @@ fn App() -> impl IntoView {
     };
 
     view! {
-        <div class="app-container">
-            <header>
-                <h1>"文字"</h1>
+        <div class="max-w-4xl mx-auto p-5">
+            <header class="text-center mb-8">
+                <h1 class="text-4xl font-bold text-blue-500">"文字"</h1>
             </header>
             <main>
                 <Show
@@ -46,7 +46,7 @@ fn App() -> impl IntoView {
                     <LobbyComponent on_lobby_joined=handle_lobby_joined />
                 </Show>
             </main>
-            <footer>
+            <footer class="text-center mt-8 pt-4 border-t border-gray-200 text-gray-600 text-sm">
                 <p>"Learn Japanese Kanji through word recognition"</p>
             </footer>
         </div>

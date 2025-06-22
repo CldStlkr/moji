@@ -51,7 +51,7 @@ where
     };
 
     view! {
-        <div class="lobby-container">
+        <div class="max-w-2xl mx-auto my-8">
             <Show
                 when=move || !in_lobby.get()
                 fallback=move || view! {
