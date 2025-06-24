@@ -2,6 +2,7 @@
 use crate::{
     api::{create_lobby, join_lobby},
     error::{get_user_friendly_message, log_error},
+    persistence::SessionData,
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -56,6 +57,14 @@ where
                     if lobby_id.is_empty() || player_id.0.is_empty() {
                         set_status.set("Invalid response from server".to_string());
                     } else {
+                        let session = SessionData {
+                            lobby_id: lobby_id.clone(),
+                            player_id: player_id.clone(),
+                            player_name: name.clone(),
+                            is_in_game: false,
+                        };
+                        crate::persistence::save_session(&session);
+
                         set_status.set(format!("Created lobby: {}", lobby_id));
                         on_lobby_joined(lobby_id, player_id);
                     }
@@ -102,6 +111,14 @@ where
                     if player_id.0.is_empty() {
                         set_status.set("Invalid response from server".to_string());
                     } else {
+                        let session = SessionData {
+                            lobby_id: lobby_id.clone(),
+                            player_id: player_id.clone(),
+                            player_name: name.clone(),
+                            is_in_game: false,
+                        };
+                        crate::persistence::save_session(&session);
+
                         set_status.set(format!("Joined lobby: {}", lobby_id));
                         on_lobby_joined(lobby_id, player_id);
                     }

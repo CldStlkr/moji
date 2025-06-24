@@ -11,7 +11,12 @@ serde_json = "1.0"
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.50"
 js-sys = "0.3.77"
-web-sys = { version = "0.3", features = ["Window", "Navigator", "Clipboard"] }
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Navigator",
+  "Clipboard",
+  "Storage",
+] }
 uuid = { version = "1.17.0", features = ["v4", "js"] }
 gloo-net = "0.6.0"
 gloo-timers = { version = "0.3.0", features = ["futures"] }
