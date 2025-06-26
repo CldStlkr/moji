@@ -4,7 +4,7 @@ use crate::error::{parse_error_response, ClientError};
 use gloo_net::http::Request;
 use shared::{
     CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
-    StartGameRequest, UpdateSettingsRequest, UserInput,
+    RestartGameRequest, StartGameRequest, UpdateSettingsRequest, UserInput,
 };
 const API_BASE: &str = "";
 
@@ -16,6 +16,18 @@ pub async fn create_lobby(request: JoinLobbyRequest) -> ApiResult<serde_json::Va
 
 pub async fn get_lobby_info(lobby_id: &str) -> ApiResult<LobbyInfo> {
     make_request::<(), _>("GET", format!("{}/lobby/{}/info", API_BASE, lobby_id), None).await
+}
+
+pub async fn restart_game(
+    lobby_id: &str,
+    request: RestartGameRequest,
+) -> ApiResult<serde_json::Value> {
+    make_request(
+        "POST",
+        format!("{}/lobby/{}/restart", API_BASE, lobby_id),
+        Some(&request),
+    )
+    .await
 }
 
 pub async fn update_lobby_settings(

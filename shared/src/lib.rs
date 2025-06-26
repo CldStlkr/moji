@@ -87,6 +87,7 @@ pub struct LobbyInfo {
     pub players: Vec<PlayerData>,
     pub settings: GameSettings,
     pub status: GameStatus,
+    pub winner: Option<PlayerId>,
 }
 
 /// Per-game tunables chosen by the leader.
@@ -95,6 +96,7 @@ pub struct GameSettings {
     pub difficulty_levels: Vec<String>,
     pub time_limit_seconds: Option<u32>,
     pub max_players: u32,
+    pub winning_score: u32,
 }
 
 impl Default for GameSettings {
@@ -109,6 +111,7 @@ impl Default for GameSettings {
             ],
             time_limit_seconds: None,
             max_players: 4,
+            winning_score: 1,
         }
     }
 }
@@ -131,6 +134,12 @@ pub struct UpdateSettingsRequest {
 /// Leader presses *Start*.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartGameRequest {
+    pub player_id: PlayerId,
+}
+
+/// Restart from end screen and take everyone back to pre-game lobby
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestartGameRequest {
     pub player_id: PlayerId,
 }
 

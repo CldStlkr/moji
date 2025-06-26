@@ -2,9 +2,9 @@
 use leptos::prelude::*;
 use shared::{LobbyInfo, PlayerId};
 
-mod lobby_join;
-mod lobby_management;
-mod lobby_polling;
+pub mod lobby_join;
+pub mod lobby_management;
+pub mod lobby_polling;
 
 use lobby_join::LobbyJoinComponent;
 use lobby_management::LobbyManagementComponent;

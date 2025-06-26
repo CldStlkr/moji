@@ -1,15 +1,23 @@
-use crate::api;
-use crate::components::player_scores::CompactPlayerScoresComponent;
+use crate::api::{self, get_lobby_info};
+use crate::components::{
+    game_over::GameOverComponent, player_scores::CompactPlayerScoresComponent,
+};
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use shared::{PlayerData, PlayerId, UserInput};
+use shared::{GameStatus, LobbyInfo, PlayerData, PlayerId, UserInput};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
-pub fn GameComponent<F>(lobby_id: String, player_id: PlayerId, on_exit_game: F) -> impl IntoView
+pub fn GameComponent<F1, F2>(
+    lobby_id: String,
+    player_id: PlayerId,
+    on_exit_game: F1,
+    on_return_to_lobby: F2,
+) -> impl IntoView
 where
-    F: Fn() + 'static + Copy,
+    F1: Fn() + 'static + Copy + Send + Sync,
+    F2: Fn() + 'static + Copy + Send + Sync,
 {
     let (kanji, set_kanji) = signal(String::new());
     let (word, set_word) = signal(String::new());
@@ -20,12 +28,31 @@ where
     let (error_message, set_error_message) = signal(String::new());
     let (is_polling, set_is_polling) = signal(true);
     let (all_players, set_all_players) = signal::<Vec<PlayerData>>(Vec::new()); // Add this
+    let (lobby_info, set_lobby_info) = signal::<Option<LobbyInfo>>(None); // Add this
 
     let input_ref = NodeRef::<html::Input>::new();
 
     // Store signals for use in async contexts
     let (lobby_id_signal, _) = signal(lobby_id.clone());
     let (player_id_signal, _) = signal(player_id.clone());
+
+    let check_game_status = move || {
+        let lobby_id = lobby_id_signal.get();
+        spawn_local(async move {
+            if let Ok(info) = get_lobby_info(&lobby_id).await {
+                match info.status {
+                    GameStatus::Finished => {
+                        set_lobby_info.set(Some(info));
+                    }
+                    GameStatus::Lobby => {
+                        set_is_polling.set(false);
+                        on_return_to_lobby();
+                    }
+                    GameStatus::Playing => {}
+                }
+            }
+        });
+    };
 
     // Updated polling to get all player data
     let start_kanji_polling = move || {
@@ -87,11 +114,12 @@ where
                         set_all_players.set(players_data);
                     }
                 }
+
+                check_game_status();
             }
         });
     };
 
-    // Rest of your existing functions remain the same...
     let perform_submit = move || {
         let current_word = word.get();
         let current_kanji = kanji.get();
@@ -140,7 +168,6 @@ where
         });
     };
 
-    // Your existing Effect, submit_word, handle_key_press, handle_exit_game, copy_lobby_id functions...
     Effect::new(move |_| {
         let lobby_id = lobby_id_signal.get();
         let player_id = player_id_signal.get();
@@ -228,110 +255,126 @@ where
     };
 
     view! {
-        <div class="max-w-6xl mx-auto my-8 p-8 bg-white rounded-lg shadow-lg">
-            // Game Header
-            <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
-                <h2 class="text-2xl font-bold text-gray-800">"Kanji Game"</h2>
-                <div class="flex items-center gap-4 flex-wrap">
-                    <div class="bg-blue-50 px-3 py-1 rounded-full text-sm text-blue-700 flex items-center whitespace-nowrap">
-                        "Player: " <span class="font-semibold ml-1">{move || player_name.get()}</span>
-                    </div>
-                    <div class="text-xl font-bold text-blue-500">
-                        "Score: " {move || score.get()}
-                    </div>
-                    <button
-                        on:click=handle_exit_game
-                        class="bg-transparent hover:bg-gray-50 text-gray-600 border border-gray-400 font-medium py-2 px-4 rounded transition-colors hover:-translate-y-0.5 active:translate-y-0.5"
-                    >
-                        "Exit Game"
-                    </button>
-                </div>
-            </div>
-
-            // Lobby Info
-            <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 rounded text-sm">
-                <span class="text-gray-700">"Lobby ID:"</span>
-                <span class="font-bold tracking-wider text-blue-600">{lobby_id.clone()}</span>
-                <button
-                    on:click=copy_lobby_id
-                    class="ml-2 px-1 py-0.5 text-xs font-medium bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                    title="Copy Lobby ID"
-                >
-                    "Copy"
-                </button>
-            </div>
-
-            // Game Layout with Sidebar
-            <div class="flex gap-8 flex-col lg:flex-row">
-                // Main Game Area
-                <div class="flex-1 space-y-8">
-                    // Big Kanji Display Box
-                        <div class="flex justify-center items-center bg-gray-100 rounded-lg border-2 border-gray-300" style="height: 320px;">
-                            <Show
-                                when=move || is_loading.get()
-                                fallback=move || view! {
-                                    <div class="text-9xl leading-none text-gray-800 kanji-font select-none">
-                                        {move || kanji.get()}
-                                    </div>
-                                }
+        <Show
+            when=move || lobby_info.get().map(|info| matches!(info.status, GameStatus::Finished)).unwrap_or(false)
+            fallback=move || view! {
+                // Regular game UI
+                <div class="max-w-6xl mx-auto my-8 p-8 bg-white rounded-lg shadow-lg">
+                    // Game Header
+                    <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                        <h2 class="text-2xl font-bold text-gray-800">"Kanji Game"</h2>
+                        <div class="flex items-center gap-4 flex-wrap">
+                            <div class="bg-blue-50 px-3 py-1 rounded-full text-sm text-blue-700 flex items-center whitespace-nowrap">
+                                "Player: " <span class="font-semibold ml-1">{move || player_name.get()}</span>
+                            </div>
+                            <div class="text-xl font-bold text-blue-500">
+                                "Score: " {move || score.get()}
+                            </div>
+                            <button
+                                on:click=handle_exit_game
+                                class="bg-transparent hover:bg-gray-50 text-gray-600 border border-gray-400 font-medium py-2 px-4 rounded transition-colors hover:-translate-y-0.5 active:translate-y-0.5"
                             >
-                                <div class="text-lg text-gray-500">"Loading..."</div>
-                            </Show>
+                                "Exit Game"
+                            </button>
                         </div>
+                    </div>
 
-                    // Input Area
-                    <div class="space-y-4">
-                        <input
-                            node_ref=input_ref
-                            type="text"
-                            value=move || word.get()
-                            on:input=move |ev| set_word.set(event_target_value(&ev))
-                            on:keydown=handle_key_press
-                            placeholder="Enter a Japanese word with this kanji"
-                            disabled=move || is_loading.get()
-                            class="w-full p-3 text-lg border-2 border-gray-300 rounded focus:border-blue-500 focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                        />
-
+                    // Lobby Info
+                    <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 rounded text-sm">
+                        <span class="text-gray-700">"Lobby ID:"</span>
+                        <span class="font-bold tracking-wider text-blue-600">{lobby_id.clone()}</span>
                         <button
-                            on:click=submit_word
-                            disabled=move || is_loading.get() || word.get().trim().is_empty() || kanji.get().is_empty()
-                            class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-5 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:transform-none"
+                            on:click=copy_lobby_id
+                            class="ml-2 px-1 py-0.5 text-xs font-medium bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                            title="Copy Lobby ID"
                         >
-                            "Submit"
+                            "Copy"
                         </button>
                     </div>
 
-                    // Result Message
-                    <Show when=move || !result.get().is_empty()>
-                        <div class=get_result_class>
-                            {move || result.get()}
-                        </div>
-                    </Show>
+                    // Game Layout with Sidebar
+                    <div class="flex gap-8 flex-col lg:flex-row">
+                        // Main Game Area
+                        <div class="flex-1 space-y-8">
+                            // Big Kanji Display Box
+                            <div class="flex justify-center items-center bg-gray-100 rounded-lg border-2 border-gray-300" style="height: 320px;">
+                                <Show
+                                    when=move || is_loading.get()
+                                    fallback=move || view! {
+                                        <div class="text-9xl leading-none text-gray-800 kanji-font select-none">
+                                            {move || kanji.get()}
+                                        </div>
+                                    }
+                                >
+                                    <div class="text-lg text-gray-500">"Loading..."</div>
+                                </Show>
+                            </div>
 
-                    // Error Message
-                    <Show when=move || !error_message.get().is_empty()>
-                        <div class="p-4 rounded bg-red-100 text-red-700 text-center font-medium">
-                            {move || error_message.get()}
-                        </div>
-                    </Show>
+                            // Input Area
+                            <div class="space-y-4">
+                                <input
+                                    node_ref=input_ref
+                                    type="text"
+                                    value=move || word.get()
+                                    on:input=move |ev| set_word.set(event_target_value(&ev))
+                                    on:keydown=handle_key_press
+                                    placeholder="Enter a Japanese word with this kanji"
+                                    disabled=move || is_loading.get()
+                                    class="w-full p-3 text-lg border-2 border-gray-300 rounded focus:border-blue-500 focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                />
 
-                    // Game Instructions
-                    <div class="mt-8 pt-6 border-t border-gray-200 text-gray-600 text-sm">
-                        <p class="mb-2">"Type a Japanese word containing the displayed kanji."</p>
-                        <p>"Click \"Submit\" to check your answer."</p>
+                                <button
+                                    on:click=submit_word
+                                    disabled=move || is_loading.get() || word.get().trim().is_empty() || kanji.get().is_empty()
+                                    class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-5 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:transform-none"
+                                >
+                                    "Submit"
+                                </button>
+                            </div>
+
+                            // Result Message
+                            <Show when=move || !result.get().is_empty()>
+                                <div class=get_result_class>
+                                    {move || result.get()}
+                                </div>
+                            </Show>
+
+                            // Error Message
+                            <Show when=move || !error_message.get().is_empty()>
+                                <div class="p-4 rounded bg-red-100 text-red-700 text-center font-medium">
+                                    {move || error_message.get()}
+                                </div>
+                            </Show>
+
+                            // Game Instructions
+                            <div class="mt-8 pt-6 border-t border-gray-200 text-gray-600 text-sm">
+                                <p class="mb-2">"Type a Japanese word containing the displayed kanji."</p>
+                                <p>"Click \"Submit\" to check your answer."</p>
+                            </div>
+                        </div>
+
+                        // Scores Sidebar (KEPT!)
+                        <div class="w-full lg:w-64 flex-shrink-0">
+                            <Show when=move || !all_players.get().is_empty()>
+                                <CompactPlayerScoresComponent
+                                    players=all_players.get()
+                                    current_player_id=player_id_signal
+                                />
+                            </Show>
+                        </div>
                     </div>
                 </div>
-
-                // Scores Sidebar (KEPT!)
-                <div class="w-full lg:w-64 flex-shrink-0">
-                    <Show when=move || !all_players.get().is_empty()>
-                        <CompactPlayerScoresComponent
-                            players=all_players.get()
-                            current_player_id=player_id_signal
-                        />
-                    </Show>
-                </div>
-            </div>
-        </div>
+            }
+        >
+            // Game Over Screen
+            {move || lobby_info.get().map(|info| view! {
+                <GameOverComponent
+                    lobby_info=info
+                    current_player_id=player_id_signal.get()
+                    on_leave_game=on_exit_game
+                    on_return_to_lobby=on_return_to_lobby
+                />
+            })}
+        </Show>
     }
 }

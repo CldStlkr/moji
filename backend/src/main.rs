@@ -5,7 +5,7 @@ use axum::{
 use moji::{
     api::{
         check_word, create_lobby, generate_new_kanji, get_kanji, get_lobby_info, get_lobby_players,
-        get_player_info, join_lobby, start_game, update_lobby_settings,
+        get_player_info, join_lobby, restart_game, start_game, update_lobby_settings,
     },
     db::init_db_pool,
     AppState,
@@ -62,15 +62,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build application router with updated routes
     let app = Router::new()
         .route("/lobby/create", post(create_lobby))
-        .route("/lobby/join/{lobby_id}", post(join_lobby)) // Changed to POST
-        .route("/player/{lobby_id}/{player_id}", get(get_player_info)) // New endpoint
-        .route("/lobby/players/{lobby_id}", get(get_lobby_players)) // New endpoint for leaderboard
+        .route("/lobby/join/{lobby_id}", post(join_lobby))
+        .route("/player/{lobby_id}/{player_id}", get(get_player_info))
+        .route("/lobby/players/{lobby_id}", get(get_lobby_players))
         .route("/kanji/{lobby_id}", get(get_kanji))
         .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
         .route("/check_word/{lobby_id}", post(check_word))
-        .route("/lobby/{lobby_id}/info", get(get_lobby_info)) // New
-        .route("/lobby/{lobby_id}/settings", post(update_lobby_settings)) // New
-        .route("/lobby/{lobby_id}/start", post(start_game)) // New
+        .route("/lobby/{lobby_id}/info", get(get_lobby_info))
+        .route("/lobby/{lobby_id}/settings", post(update_lobby_settings))
+        .route("/lobby/{lobby_id}/start", post(start_game))
+        .route("/lobby/{lobby_id}/restart", post(restart_game))
         .with_state(app_state)
         .layer(
             ServiceBuilder::new()

@@ -8,8 +8,8 @@ use axum::{
 };
 use serde_json::json;
 use shared::{
-    CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
-    StartGameRequest, UpdateSettingsRequest, UserInput,
+    CheckWordResponse, GameStatus, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
+    RestartGameRequest, StartGameRequest, UpdateSettingsRequest, UserInput,
 };
 use std::sync::Arc;
 
@@ -154,6 +154,18 @@ pub async fn get_lobby_players(
 }
 
 #[debug_handler]
+pub async fn restart_game(
+    State(app_state): State<Arc<AppState>>,
+    Path(lobby_id): Path<String>,
+    Json(request): Json<RestartGameRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let lobby = get_lobby(&app_state, &lobby_id)?;
+    lobby.restart_game(&request.player_id)?;
+
+    Ok(Json(json!({"message": "Game restarted successfully"})))
+}
+
+#[debug_handler]
 pub async fn get_kanji(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,
@@ -191,6 +203,20 @@ pub async fn check_word(
 ) -> Result<Json<CheckWordResponse>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
 
+    let game_status = *lobby
+        .game_status
+        .lock()
+        .map_err(|e| AppError::LockError(e.to_string()))?;
+
+    if game_status != GameStatus::Playing {
+        return Ok(Json(CheckWordResponse {
+            message: "Game is not in progress".to_string(),
+            score: lobby.get_player_score(&input.player_id)?,
+            error: (Some("Game has ended".to_string())),
+            kanji: None,
+        }));
+    }
+
     let word_list = &lobby.word_list;
     let input_word = input.word.trim();
     let input_kanji = input.kanji.trim();
@@ -202,8 +228,18 @@ pub async fn check_word(
     let (message, new_kanji) = if good_kanji && good_word {
         // Update the specific player's score
         let _ = lobby.increment_player_score(&player_id)?;
-        let new_kanji = lobby.generate_random_kanji()?;
-        ("Good guess!".to_string(), Some(new_kanji))
+        let game_status = *lobby
+            .game_status
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+
+        if game_status == GameStatus::Finished {
+            // Game just ended with this guess
+            ("You won the game!".to_string(), None)
+        } else {
+            let new_kanji = lobby.generate_random_kanji()?;
+            ("Good guess!".to_string(), Some(new_kanji))
+        }
     } else if good_kanji {
         (
             "Bad Guess: Correct kanji, but not a valid word.".to_string(),

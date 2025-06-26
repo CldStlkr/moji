@@ -68,6 +68,7 @@ pub struct LobbyState {
     pub settings: Shared<GameSettings>,
     pub game_status: Shared<GameStatus>,
     pub current_kanji: Shared<Option<String>>,
+    pub winner: Shared<Option<PlayerId>>,
 }
 
 impl LobbyState {
@@ -98,6 +99,7 @@ impl LobbyState {
             settings: Shared::new(GameSettings::default()),
             game_status: Shared::new(GameStatus::Lobby),
             current_kanji: Shared::new(None),
+            winner: Shared::new(None),
         })
     }
 
@@ -155,12 +157,18 @@ impl LobbyState {
             })
             .collect();
 
+        let winner = self
+            .winner
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+
         Ok(shared::LobbyInfo {
             lobby_id: lobby_id.to_string(),
             leader_id: leader.clone(),
             players: api_players,
             settings: settings.clone(),
             status: *status,
+            winner: winner.clone(),
         })
     }
 
@@ -265,7 +273,52 @@ impl LobbyState {
 
         player.score += 1;
 
-        Ok(player.score)
+        let new_score = player.score;
+        let player_id_clone = player_id.clone();
+
+        // Release players lock before checking winner
+        drop(players);
+
+        self.check_for_winner(player_id_clone, new_score)?;
+
+        Ok(new_score)
+    }
+
+    pub fn restart_game(&self, player_id: &PlayerId) -> Result<()> {
+        if !self.is_leader(player_id)? {
+            return Err(AppError::AuthError(
+                "Only lobby leader can restart the game".to_string(),
+            ));
+        }
+
+        // Reset game state
+        let mut status = self
+            .game_status
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+        let mut winner = self
+            .winner
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+        let mut current_kanji = self
+            .current_kanji
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+        let mut players = self
+            .players
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+
+        // Reset player scores
+        for player in players.iter_mut() {
+            player.score = 0;
+        }
+
+        *status = GameStatus::Lobby;
+        *winner = None;
+        *current_kanji = None;
+
+        Ok(())
     }
 
     // Get all players and scores (for a leaderboard)
@@ -297,6 +350,30 @@ impl LobbyState {
             .map_err(|e| AppError::LockError(e.to_string()))?;
         *current_kanji = Some(new_kanji.clone());
         Ok(new_kanji)
+    }
+
+    fn check_for_winner(&self, player_id: PlayerId, score: u32) -> Result<()> {
+        let settings = self
+            .settings
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+
+        if score >= settings.winning_score {
+            let mut status = self
+                .game_status
+                .lock()
+                .map_err(|e| AppError::LockError(e.to_string()))?;
+
+            let mut winner = self
+                .winner
+                .lock()
+                .map_err(|e| AppError::LockError(e.to_string()))?;
+
+            *status = GameStatus::Finished;
+            *winner = Some(player_id);
+        }
+
+        Ok(())
     }
 }
 
@@ -518,6 +595,7 @@ mod tests {
             difficulty_levels: vec!["N5".to_string(), "N4".to_string()],
             time_limit_seconds: Some(60),
             max_players: 10,
+            winning_score: 10,
         };
 
         // Leader can update settings
