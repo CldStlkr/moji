@@ -2,10 +2,9 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 
-mod api;
-mod components;
-mod error;
-mod persistence;
+use moji_frontend::api;
+use moji_frontend::components;
+use moji_frontend::persistence;
 
 use components::game::GameComponent;
 use components::lobby::LobbyComponent;
