@@ -15,14 +15,23 @@ pub struct SessionData {
     pub is_in_game: bool,
 }
 
+impl SessionData {
+    pub fn is_valid(&self) -> bool {
+        !self.lobby_id.trim().is_empty() && !self.player_id.trim().is_empty()
+    }
+}
+
 fn get_storage() -> Option<Storage> {
     web_sys::window()?.local_storage().ok()?
 }
 
 pub fn save_session(session: &SessionData) {
+    if !session.is_valid() {
+        return;
+    }
     if let Some(storage) = get_storage() {
         let _ = storage.set_item(STORAGE_KEY_LOBBY_ID, &session.lobby_id);
-        let _ = storage.set_item(STORAGE_KEY_PLAYER_ID, &session.player_id.0);
+        let _ = storage.set_item(STORAGE_KEY_PLAYER_ID, &session.player_id);
         let _ = storage.set_item(STORAGE_KEY_PLAYER_NAME, &session.player_name);
         let _ = storage.set_item(STORAGE_KEY_IS_IN_GAME, &session.is_in_game.to_string());
     }
@@ -40,12 +49,14 @@ pub fn load_session() -> Option<SessionData> {
         .and_then(|s| s.parse::<bool>().ok())
         .unwrap_or(false);
 
-    Some(SessionData {
+    let session = SessionData {
         lobby_id,
         player_id: PlayerId(player_id),
         player_name,
         is_in_game,
-    })
+    };
+
+    session.is_valid().then_some(session)
 }
 
 pub fn clear_session() {
@@ -74,7 +85,7 @@ pub fn use_session_persistence(
         };
 
         // Only save if we have valid data
-        if !session.lobby_id.is_empty() && !session.player_id.0.is_empty() {
+        if session.is_valid() {
             save_session(&session);
         }
     });
