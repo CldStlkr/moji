@@ -22,8 +22,8 @@ pub fn LobbyJoinComponent<F>(
 where
     F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
 {
-    let (input_lobby_id, set_input_lobby_id) = signal(String::new());
-    let (player_name, set_player_name) = signal(String::new());
+    let input_lobby_id = RwSignal::new(String::new());
+    let player_name = RwSignal::new(String::new());
 
     let create_lobby_action = move |_: ev::MouseEvent| {
         let name = player_name.get();
@@ -152,7 +152,7 @@ where
                         type="text"
                         id="player-name"
                         value=move || player_name.get()
-                        on:input=move |ev| set_player_name.set(event_target_value(&ev))
+                        on:input=move |ev| player_name.set(event_target_value(&ev))
                         placeholder="Enter your name"
                         disabled=move || is_loading.get()
                         class="input-field w-full"
@@ -171,7 +171,7 @@ where
                     <input
                         type="text"
                         value=move || input_lobby_id.get()
-                        on:input=move |ev| set_input_lobby_id.set(event_target_value(&ev))
+                        on:input=move |ev| input_lobby_id.set(event_target_value(&ev))
                         on:keydown=handle_key_press
                         placeholder="Enter Lobby ID"
                         disabled=move || is_loading.get()
