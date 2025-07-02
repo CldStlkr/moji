@@ -11,15 +11,15 @@ pub fn GameComponent<F>(lobby_id: String, player_id: PlayerId, on_exit_game: F) 
 where
     F: Fn() + 'static + Copy,
 {
-    let (kanji, set_kanji) = signal(String::new());
-    let (word, set_word) = signal(String::new());
-    let (result, set_result) = signal(String::new());
-    let (score, set_score) = signal(0u32);
-    let (player_name, set_player_name) = signal(String::new());
-    let (is_loading, set_is_loading) = signal(false);
-    let (error_message, set_error_message) = signal(String::new());
-    let (is_polling, set_is_polling) = signal(true);
-    let (all_players, set_all_players) = signal::<Vec<PlayerData>>(Vec::new()); // Add this
+    let kanji = RwSignal::new(String::new());
+    let word = RwSignal::new(String::new());
+    let result = RwSignal::new(String::new());
+    let score = RwSignal::new(0u32);
+    let player_name = RwSignal::new(String::new());
+    let is_loading = RwSignal::new(false);
+    let error_message = RwSignal::new(String::new());
+    let is_polling = RwSignal::new(true);
+    let all_players = RwSignal::<Vec<PlayerData>>::new(Vec::new()); // Add this
 
     let input_ref = NodeRef::<html::Input>::new();
 
@@ -45,9 +45,9 @@ where
                         let new_kanji = prompt.kanji;
                         // Only update if kanji has changed
                         if new_kanji != kanji.get() && !new_kanji.is_empty() {
-                            set_kanji.set(new_kanji);
+                            kanji.set(new_kanji);
                             // Clear the result when new kanji appears
-                            set_result.set(String::new());
+                            result.set(String::new());
                         }
                     }
                     Err(_) => {
@@ -79,12 +79,12 @@ where
 
                                 // Update current player's score if it matches
                                 if player_id_parsed == player_id {
-                                    set_score.set(score_val as u32);
+                                    score.set(score_val as u32);
                                 }
                             }
                         }
 
-                        set_all_players.set(players_data);
+                        all_players.set(players_data);
                     }
                 }
             }
@@ -103,8 +103,8 @@ where
                 return;
             }
 
-            set_is_loading.set(true);
-            set_error_message.set(String::new());
+            is_loading.set(true);
+            error_message.set(String::new());
 
             let user_input = UserInput {
                 word: current_word.trim().to_string(),
@@ -114,12 +114,12 @@ where
 
             match api::check_word(&lobby_id, user_input).await {
                 Ok(response) => {
-                    set_result.set(response.message);
-                    set_score.set(response.score);
-                    set_word.set(String::new());
+                    result.set(response.message);
+                    score.set(response.score);
+                    word.set(String::new());
 
                     if let Some(new_kanji) = response.kanji {
-                        set_kanji.set(new_kanji);
+                        kanji.set(new_kanji);
                     }
 
                     if let Some(input) = input_ref.get() {
@@ -128,15 +128,15 @@ where
                     }
                 }
                 Err(e) => {
-                    set_error_message.set(format!("Could not submit word: {}", e));
-                    set_word.set(String::new());
+                    error_message.set(format!("Could not submit word: {}", e));
+                    word.set(String::new());
                     if let Some(input) = input_ref.get() {
                         input.set_value("");
                     }
                 }
             }
 
-            set_is_loading.set(false);
+            is_loading.set(false);
         });
     };
 
@@ -147,30 +147,30 @@ where
         let input_ref = input_ref;
 
         spawn_local(async move {
-            set_is_loading.set(true);
-            set_error_message.set(String::new());
-            set_result.set(String::new());
+            is_loading.set(true);
+            error_message.set(String::new());
+            result.set(String::new());
 
             match api::get_player_info(&lobby_id, &player_id).await {
                 Ok(info) => {
-                    set_player_name.set(info.name);
-                    set_score.set(info.score);
+                    player_name.set(info.name);
+                    score.set(info.score);
                 }
                 Err(e) => {
-                    set_error_message.set(format!("Could not fetch player info: {}", e));
+                    error_message.set(format!("Could not fetch player info: {}", e));
                 }
             }
 
             match api::get_kanji(&lobby_id).await {
                 Ok(prompt) => {
-                    set_kanji.set(prompt.kanji);
+                    kanji.set(prompt.kanji);
                 }
                 Err(e) => {
-                    set_error_message.set(format!("Could not fetch kanji: {}", e));
+                    error_message.set(format!("Could not fetch kanji: {}", e));
                 }
             }
 
-            set_is_loading.set(false);
+            is_loading.set(false);
 
             if let Some(input) = input_ref.get() {
                 let _ = input.focus();
@@ -181,7 +181,7 @@ where
     });
 
     on_cleanup(move || {
-        set_is_polling.set(false);
+        is_polling.set(false);
     });
 
     let submit_word = move |_: ev::MouseEvent| {
@@ -195,7 +195,7 @@ where
     };
 
     let handle_exit_game = move |_: ev::MouseEvent| {
-        set_is_polling.set(false);
+        is_polling.set(false);
         on_exit_game();
     };
 
@@ -234,7 +234,8 @@ where
                 <h2 class="text-2xl font-bold text-gray-800">"Kanji Game"</h2>
                 <div class="flex items-center gap-4 flex-wrap">
                     <div class="bg-blue-50 px-3 py-1 rounded-full text-sm text-blue-700 flex items-center whitespace-nowrap">
-                        "Player: " <span class="font-semibold ml-1">{move || player_name.get()}</span>
+                        "Player: "
+                        <span class="font-semibold ml-1">{move || player_name.get()}</span>
                     </div>
                     <div class="text-xl font-bold text-blue-500">
                         "Score: " {move || score.get()}
@@ -266,18 +267,23 @@ where
                 // Main Game Area
                 <div class="flex-1 space-y-8">
                     // Big Kanji Display Box
-                        <div class="flex justify-center items-center bg-gray-100 rounded-lg border-2 border-gray-300" style="height: 320px;">
-                            <Show
-                                when=move || is_loading.get()
-                                fallback=move || view! {
+                    <div
+                        class="flex justify-center items-center bg-gray-100 rounded-lg border-2 border-gray-300"
+                        style="height: 320px;"
+                    >
+                        <Show
+                            when=move || is_loading.get()
+                            fallback=move || {
+                                view! {
                                     <div class="text-9xl leading-none text-gray-800 kanji-font select-none">
                                         {move || kanji.get()}
                                     </div>
                                 }
-                            >
-                                <div class="text-lg text-gray-500">"Loading..."</div>
-                            </Show>
-                        </div>
+                            }
+                        >
+                            <div class="text-lg text-gray-500">"Loading..."</div>
+                        </Show>
+                    </div>
 
                     // Input Area
                     <div class="space-y-4">
@@ -285,7 +291,7 @@ where
                             node_ref=input_ref
                             type="text"
                             value=move || word.get()
-                            on:input=move |ev| set_word.set(event_target_value(&ev))
+                            on:input=move |ev| word.set(event_target_value(&ev))
                             on:keydown=handle_key_press
                             placeholder="Enter a Japanese word with this kanji"
                             disabled=move || is_loading.get()
@@ -294,7 +300,10 @@ where
 
                         <button
                             on:click=submit_word
-                            disabled=move || is_loading.get() || word.get().trim().is_empty() || kanji.get().is_empty()
+                            disabled=move || {
+                                is_loading.get() || word.get().trim().is_empty()
+                                    || kanji.get().is_empty()
+                            }
                             class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-5 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:transform-none"
                         >
                             "Submit"
@@ -303,9 +312,7 @@ where
 
                     // Result Message
                     <Show when=move || !result.get().is_empty()>
-                        <div class=get_result_class>
-                            {move || result.get()}
-                        </div>
+                        <div class=get_result_class>{move || result.get()}</div>
                     </Show>
 
                     // Error Message

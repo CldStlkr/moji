@@ -9,6 +9,9 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+
+use core::ops::Deref;
+
 use serde::{Deserialize, Serialize};
 
 /// A prompt sent from the server to each client at the start of a round.
@@ -41,6 +44,13 @@ impl core::str::FromStr for PlayerId {
 impl core::fmt::Display for PlayerId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl Deref for PlayerId {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

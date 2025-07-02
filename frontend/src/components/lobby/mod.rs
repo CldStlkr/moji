@@ -54,17 +54,19 @@ where
         <div class="max-w-2xl mx-auto my-8">
             <Show
                 when=move || !in_lobby.get()
-                fallback=move || view! {
-                    <LobbyManagementComponent
-                        lobby_info=lobby_info
-                        current_lobby_id=current_lobby_id
-                        current_player_id=current_player_id
-                        _is_loading=is_loading
-                        set_is_loading=set_is_loading
-                        _status=status
-                        set_status=set_status
-                        on_leave_lobby=leave_lobby
-                    />
+                fallback=move || {
+                    view! {
+                        <LobbyManagementComponent
+                            lobby_info=lobby_info
+                            current_lobby_id=current_lobby_id
+                            current_player_id=current_player_id
+                            _is_loading=is_loading
+                            set_is_loading=set_is_loading
+                            _status=status
+                            set_status=set_status
+                            on_leave_lobby=leave_lobby
+                        />
+                    }
                 }
             >
                 <LobbyJoinComponent

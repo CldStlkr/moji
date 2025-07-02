@@ -67,27 +67,30 @@ where
 
     view! {
         <div class="max-w-2xl mx-auto my-8 p-8 bg-white rounded-lg shadow-lg">
-            <LobbyHeader
-                lobby_id=current_lobby_id
-                on_copy_id=copy_lobby_id
-            />
+            <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id />
 
             <Show
                 when=move || lobby_info.get().is_some()
-                fallback=|| view! { <div class="text-lg text-gray-500 text-center">"Loading lobby info..."</div> }
+                fallback=|| {
+                    view! {
+                        <div class="text-lg text-gray-500 text-center">"Loading lobby info..."</div>
+                    }
+                }
             >
                 {move || {
-                    lobby_info.get().map(|info| {
-                        view! {
-                            <LobbyDetails
-                                lobby_info=info
-                                current_player_id=current_player_id
-                                is_leader=is_leader
-                                on_start_game=start_game_action
-                                on_leave_lobby=on_leave_lobby
-                            />
-                        }
-                    })
+                    lobby_info
+                        .get()
+                        .map(|info| {
+                            view! {
+                                <LobbyDetails
+                                    lobby_info=info
+                                    current_player_id=current_player_id
+                                    is_leader=is_leader
+                                    on_start_game=start_game_action
+                                    on_leave_lobby=on_leave_lobby
+                                />
+                            }
+                        })
                 }}
             </Show>
         </div>
@@ -103,7 +106,9 @@ where
         <div class="flex justify-between items-center mb-6">
             <h2 class="text-2xl font-bold text-gray-800">
                 "Lobby: "
-                <span class="font-mono font-bold tracking-wider text-blue-600">{lobby_id.get()}</span>
+                <span class="font-mono font-bold tracking-wider text-blue-600">
+                    {lobby_id.get()}
+                </span>
             </h2>
             <button
                 on:click=on_copy_id
@@ -172,26 +177,33 @@ fn PlayersList(
                 "Players (" {player_count} "/" {max_players} ")"
             </h3>
             <ul class="space-y-2">
-                {players.into_iter().map(|player| {
-                    let is_current = player.id == current_player_id.get();
-                    let is_leader = player.id == leader_id;
-                    view! {
-                        <li class=format!(
-                            "flex justify-between items-center p-3 rounded border-b border-gray-200 {}",
-                            if is_current { "bg-blue-50 font-semibold" } else { "" }
-                        )>
-                            <span class="font-medium">{player.name}</span>
-                            <div class="flex items-center gap-2">
-                                <Show when=move || is_leader>
-                                    <span class="text-lg" title="Lobby Leader">"👑"</span>
-                                </Show>
-                                <Show when=move || is_current>
-                                    <span class="text-sm text-blue-600 font-medium">"(You)"</span>
-                                </Show>
-                            </div>
-                        </li>
-                    }
-                }).collect_view()}
+                {players
+                    .into_iter()
+                    .map(|player| {
+                        let is_current = player.id == current_player_id.get();
+                        let is_leader = player.id == leader_id;
+                        view! {
+                            <li class=format!(
+                                "flex justify-between items-center p-3 rounded border-b border-gray-200 {}",
+                                if is_current { "bg-blue-50 font-semibold" } else { "" },
+                            )>
+                                <span class="font-medium">{player.name}</span>
+                                <div class="flex items-center gap-2">
+                                    <Show when=move || is_leader>
+                                        <span class="text-lg" title="Lobby Leader">
+                                            "👑"
+                                        </span>
+                                    </Show>
+                                    <Show when=move || is_current>
+                                        <span class="text-sm text-blue-600 font-medium">
+                                            "(You)"
+                                        </span>
+                                    </Show>
+                                </div>
+                            </li>
+                        }
+                    })
+                    .collect_view()}
             </ul>
         </div>
     }
@@ -212,10 +224,12 @@ where
         <div class="flex flex-col gap-4 my-6">
             <Show
                 when=is_leader
-                fallback=|| view! {
-                    <p class="text-center text-gray-600 italic py-4">
-                        "Waiting for leader to start the game..."
-                    </p>
+                fallback=|| {
+                    view! {
+                        <p class="text-center text-gray-600 italic py-4">
+                            "Waiting for leader to start the game..."
+                        </p>
+                    }
                 }
             >
                 <button
@@ -253,9 +267,7 @@ pub fn StatusMessage(status: ReadSignal<String>) -> impl IntoView {
                 } else {
                     format!("{} bg-gray-100 text-gray-700", base_classes)
                 }
-            }>
-                {move || status.get()}
-            </div>
+            }>{move || status.get()}</div>
         </Show>
     }
 }
@@ -268,7 +280,9 @@ pub fn GameInstructions() -> impl IntoView {
             <div class="space-y-2 text-gray-700">
                 <p>"Create a new game or join an existing one with a lobby ID."</p>
                 <p>"Once in a game, you'll be shown a kanji character."</p>
-                <p>"Type a Japanese word that contains that kanji and submit it to score points!"</p>
+                <p>
+                    "Type a Japanese word that contains that kanji and submit it to score points!"
+                </p>
             </div>
         </div>
     }
