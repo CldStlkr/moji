@@ -140,10 +140,14 @@ where
 
     view! {
         <div class="card max-w-2xl mx-auto my-8">
-            <h2 class="text-3xl font-bold text-gray-800 mb-8 text-center">"Join or Create a Game"</h2>
+            <h2 class="text-3xl font-bold text-gray-800 mb-8 text-center">
+                "Join or Create a Game"
+            </h2>
             <div class="space-y-6">
                 <div class="space-y-2">
-                    <label for="player-name" class="block font-semibold text-gray-800 text-lg">"Your Name:"</label>
+                    <label for="player-name" class="block font-semibold text-gray-800 text-lg">
+                        "Your Name:"
+                    </label>
                     <input
                         type="text"
                         id="player-name"
@@ -175,9 +179,10 @@ where
                     />
                     <button
                         on:click=join_lobby_action
-                        disabled=move || is_loading.get() ||
-                                      input_lobby_id.get().trim().is_empty() ||
-                                      player_name.get().trim().is_empty()
+                        disabled=move || {
+                            is_loading.get() || input_lobby_id.get().trim().is_empty()
+                                || player_name.get().trim().is_empty()
+                        }
                         class="btn-secondary whitespace-nowrap"
                     >
                         "Join Game"

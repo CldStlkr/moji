@@ -65,7 +65,7 @@ fn test_player_id() {
 
     // Test default
     let default_id = PlayerId::default();
-    assert_eq!(default_id, "");
+    assert_eq!(default_id, PlayerId("".to_string()));
 }
 
 // Test 4: Session data edge cases
