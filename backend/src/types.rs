@@ -41,12 +41,12 @@ impl<T> Shared<T> {
         Ok(f(&*guard))
     }
 
-    /// Get a mutable reference to the inner value, with automatic error conversion
-    pub fn lock_safe(&self) -> crate::types::Result<std::sync::MutexGuard<T>> {
-        self.0
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))
-    }
+    ///// Get a mutable reference to the inner value, with automatic error conversion
+    //pub fn lock_safe(&self) -> crate::types::Result<std::sync::MutexGuard<T>> {
+    //    self.0
+    //        .lock()
+    //        .map_err(|e| AppError::LockError(e.to_string()))
+    //}
 }
 
 // Deref implementation for drop-in compatibility with Arc<Mutex<T>>

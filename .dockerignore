@@ -1,5 +1,5 @@
 # Rust target directories
-target/
+**/target
 frontend/target/
 backend/target/
 
@@ -28,3 +28,11 @@ node_modules/
 
 # Documentation
 *.md
+
+**/dist
+**/node_modules
+**/*.rs.bk
+**/*.orig
+README.md
+**/.cargo/config.toml
+**/Cargo.lock.orig

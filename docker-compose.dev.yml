@@ -1,0 +1,70 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: kanji
+      POSTGRES_PASSWORD: kanji
+      POSTGRES_DB: kanji_game
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [kanji_network]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app/backend
+    environment:
+      DATABASE_URL: postgres://kanji:kanji@db:5432/kanji_game
+      RUST_LOG: debug
+      HOST: 0.0.0.0
+      PORT: 8080
+      SQLX_OFFLINE: "true"
+    command: cargo watch -w src -w ../shared/src -x 'run --bin moji-server'
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/app:cached
+      - cargo_registry:/usr/local/cargo/registry
+      - cargo_git:/usr/local/cargo/git
+      - target_backend:/app/target
+      - ./data:/app/data:ro
+    networks: [kanji_network]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app/
+    environment:
+      RUST_LOG: debug
+    command: >
+      sh -c "
+        cd frontend &&
+        bun install &&
+        bunx tailwindcss -i ./input.css -o ./styles.css --watch &
+        cd /app &&
+        trunk serve --config frontend/Trunk.toml --address 0.0.0.0 --port 3000 --open=false
+      "
+    ports:
+      - "3000:3000"
+    volumes:
+    - ./:/app:cached
+    - /app/frontend/node_modules
+    - cargo_registry:/usr/local/cargo/registry
+    - cargo_git:/usr/local/cargo/git
+    - target_frontend:/app/target
+    networks: [kanji_network]
+
+networks:
+  kanji_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  cargo_registry:
+  cargo_git:
+  target_backend:
+  target_frontend:

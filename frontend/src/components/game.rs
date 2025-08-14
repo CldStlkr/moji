@@ -17,6 +17,7 @@ where
     let score = RwSignal::new(0u32);
     let player_name = RwSignal::new(String::new());
     let is_loading = RwSignal::new(false);
+    let is_copied = RwSignal::new(false);
     let error_message = RwSignal::new(String::new());
     let is_polling = RwSignal::new(true);
     let all_players = RwSignal::<Vec<PlayerData>>::new(Vec::new()); // Add this
@@ -33,10 +34,10 @@ where
         let player_id = player_id_signal.get();
         spawn_local(async move {
             loop {
-                // Poll every 1 second for more responsive gameplay
+                // Poll every 1 second
                 gloo_timers::future::TimeoutFuture::new(1000).await;
 
-                if !is_polling.get() {
+                if !is_polling.get_untracked() {
                     break;
                 }
 
@@ -44,7 +45,7 @@ where
                     Ok(prompt) => {
                         let new_kanji = prompt.kanji;
                         // Only update if kanji has changed
-                        if new_kanji != kanji.get() && !new_kanji.is_empty() {
+                        if kanji.with_untracked(|k| k != &new_kanji) && !new_kanji.is_empty() {
                             kanji.set(new_kanji);
                             // Clear the result when new kanji appears
                             result.set(String::new());
@@ -91,7 +92,6 @@ where
         });
     };
 
-    // Rest of your existing functions remain the same...
     let perform_submit = move || {
         let current_word = word.get();
         let current_kanji = kanji.get();
@@ -140,7 +140,6 @@ where
         });
     };
 
-    // Your existing Effect, submit_word, handle_key_press, handle_exit_game, copy_lobby_id functions...
     Effect::new(move |_| {
         let lobby_id = lobby_id_signal.get();
         let player_id = player_id_signal.get();
@@ -205,7 +204,17 @@ where
             let window = web_sys::window().expect("global window");
             let navigator = window.navigator();
             let clipboard = navigator.clipboard();
-            let _ = wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await;
+            match wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await {
+                Ok(_) => {
+                    is_copied.set(true);
+
+                    gloo_timers::future::TimeoutFuture::new(1000).await;
+                    is_copied.set(false);
+                }
+                Err(_) => {
+                    leptos::logging::log!("Failed to copy to clipboard")
+                }
+            }
         });
     };
 
@@ -250,16 +259,23 @@ where
             </div>
 
             // Lobby Info
-            <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 rounded text-sm">
+            <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 rounded text-sm relative">
                 <span class="text-gray-700">"Lobby ID:"</span>
                 <span class="font-bold tracking-wider text-blue-600">{lobby_id.clone()}</span>
                 <button
                     on:click=copy_lobby_id
-                    class="ml-2 px-1 py-0.5 text-xs font-medium bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                    class="ml-2 px-1 py-0.5 text-xs font-medium bg-white border border-gray-300 rounded transition-all duration-200 hover:bg-blue-50 hover:border-blue-400 hover:shadow-sm active:scale-95 active:bg-blue-100"
                     title="Copy Lobby ID"
                 >
                     "Copy"
                 </button>
+
+                // Floating "Copied!" text using Show
+                <Show when=move || is_copied.get()>
+                    <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none">
+                        "Copied!"
+                    </div>
+                </Show>
             </div>
 
             // Game Layout with Sidebar
@@ -329,7 +345,7 @@ where
                     </div>
                 </div>
 
-                // Scores Sidebar (KEPT!)
+                // Scores Sidebar
                 <div class="w-full lg:w-64 flex-shrink-0">
                     <Show when=move || !all_players.get().is_empty()>
                         <CompactPlayerScoresComponent

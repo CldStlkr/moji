@@ -1,25 +1,42 @@
 [build]
 target = "index.html"
 release = false
+dist = "dist"
+public_url = "/"
 
 [watch]
 # Paths to watch. The `build.target`'s parent folder is watched by default.
-watch = ["src", "Cargo.toml"]
-# Paths to ignore.
-ignore = []
+watch = [
+  "src",
+  "../shared/src",
+  "index.html",
+  "input.css",
+  "tailwind.config.js",
+]
+ignore = ["dist", "node_modules"]
 
 [serve]
-# The address to use for the serve HTTP server.
-# Default: 127.0.0.1
-address = "127.0.0.1"
-# The port to use for the serve HTTP server.
-# Default: 8080
-port = 8000
-# Open the serve server base URL in the default browser.
-# Default: false
+address = "0.0.0.0"
+port = 8081
 open = false
+fallback_service = "index.html"
 
 [[proxy]]
-# This proxy setting forwards API requests to the backend server
-rewrite = "/api/"
-backend = "http://127.0.0.1:8080/"
+rewrite = "/lobby/"
+backend = "http://backend:8080/lobby/"
+
+[[proxy]]
+rewrite = "/player/"
+backend = "http://backend:8080/player/"
+
+[[proxy]]
+rewrite = "/kanji/"
+backend = "http://backend:8080/kanji/"
+
+[[proxy]]
+rewrite = "/new_kanji/"
+backend = "http://backend:8080/new_kanji/"
+
+[[proxy]]
+rewrite = "/check_word/"
+backend = "http://backend:8080/check_word/"
