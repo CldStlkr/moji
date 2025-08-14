@@ -3,7 +3,7 @@ services:
     image: docker.io/library/postgres:15
     restart: always
     environment:
-      POSTGRES_USER: kanji 
+      POSTGRES_USER: kanji
       POSTGRES_PASSWORD: kanji
       POSTGRES_DB: kanji_game
     ports:
@@ -16,7 +16,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.dev # For development
+      dockerfile: Dockerfile # For development
     restart: always
     depends_on:
       - db

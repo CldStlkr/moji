@@ -1,5 +1,22 @@
 @import "tailwindcss";
 
+/* Custom animations - moved outside of layers for Tailwind v4 compatibility */
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 @layer base {
   :root {
     --primary-color: #4a86e8;
@@ -12,7 +29,7 @@
     --error-color: #cc0000;
     --font-jp: 'Hiragino Kaku Gothic Pro', 'Meiryo', sans-serif;
   }
-  
+
   body {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     line-height: 1.6;
@@ -25,19 +42,19 @@
   .kanji-font {
     font-family: var(--font-jp);
   }
-  
+
   .btn-primary {
     @apply bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-5 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none;
   }
-  
+
   .btn-secondary {
     @apply bg-orange-300 hover:bg-orange-400 text-gray-800 font-semibold py-3 px-4 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none;
   }
-  
+
   .card {
     @apply bg-white rounded-lg shadow-lg p-8;
   }
-  
+
   .input-field {
     @apply p-3 border-2 border-gray-300 rounded-md text-base transition-colors focus:border-blue-500 focus:outline-none;
   }

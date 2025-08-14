@@ -13,11 +13,11 @@ FROM chef AS backend-builder
 WORKDIR /usr/src
 COPY --from=planner /usr/src/recipe.json recipe.json
 # Build dependencies first (cached layer)
-RUN cargo chef cook --release --recipe-path recipe.json --bin moji-server
+RUN cargo chef cook --recipe-path recipe.json --bin moji-server
 # Copy source and build
 COPY . .
 ENV SQLX_OFFLINE=true
-RUN cargo build --release --bin moji-server
+RUN cargo build --bin moji-server
 
 # Frontend build stage  
 FROM chef AS frontend-builder
@@ -38,17 +38,17 @@ RUN bun install
 
 # Build dependencies first (cached layer)
 WORKDIR /usr/src
-RUN cargo chef cook --release --recipe-path recipe.json --bin moji-frontend
+RUN cargo chef cook --recipe-path recipe.json --bin moji-frontend
 
 # Copy source and build
 COPY . .
 
-# Build CSS first using Bun with Tailwind v4 (with minification for production)
+# Build CSS first using Bun with Tailwind v4
 WORKDIR /usr/src/frontend
-RUN bunx tailwindcss -i ./input.css -o ./styles.css --minify
+RUN bunx tailwindcss -i ./input.css -o ./styles.css
 
-# Build the frontend (release build)
-RUN trunk build --release
+# Build the frontend
+RUN trunk build
 
 # Final stage
 FROM debian:bookworm-slim
@@ -56,13 +56,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=backend-builder /usr/src/target/release/moji-server /usr/local/bin/
+COPY --from=backend-builder /usr/src/target/debug/moji-server /usr/local/bin/
 COPY --from=backend-builder /usr/src/data /usr/local/data
 COPY --from=frontend-builder /usr/src/frontend/dist /usr/local/dist
 
 WORKDIR /usr/local
-ENV RUST_LOG=info
+ENV RUST_LOG=debug
 ENV RUST_BACKTRACE=1
-ENV PRODUCTION=1
+ENV PRODUCTION=0
 EXPOSE 8080
 CMD ["/usr/local/bin/moji-server"]
