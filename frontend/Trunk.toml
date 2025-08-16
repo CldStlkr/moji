@@ -4,12 +4,6 @@ release = true
 dist = "dist"
 public_url = "/"
 
-
-# !!!TEMPORARY!!!
-# Disable wasm-opt to avoid download issues during Docker build
-[tools]
-wasm_opt = "0"
-
 [watch]
 # Paths to watch. The `build.target`'s parent folder is watched by default.
 watch = [
