@@ -13,13 +13,13 @@ FROM chef AS backend-builder
 WORKDIR /usr/src
 COPY --from=planner /usr/src/recipe.json recipe.json
 # Build dependencies first (cached layer)
-RUN cargo chef cook --recipe-path recipe.json --bin moji-server
+RUN cargo chef cook --release --recipe-path recipe.json --bin moji-server
 # Copy source and build
 COPY . .
 ENV SQLX_OFFLINE=true
-RUN cargo build --bin moji-server
+RUN cargo build --release --bin moji-server
 
-# Frontend build stage  
+# Frontend build stage
 FROM chef AS frontend-builder
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install trunk wasm-bindgen-cli # Pre-install wasm to avoid 503 errors
@@ -48,7 +48,7 @@ WORKDIR /usr/src/frontend
 RUN bunx tailwindcss -i ./input.css -o ./styles.css
 
 # Build the frontend
-RUN trunk build
+RUN trunk build --release
 
 # Final stage
 FROM debian:bookworm-slim
@@ -56,13 +56,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=backend-builder /usr/src/target/debug/moji-server /usr/local/bin/
+COPY --from=backend-builder /usr/src/target/release/moji-server /usr/local/bin/
 COPY --from=backend-builder /usr/src/data /usr/local/data
 COPY --from=frontend-builder /usr/src/frontend/dist /usr/local/dist
 
 WORKDIR /usr/local
-ENV RUST_LOG=debug
+
+ENV RUST_LOG=info
 ENV RUST_BACKTRACE=1
-ENV PRODUCTION=0
+ENV PRODUCTION=1
+ENV HOST=0.0.0.0
+ENV PORT=8080
+
 EXPOSE 8080
 CMD ["/usr/local/bin/moji-server"]
