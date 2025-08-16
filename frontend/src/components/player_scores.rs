@@ -1,4 +1,4 @@
-// lobby/player_scores.rs - Component for displaying player scores
+// Component for displaying player scores
 use leptos::prelude::*;
 use shared::{PlayerData, PlayerId};
 

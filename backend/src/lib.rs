@@ -22,8 +22,6 @@ pub use shared::{
 };
 pub use types::{Result, Shared, SharedState};
 
-// In lib.rs
-
 #[derive(Clone, Debug)]
 pub struct PlayerData {
     pub id: PlayerId,
@@ -189,7 +187,6 @@ impl LobbyState {
         Ok(())
     }
 
-    // Add player to lobby
     pub fn add_player(&self, player_id: PlayerId, player_name: String) -> Result<bool> {
         let mut players = self
             .players
@@ -225,7 +222,6 @@ impl LobbyState {
         Ok(is_leader)
     }
 
-    // Get player score
     pub fn get_player_score(&self, player_id: &PlayerId) -> Result<u32> {
         let players = self
             .players
@@ -239,7 +235,6 @@ impl LobbyState {
             .ok_or_else(|| AppError::PlayerNotFound(player_id.0.clone()))
     }
 
-    // Get player name
     pub fn get_player_name(&self, player_id: &PlayerId) -> Result<String> {
         let players = self
             .players
@@ -252,7 +247,6 @@ impl LobbyState {
             .ok_or_else(|| AppError::PlayerNotFound(player_id.0.clone()))
     }
 
-    // Update player score
     pub fn increment_player_score(&self, player_id: &PlayerId) -> Result<u32> {
         let mut players = self
             .players

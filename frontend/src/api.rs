@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::error::{parse_error_response, ClientError};
 use gloo_net::http::Request;
 use shared::{

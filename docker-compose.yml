@@ -3,9 +3,9 @@ services:
     image: docker.io/library/postgres:15
     restart: always
     environment:
-      POSTGRES_USER: kanji
-      POSTGRES_PASSWORD: kanji
-      POSTGRES_DB: kanji_game
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -16,16 +16,12 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile # For development
+      dockerfile: Dockerfile # Production
     restart: always
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgres://kanji:kanji@db:5432/kanji_game
-      HOST: 0.0.0.0
-      PORT: 8080
-      RUST_LOG: debug # More verbose logging
-      PRODUCTION: 0 # 0 for Development mode
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     ports:
       - "8080:8080"
     networks:

@@ -1,4 +1,4 @@
-// lobby/lobby_polling.rs - Custom hook for lobby polling
+// Custom hook for lobby polling
 use crate::{api::get_lobby_info, error::log_error};
 use leptos::prelude::*;
 use shared::{GameStatus, LobbyInfo, PlayerId};
