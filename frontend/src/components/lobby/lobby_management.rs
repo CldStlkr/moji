@@ -1,4 +1,4 @@
-// lobby/lobby_management.rs - Component for managing lobby state
+// Component for managing lobby state
 use crate::{
     api::start_game,
     error::{get_user_friendly_message, log_error},

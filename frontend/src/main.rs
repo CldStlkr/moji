@@ -1,4 +1,3 @@
-// frontend/src/main.rs
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 
@@ -20,7 +19,6 @@ fn App() -> impl IntoView {
     let is_in_game = RwSignal::new(false);
     let is_restoring = RwSignal::new(true);
 
-    // Set up session persistence
     use_session_persistence(
         lobby_id.read_only(),
         player_id.read_only(),
@@ -36,14 +34,12 @@ fn App() -> impl IntoView {
                 // Validate the session is still valid by checking with the server
                 match api::get_player_info(&session_data.lobby_id, &session_data.player_id).await {
                     Ok(player_info) => {
-                        // Session is valid, restore it
                         lobby_id.set(session_data.lobby_id);
                         player_id.set(session_data.player_id);
                         player_name.set(player_info.name);
                         is_in_game.set(session_data.is_in_game);
                     }
                     Err(_) => {
-                        // Session is invalid, clear it
                         clear_session();
                     }
                 }

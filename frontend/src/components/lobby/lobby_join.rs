@@ -1,4 +1,4 @@
-// lobby/lobby_join.rs - Component for joining/creating lobbies
+// Component for joining/creating lobbies
 use crate::{
     api::{create_lobby, join_lobby},
     error::{get_user_friendly_message, log_error},

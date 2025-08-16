@@ -21,7 +21,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
@@ -29,25 +28,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Get database URL from environment variable
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-
-    // Wait for database to be ready (useful in Docker)
     wait_for_db(&database_url).await?;
-
-    // Initialize database connection pool
     let db_pool = init_db_pool(&database_url).await?;
 
-    // Initialize app state with database pool
     let app_state = Arc::new(AppState::new_with_db(db_pool).await?);
 
-    // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Determine the path to the frontend dist directory
     let frontend_dir = if env::var("PRODUCTION").is_ok() {
         // In production (Docker), the frontend is in /usr/local/dist
         PathBuf::from("/usr/local/dist")
@@ -59,18 +50,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Serving frontend from: {:?}", frontend_dir);
     let index_path = frontend_dir.join("index.html");
 
-    // Build application router with updated routes
     let app = Router::new()
         .route("/lobby/create", post(create_lobby))
-        .route("/lobby/join/{lobby_id}", post(join_lobby)) // Changed to POST
-        .route("/player/{lobby_id}/{player_id}", get(get_player_info)) // New endpoint
-        .route("/lobby/players/{lobby_id}", get(get_lobby_players)) // New endpoint for leaderboard
+        .route("/lobby/join/{lobby_id}", post(join_lobby))
+        .route("/player/{lobby_id}/{player_id}", get(get_player_info))
+        .route("/lobby/players/{lobby_id}", get(get_lobby_players))
         .route("/kanji/{lobby_id}", get(get_kanji))
         .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
         .route("/check_word/{lobby_id}", post(check_word))
-        .route("/lobby/{lobby_id}/info", get(get_lobby_info)) // New
-        .route("/lobby/{lobby_id}/settings", post(update_lobby_settings)) // New
-        .route("/lobby/{lobby_id}/start", post(start_game)) // New
+        .route("/lobby/{lobby_id}/info", get(get_lobby_info))
+        .route("/lobby/{lobby_id}/settings", post(update_lobby_settings))
+        .route("/lobby/{lobby_id}/start", post(start_game))
         .with_state(app_state)
         .layer(
             ServiceBuilder::new()
@@ -108,7 +98,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Wait for the database to be ready (useful in Docker environments)
 async fn wait_for_db(database_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     use sqlx::Connection;
     use std::time::Duration;

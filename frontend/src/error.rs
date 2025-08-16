@@ -46,7 +46,6 @@ impl From<gloo_net::Error> for ClientError {
     }
 }
 
-// Parse a server error response
 pub async fn parse_error_response(response: gloo_net::http::Response) -> ClientError {
     let status = response.status();
 
