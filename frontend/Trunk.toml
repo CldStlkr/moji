@@ -1,6 +1,6 @@
 [build]
 target = "index.html"
-release = false
+release = true
 dist = "dist"
 public_url = "/"
 
@@ -21,22 +21,22 @@ port = 8081
 open = false
 fallback_service = "index.html"
 
-[[proxy]]
-rewrite = "/lobby/"
-backend = "http://backend:8080/lobby/"
-
-[[proxy]]
-rewrite = "/player/"
-backend = "http://backend:8080/player/"
-
-[[proxy]]
-rewrite = "/kanji/"
-backend = "http://backend:8080/kanji/"
-
-[[proxy]]
-rewrite = "/new_kanji/"
-backend = "http://backend:8080/new_kanji/"
-
-[[proxy]]
-rewrite = "/check_word/"
-backend = "http://backend:8080/check_word/"
+# [[proxy]]
+# rewrite = "/lobby/"
+# backend = "http://backend:8080/lobby/"
+#
+# [[proxy]]
+# rewrite = "/player/"
+# backend = "http://backend:8080/player/"
+#
+# [[proxy]]
+# rewrite = "/kanji/"
+# backend = "http://backend:8080/kanji/"
+#
+# [[proxy]]
+# rewrite = "/new_kanji/"
+# backend = "http://backend:8080/new_kanji/"
+#
+# [[proxy]]
+# rewrite = "/check_word/"
+# backend = "http://backend:8080/check_word/"
