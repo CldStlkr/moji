@@ -48,7 +48,7 @@ WORKDIR /usr/src/frontend
 RUN bunx tailwindcss -i ./input.css -o ./styles.css
 
 # Build the frontend
-RUN trunk build --release
+RUN trunk build
 
 # Final stage
 FROM debian:bookworm-slim
