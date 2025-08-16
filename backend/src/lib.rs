@@ -80,12 +80,15 @@ impl LobbyState {
         };
 
         let word_list_path = format!("{}/kanji_words.csv", data_dir);
-        let kanji_list_path = format!("{}/N5_kanji.csv", data_dir);
+        let kanji_list_paths: Vec<String> = vec![
+            format!("{}/N5_kanji.csv", data_dir),
+            format!("{}/N1_kanji.csv", data_dir),
+        ];
 
         let list_of_words = vectorize_word_list(&word_list_path)
             .map_err(|e| AppError::DataLoadError(e.to_string()))?;
 
-        let list_of_kanji = vectorize_joyo_kanji(&kanji_list_path)
+        let list_of_kanji = vectorize_joyo_kanji(&kanji_list_paths)
             .map_err(|e| AppError::DataLoadError(e.to_string()))?;
 
         Ok(Self {
