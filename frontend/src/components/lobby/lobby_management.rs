@@ -234,12 +234,12 @@ where
             >
                 <button
                     on:click=on_start_game
-                    disabled=move || player_count < 2
+                    disabled=move || player_count < 1
                     class="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded transition-colors"
                 >
                     "Start Game"
                 </button>
-                <Show when=move || player_count < 2>
+                <Show when=move || player_count < 1>
                     <p class="text-orange-600 text-center font-medium">
                         "Need at least 2 players to start"
                     </p>
