@@ -1,0 +1,21 @@
+{
+  "lspconfig": {
+    "rust_analyzer": {
+      "settings": {
+        "rust-analyzer": {
+          "procMacro": {
+            "ignored": {
+              "async-recursion": ["async_recursion"],
+              "async-trait": ["async_trait"], 
+              "napi-derive": ["napi"],
+              "leptos_macro": [
+                "component",
+                "server"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

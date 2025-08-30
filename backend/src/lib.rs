@@ -70,9 +70,12 @@ pub struct LobbyState {
 
 impl LobbyState {
     pub fn create() -> Result<Self> {
-        // Determine the data directory based on environment
-        let data_dir = if env::var("PRODUCTION").is_ok() {
-            // In production (Docker), data is in /usr/local/data
+        let is_production = matches!(
+            env::var("PRODUCTION").as_deref(),
+            Ok("1") | Ok("true") | Ok("yes")
+        );
+
+        let data_dir = if is_production {
             "/usr/local/data"
         } else {
             // In development, relative to the backend directory

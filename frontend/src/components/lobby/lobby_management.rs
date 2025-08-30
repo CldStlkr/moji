@@ -22,6 +22,7 @@ pub fn LobbyManagementComponent<F>(
 where
     F: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
+    let is_copied = RwSignal::new(false);
     let start_game_action = move |_: ev::MouseEvent| {
         let lobby_id = current_lobby_id.get();
         let player_id = current_player_id.get();
@@ -53,7 +54,17 @@ where
             let window = web_sys::window().expect("global window");
             let navigator = window.navigator();
             let clipboard = navigator.clipboard();
-            let _ = wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await;
+            match wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await {
+                Ok(_) => {
+                    is_copied.set(true);
+
+                    gloo_timers::future::TimeoutFuture::new(1000).await;
+                    is_copied.set(false);
+                }
+                Err(_) => {
+                    leptos::logging::log!("Failed to copy to clipboard")
+                }
+            }
         });
     };
 
@@ -67,7 +78,7 @@ where
 
     view! {
         <div class="max-w-2xl mx-auto my-8 p-8 bg-white rounded-lg shadow-lg">
-            <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id />
+            <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
 
             <Show
                 when=move || lobby_info.get().is_some()
@@ -98,12 +109,16 @@ where
 }
 
 #[component]
-fn LobbyHeader<F>(lobby_id: ReadSignal<String>, on_copy_id: F) -> impl IntoView
+fn LobbyHeader<F>(
+    lobby_id: ReadSignal<String>,
+    on_copy_id: F,
+    is_copied: ReadSignal<bool>,
+) -> impl IntoView
 where
     F: Fn(ev::MouseEvent) + 'static + Copy,
 {
     view! {
-        <div class="flex justify-between items-center mb-6">
+        <div class="flex justify-between items-center mb-6 relative">
             <h2 class="text-2xl font-bold text-gray-800">
                 "Lobby: "
                 <span class="font-mono font-bold tracking-wider text-blue-600">
@@ -118,6 +133,13 @@ where
                 "Copy"
             </button>
         </div>
+
+        // Floating "Copied!" text using Show
+        <Show when=move || is_copied.get()>
+            <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none">
+                "Copied!"
+            </div>
+        </Show>
     }
 }
 
