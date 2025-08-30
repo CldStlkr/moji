@@ -14,4 +14,11 @@ RUN rustup target add wasm32-unknown-unknown \
 # Bun for Tailwind or other JS tooling
 RUN curl -fsSL https://bun.sh/install | bash
 
+
+ENV RUST_LOG=debug
+ENV RUST_BACKTRACE=1
+ENV PRODUCTION=0
+ENV HOST=0.0.0.0
+ENV PORT=8080
+
 WORKDIR /app

@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:15
     environment:
-      POSTGRES_USER: kanji
-      POSTGRES_PASSWORD: kanji
-      POSTGRES_DB: kanji_game
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile.dev
     working_dir: /app/backend
     environment:
-      DATABASE_URL: postgres://kanji:kanji@db:5432/kanji_game
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       RUST_LOG: debug
       HOST: 0.0.0.0
       PORT: 8080
