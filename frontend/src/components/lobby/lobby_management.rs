@@ -77,34 +77,36 @@ where
     };
 
     view! {
-        <div class="max-w-2xl mx-auto my-8 p-8 bg-white rounded-lg shadow-lg">
-            <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
+      <div class="p-8 my-8 mx-auto max-w-2xl bg-white rounded-lg shadow-lg">
+        <LobbyHeader
+          lobby_id=current_lobby_id
+          on_copy_id=copy_lobby_id
+          is_copied=is_copied.read_only()
+        />
 
-            <Show
-                when=move || lobby_info.get().is_some()
-                fallback=|| {
-                    view! {
-                        <div class="text-lg text-gray-500 text-center">"Loading lobby info..."</div>
-                    }
+        <Show
+          when=move || lobby_info.get().is_some()
+          fallback=|| {
+            view! { <div class="text-lg text-center text-gray-500">"Loading lobby info..."</div> }
+          }
+        >
+          {move || {
+            lobby_info
+              .get()
+              .map(|info| {
+                view! {
+                  <LobbyDetails
+                    lobby_info=info
+                    current_player_id=current_player_id
+                    is_leader=is_leader
+                    on_start_game=start_game_action
+                    on_leave_lobby=on_leave_lobby
+                  />
                 }
-            >
-                {move || {
-                    lobby_info
-                        .get()
-                        .map(|info| {
-                            view! {
-                                <LobbyDetails
-                                    lobby_info=info
-                                    current_player_id=current_player_id
-                                    is_leader=is_leader
-                                    on_start_game=start_game_action
-                                    on_leave_lobby=on_leave_lobby
-                                />
-                            }
-                        })
-                }}
-            </Show>
-        </div>
+              })
+          }}
+        </Show>
+      </div>
     }
 }
 
@@ -118,28 +120,26 @@ where
     F: Fn(ev::MouseEvent) + 'static + Copy,
 {
     view! {
-        <div class="flex justify-between items-center mb-6 relative">
-            <h2 class="text-2xl font-bold text-gray-800">
-                "Lobby: "
-                <span class="font-mono font-bold tracking-wider text-blue-600">
-                    {lobby_id.get()}
-                </span>
-            </h2>
-            <button
-                on:click=on_copy_id
-                class="px-2 py-1 text-xs font-medium bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                title="Copy Lobby ID"
-            >
-                "Copy"
-            </button>
-        </div>
+      <div class="flex relative justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold text-gray-800">
+          "Lobby: "
+          <span class="font-mono font-bold tracking-wider text-blue-600">{lobby_id.get()}</span>
+        </h2>
+        <button
+          on:click=on_copy_id
+          class="py-1 px-2 text-xs font-medium bg-white rounded border border-gray-300 transition-colors hover:bg-gray-50"
+          title="Copy Lobby ID"
+        >
+          "Copy"
+        </button>
+      </div>
 
-        // Floating "Copied!" text using Show
-        <Show when=move || is_copied.get()>
-            <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none">
-                "Copied!"
-            </div>
-        </Show>
+      // Floating "Copied!" text using Show
+      <Show when=move || is_copied.get()>
+        <div class="absolute -top-8 left-1/2 py-1 px-2 text-xs text-white bg-green-500 rounded shadow-lg transform -translate-x-1/2 pointer-events-none animate-fade-in">
+          "Copied!"
+        </div>
+      </Show>
     }
 }
 
@@ -161,27 +161,27 @@ where
     let status = lobby_info.status;
 
     view! {
-        <div class="space-y-6">
-            <PlayersList
-                players=lobby_info.players
-                current_player_id=current_player_id
-                leader_id=leader_id
-                player_count=player_count
-                max_players=max_players
-            />
+      <div class="space-y-6">
+        <PlayersList
+          players=lobby_info.players
+          current_player_id=current_player_id
+          leader_id=leader_id
+          player_count=player_count
+          max_players=max_players
+        />
 
-            <div class="flex items-center gap-2 p-3 bg-gray-50 rounded">
-                <span class="text-gray-700">"Status:"</span>
-                <span class="font-medium text-blue-600">{format!("{:?}", status)}</span>
-            </div>
-
-            <LobbyActions
-                is_leader=is_leader
-                player_count=player_count
-                on_start_game=on_start_game
-                on_leave_lobby=on_leave_lobby
-            />
+        <div class="flex gap-2 items-center p-3 bg-gray-50 rounded">
+          <span class="text-gray-700">"Status:"</span>
+          <span class="font-medium text-blue-600">{format!("{:?}", status)}</span>
         </div>
+
+        <LobbyActions
+          is_leader=is_leader
+          player_count=player_count
+          on_start_game=on_start_game
+          on_leave_lobby=on_leave_lobby
+        />
+      </div>
     }
 }
 
@@ -194,40 +194,38 @@ fn PlayersList(
     max_players: u32,
 ) -> impl IntoView {
     view! {
-        <div class="space-y-4">
-            <h3 class="text-xl font-semibold text-blue-600 border-b border-gray-200 pb-2">
-                "Players (" {player_count} "/" {max_players} ")"
-            </h3>
-            <ul class="space-y-2">
-                {players
-                    .into_iter()
-                    .map(|player| {
-                        let is_current = player.id == current_player_id.get();
-                        let is_leader = player.id == leader_id;
-                        view! {
-                            <li class=format!(
-                                "flex justify-between items-center p-3 rounded border-b border-gray-200 {}",
-                                if is_current { "bg-blue-50 font-semibold" } else { "" },
-                            )>
-                                <span class="font-medium">{player.name}</span>
-                                <div class="flex items-center gap-2">
-                                    <Show when=move || is_leader>
-                                        <span class="text-lg" title="Lobby Leader">
-                                            "👑"
-                                        </span>
-                                    </Show>
-                                    <Show when=move || is_current>
-                                        <span class="text-sm text-blue-600 font-medium">
-                                            "(You)"
-                                        </span>
-                                    </Show>
-                                </div>
-                            </li>
-                        }
-                    })
-                    .collect_view()}
-            </ul>
-        </div>
+      <div class="space-y-4">
+        <h3 class="pb-2 text-xl font-semibold text-blue-600 border-b border-gray-200">
+          "Players (" {player_count} "/" {max_players} ")"
+        </h3>
+        <ul class="space-y-2">
+          {players
+            .into_iter()
+            .map(|player| {
+              let is_current = player.id == current_player_id.get();
+              let is_leader = player.id == leader_id;
+              view! {
+                <li class=format!(
+                  "flex justify-between items-center p-3 rounded border-b border-gray-200 {}",
+                  if is_current { "bg-blue-50 font-semibold" } else { "" },
+                )>
+                  <span class="font-medium">{player.name}</span>
+                  <div class="flex gap-2 items-center">
+                    <Show when=move || is_leader>
+                      <span class="text-lg" title="Lobby Leader">
+                        "👑"
+                      </span>
+                    </Show>
+                    <Show when=move || is_current>
+                      <span class="text-sm font-medium text-blue-600">"(You)"</span>
+                    </Show>
+                  </div>
+                </li>
+              }
+            })
+            .collect_view()}
+        </ul>
+      </div>
     }
 }
 
@@ -243,69 +241,67 @@ where
     F2: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
     view! {
-        <div class="flex flex-col gap-4 my-6">
-            <Show
-                when=is_leader
-                fallback=|| {
-                    view! {
-                        <p class="text-center text-gray-600 italic py-4">
-                            "Waiting for leader to start the game..."
-                        </p>
-                    }
-                }
-            >
-                <button
-                    on:click=on_start_game
-                    disabled=move || player_count < 1
-                    class="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded transition-colors"
-                >
-                    "Start Game"
-                </button>
-                <Show when=move || player_count < 1>
-                    <p class="text-orange-600 text-center font-medium">
-                        "Need at least 2 players to start"
-                    </p>
-                </Show>
-            </Show>
+      <div class="flex flex-col gap-4 my-6">
+        <Show
+          when=is_leader
+          fallback=|| {
+            view! {
+              <p class="py-4 italic text-center text-gray-600">
+                "Waiting for leader to start the game..."
+              </p>
+            }
+          }
+        >
+          <button
+            on:click=on_start_game
+            disabled=move || player_count < 1
+            class="py-3 px-6 font-semibold text-white bg-green-500 rounded transition-colors hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            "Start Game"
+          </button>
+          <Show when=move || player_count < 1>
+            <p class="font-medium text-center text-orange-600">
+              "Need at least 2 players to start"
+            </p>
+          </Show>
+        </Show>
 
-            <button
-                on:click=on_leave_lobby
-                class="bg-transparent hover:bg-gray-50 text-gray-600 border border-gray-400 font-medium py-2 px-4 rounded transition-colors"
-            >
-                "Leave Lobby"
-            </button>
-        </div>
+        <button
+          on:click=on_leave_lobby
+          class="py-2 px-4 font-medium text-gray-600 bg-transparent rounded border border-gray-400 transition-colors hover:bg-gray-50"
+        >
+          "Leave Lobby"
+        </button>
+      </div>
     }
 }
 
 #[component]
 pub fn StatusMessage(status: ReadSignal<String>) -> impl IntoView {
     view! {
-        <Show when=move || !status.get().is_empty()>
-            <div class=move || {
-                let base_classes = "my-4 p-3 rounded text-center font-medium";
-                if status.get().contains("Error") {
-                    format!("{} bg-red-100 text-red-700", base_classes)
-                } else {
-                    format!("{} bg-gray-100 text-gray-700", base_classes)
-                }
-            }>{move || status.get()}</div>
-        </Show>
+      <Show when=move || !status.get().is_empty()>
+        <div class=move || {
+          let base_classes = "my-4 p-3 rounded text-center font-medium";
+          if status.get().contains("Error") {
+            format!("{} bg-red-100 text-red-700", base_classes)
+          } else {
+            format!("{} bg-gray-100 text-gray-700", base_classes)
+          }
+        }>{move || status.get()}</div>
+      </Show>
     }
 }
 
 #[component]
 pub fn GameInstructions() -> impl IntoView {
     view! {
-        <div class="mt-8 pt-4 border-t border-gray-200">
-            <h3 class="text-lg font-semibold text-gray-600 mb-3">"How to Play"</h3>
-            <div class="space-y-2 text-gray-700">
-                <p>"Create a new game or join an existing one with a lobby ID."</p>
-                <p>"Once in a game, you'll be shown a kanji character."</p>
-                <p>
-                    "Type a Japanese word that contains that kanji and submit it to score points!"
-                </p>
-            </div>
+      <div class="pt-4 mt-8 border-t border-gray-200">
+        <h3 class="mb-3 text-lg font-semibold text-gray-600">"How to Play"</h3>
+        <div class="space-y-2 text-gray-700">
+          <p>"Create a new game or join an existing one with a lobby ID."</p>
+          <p>"Once in a game, you'll be shown a kanji character."</p>
+          <p>"Type a Japanese word that contains that kanji and submit it to score points!"</p>
         </div>
+      </div>
     }
 }

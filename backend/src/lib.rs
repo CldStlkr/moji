@@ -79,13 +79,12 @@ impl LobbyState {
             "/usr/local/data"
         } else {
             // In development, relative to the backend directory
-            "../data"
+            "./data"
         };
 
         let word_list_path = format!("{}/kanji_words.csv", data_dir);
         let kanji_list_paths: Vec<String> = vec![
             format!("{}/N5_kanji.csv", data_dir),
-            format!("{}/N1_kanji.csv", data_dir),
         ];
 
         let list_of_words = vectorize_word_list(&word_list_path)

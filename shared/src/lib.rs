@@ -142,6 +142,7 @@ pub struct UpdateSettingsRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartGameRequest {
     pub player_id: PlayerId,
+    // pub jlpt_levels: Vec<u8>,
 }
 
 /// Returned to a client after the server scores its word.

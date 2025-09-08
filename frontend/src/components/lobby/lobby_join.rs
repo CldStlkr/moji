@@ -139,59 +139,57 @@ where
     };
 
     view! {
-        <div class="card max-w-2xl mx-auto my-8">
-            <h2 class="text-3xl font-bold text-gray-800 mb-8 text-center">
-                "Join or Create a Game"
-            </h2>
-            <div class="space-y-6">
-                <div class="space-y-2">
-                    <label for="player-name" class="block font-semibold text-gray-800 text-lg">
-                        "Your Name:"
-                    </label>
-                    <input
-                        type="text"
-                        id="player-name"
-                        value=move || player_name.get()
-                        on:input=move |ev| player_name.set(event_target_value(&ev))
-                        placeholder="Enter your name"
-                        disabled=move || is_loading.get()
-                        class="input-field w-full"
-                    />
-                </div>
+      <div class="my-8 mx-auto max-w-2xl card">
+        <h2 class="mb-8 text-3xl font-bold text-center text-gray-800">"Join or Create a Game"</h2>
+        <div class="space-y-6">
+          <div class="space-y-2">
+            <label for="player-name" class="block text-lg font-semibold text-gray-800">
+              "Your Name:"
+            </label>
+            <input
+              type="text"
+              id="player-name"
+              value=move || player_name.get()
+              on:input=move |ev| player_name.set(event_target_value(&ev))
+              placeholder="Enter your name"
+              disabled=move || is_loading.get()
+              class="w-full input-field"
+            />
+          </div>
 
-                <button
-                    on:click=create_lobby_action
-                    disabled=move || is_loading.get() || player_name.get().trim().is_empty()
-                    class="btn-primary w-full text-lg"
-                >
-                    "Create New Game"
-                </button>
+          <button
+            on:click=create_lobby_action
+            disabled=move || is_loading.get() || player_name.get().trim().is_empty()
+            class="w-full text-lg btn-primary"
+          >
+            "Create New Game"
+          </button>
 
-                <div class="flex gap-3 flex-col sm:flex-row">
-                    <input
-                        type="text"
-                        value=move || input_lobby_id.get()
-                        on:input=move |ev| input_lobby_id.set(event_target_value(&ev))
-                        on:keydown=handle_key_press
-                        placeholder="Enter Lobby ID"
-                        disabled=move || is_loading.get()
-                        class="input-field flex-1"
-                    />
-                    <button
-                        on:click=join_lobby_action
-                        disabled=move || {
-                            is_loading.get() || input_lobby_id.get().trim().is_empty()
-                                || player_name.get().trim().is_empty()
-                        }
-                        class="btn-secondary whitespace-nowrap"
-                    >
-                        "Join Game"
-                    </button>
-                </div>
-            </div>
-
-            <StatusMessage status=status />
-            <GameInstructions />
+          <div class="flex flex-col gap-3 sm:flex-row">
+            <input
+              type="text"
+              value=move || input_lobby_id.get()
+              on:input=move |ev| input_lobby_id.set(event_target_value(&ev))
+              on:keydown=handle_key_press
+              placeholder="Enter Lobby ID"
+              disabled=move || is_loading.get()
+              class="flex-1 input-field"
+            />
+            <button
+              on:click=join_lobby_action
+              disabled=move || {
+                is_loading.get() || input_lobby_id.get().trim().is_empty()
+                  || player_name.get().trim().is_empty()
+              }
+              class="whitespace-nowrap btn-secondary"
+            >
+              "Join Game"
+            </button>
+          </div>
         </div>
+
+        <StatusMessage status=status />
+        <GameInstructions />
+      </div>
     }
 }
