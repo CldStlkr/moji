@@ -6,12 +6,12 @@ pub mod models;
 pub mod types;
 
 use chrono::{DateTime, Utc};
-use data::{vectorize_joyo_kanji, vectorize_word_list};
+use data::{vectorize_joyo_kanji, vectorize_word_list, Kanji};
 use db::DbPool;
 use error::AppError;
-use rand::{distr::Alphanumeric, Rng};
+use rand::{Rng, distr::{Alphanumeric, Distribution, weighted::WeightedIndex}};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     sync::{Arc, Mutex},
 };
@@ -59,8 +59,8 @@ impl Default for AppState {
 
 #[derive(Clone)]
 pub struct LobbyState {
-    pub word_list: Vec<String>,
-    pub kanji_list: Vec<String>,
+    pub word_list: HashSet<String>,
+    pub kanji_list: Vec<Vec<Kanji>>,
     pub players: Shared<Vec<PlayerData>>,
     pub lobby_leader: Shared<PlayerId>,
     pub settings: Shared<GameSettings>,
@@ -285,18 +285,69 @@ impl LobbyState {
         Ok(kanji.clone())
     }
 
+    pub fn generate_random_kanji_list(&self) -> &Vec<Kanji> {
+        let mut rng = rand::rng();
+        &self.kanji_list[rng.random_range(0..self.kanji_list.len())]
+
+    }
+
     pub fn generate_random_kanji(&self) -> Result<String> {
         let mut rng = rand::rng();
-        let random_index = rng.random_range(0..self.kanji_list.len());
-        let new_kanji = self.kanji_list[random_index].clone();
+
+        // Select random JLPT level of the ones available
+        let kanji_list = self.generate_random_kanji_list();
+
+        // Select random kanji from that level (non-weighted)
+        let random_index = rng.random_range(0..kanji_list.len());
+        let new_kanji = kanji_list[random_index].clone();
 
         // Update the current kanji in the lobby state
         let mut current_kanji = self
             .current_kanji
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
+        *current_kanji = Some(new_kanji.kanji.clone());
+
+        Ok(new_kanji.kanji)
+    }
+
+    pub fn generate_weighted_random_kanji(&self) -> Result<String> {
+        let mut rng = rand::rng();
+        let kanji_list = self.generate_random_kanji_list();
+
+        // Filter valid kanji and calculate weights
+        let valid_kanji: Vec<&Kanji> = kanji_list
+            .iter()
+            .filter(|k| k.frequency > 0)
+            .collect();
+
+        if valid_kanji.is_empty() {
+            let random_index = rng.random_range(0..kanji_list.len());
+            return Ok(kanji_list[random_index].kanji.clone());
+        }
+
+        // Calculate weights (inverse of frequency)
+        let weights: Vec<f64> = valid_kanji
+            .iter()
+            .map(|k| 1.0 / k.frequency as f64)
+            .collect();
+
+        let dist = WeightedIndex::new(&weights)
+            .map_err(|e| AppError::DataLoadError(e.to_string()))?;
+
+        // Sample from distribution
+        let index = dist.sample(&mut rng);
+        let new_kanji = valid_kanji[index].kanji.clone();
+
+
+        let mut current_kanji = self
+            .current_kanji
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
         *current_kanji = Some(new_kanji.clone());
+
         Ok(new_kanji)
+
     }
 }
 
@@ -368,12 +419,28 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_random_kanji_list() {
+        let lobby_state = LobbyState::create().unwrap();
+
+        for _ in 0..10 {
+            let kanji_list = lobby_state.generate_random_kanji_list();
+
+            assert!(lobby_state.kanji_list.contains(kanji_list));
+            assert!(!kanji_list.is_empty());
+        }
+    }
+
+    #[test]
     fn test_generate_random_kanji() {
         let lobby_state = LobbyState::create().unwrap();
 
-        // Generate a kanji and verify it's from the list
+        // Generate a kanji and verify it's from one of the lists
         let kanji = lobby_state.generate_random_kanji().unwrap();
-        assert!(lobby_state.kanji_list.contains(&kanji));
+        let kanji_exists = lobby_state.kanji_list
+            .iter()
+            .flatten()
+            .any(|k| k.kanji == kanji);
+        assert!(kanji_exists);
 
         // Generate another and ensure it's set as current
         let kanji2 = lobby_state.generate_random_kanji().unwrap();

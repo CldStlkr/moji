@@ -197,7 +197,7 @@ pub async fn check_word(
     let player_id = input.player_id;
 
     let good_kanji = input_word.contains(input_kanji);
-    let good_word = word_list.contains(&input_word.to_string());
+    let good_word = word_list.contains(input_word);
 
     let (message, new_kanji) = if good_kanji && good_word {
         // Update the specific player's score
