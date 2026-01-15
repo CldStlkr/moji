@@ -1,4 +1,3 @@
-# Install cargo-chef
 FROM rust:latest AS chef
 RUN cargo install cargo-chef
 
@@ -21,6 +20,7 @@ RUN cargo build --release --bin moji-server
 
 # Frontend build stage
 FROM chef AS frontend-builder
+RUN apt-get update && apt-get install -y clang
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install trunk wasm-bindgen-cli # Pre-install wasm to avoid 503 errors
 
@@ -38,7 +38,7 @@ RUN bun install
 
 # Build dependencies first (cached layer)
 WORKDIR /usr/src
-RUN cargo chef cook --recipe-path recipe.json --bin moji-frontend
+RUN cargo chef cook --release --target wasm32-unknown-unknown --recipe-path recipe.json --bin moji-frontend
 
 # Copy source and build
 COPY . .
@@ -48,7 +48,7 @@ WORKDIR /usr/src/frontend
 RUN bunx tailwindcss -i ./input.css -o ./styles.css
 
 # Build the frontend
-RUN trunk build
+RUN trunk build --release
 
 # Final stage
 FROM debian:bookworm-slim

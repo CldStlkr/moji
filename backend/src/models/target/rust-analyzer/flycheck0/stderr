@@ -1,0 +1,4 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/neel/Dev/personal/moji/frontend/Cargo.toml
+workspace: /home/neel/Dev/personal/moji/Cargo.toml
+    Blocking waiting for file lock on build directory
