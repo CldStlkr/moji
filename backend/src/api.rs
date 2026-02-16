@@ -28,7 +28,7 @@ pub async fn create_lobby(
     // Generate random player ID
     let player_id: PlayerId = generate_player_id();
     let lobby_state =
-        Arc::new(LobbyState::create().map_err(|e| AppError::InternalError(e.to_string()))?);
+        Arc::new(LobbyState::new(Arc::clone(&app_state.kanji_data), Arc::clone(&app_state.word_data)));
 
     // Add the player who created the lobby (will automatically become leader)
     let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
@@ -164,7 +164,6 @@ pub async fn get_kanji(
     let kanji = match lobby.get_current_kanji()? {
         Some(kanji) => kanji,
         None => {
-            // Generate a new kanji if none exists
             lobby.generate_random_kanji()?
         }
     };
@@ -202,7 +201,7 @@ pub async fn check_word(
     let (message, new_kanji) = if good_kanji && good_word {
         // Update the specific player's score
         let _ = lobby.increment_player_score(&player_id)?;
-        let new_kanji = lobby.generate_random_kanji()?;
+        let new_kanji = lobby.generate_weighted_random_kanji()?;
         ("Good guess!".to_string(), Some(new_kanji))
     } else if good_kanji {
         (

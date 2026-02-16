@@ -21,6 +21,8 @@ pub use shared::{
     CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, KanjiPrompt, PlayerId, UserInput,
 };
 pub use types::{Result, Shared, SharedState};
+pub type KanjiData = Arc<Vec<Vec<Kanji>>>;
+pub type WordData = Arc<HashSet<String>>;
 
 #[derive(Clone, Debug)]
 pub struct PlayerData {
@@ -33,43 +35,12 @@ pub struct PlayerData {
 pub struct AppState {
     pub lobbies: Arc<Mutex<HashMap<String, SharedState>>>,
     pub db_pool: Option<Arc<DbPool>>,
+    pub kanji_data: KanjiData,
+    pub word_data: WordData
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        Self {
-            lobbies: Arc::new(Mutex::new(HashMap::new())),
-            db_pool: None,
-        }
-    }
-
-    pub async fn new_with_db(db_pool: Arc<DbPool>) -> Result<Self> {
-        Ok(Self {
-            lobbies: Arc::new(Mutex::new(HashMap::new())),
-            db_pool: Some(db_pool),
-        })
-    }
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone)]
-pub struct LobbyState {
-    pub word_list: HashSet<String>,
-    pub kanji_list: Vec<Vec<Kanji>>,
-    pub players: Shared<Vec<PlayerData>>,
-    pub lobby_leader: Shared<PlayerId>,
-    pub settings: Shared<GameSettings>,
-    pub game_status: Shared<GameStatus>,
-    pub current_kanji: Shared<Option<String>>,
-}
-
-impl LobbyState {
-    pub fn create() -> Result<Self> {
+    fn load_data() -> Result<(KanjiData, WordData)> {
         let is_production = matches!(
             env::var("PRODUCTION").as_deref(),
             Ok("1") | Ok("true") | Ok("yes")
@@ -85,24 +56,63 @@ impl LobbyState {
         let word_list_path = format!("{}/kanji_words.csv", data_dir);
         let kanji_list_paths: Vec<String> = vec![
             format!("{}/N5_kanji.csv", data_dir),
-            format!("{}/N1_kanji.csv", data_dir),
+            format!("{}/N2_kanji.csv", data_dir),
         ];
 
-        let list_of_words = vectorize_word_list(&word_list_path)
-            .map_err(|e| AppError::DataLoadError(e.to_string()))?;
 
-        let list_of_kanji = vectorize_joyo_kanji(&kanji_list_paths)
-            .map_err(|e| AppError::DataLoadError(e.to_string()))?;
+        let list_of_kanji = Arc::new(vectorize_joyo_kanji(&kanji_list_paths)
+            .map_err(|e| AppError::DataLoadError(e.to_string()))?);
 
+        let list_of_words = Arc::new(vectorize_word_list(&word_list_path)
+            .map_err(|e| AppError::DataLoadError(e.to_string()))?);
+
+        Ok((list_of_kanji, list_of_words))
+    }
+    pub fn create() -> Result<Self>{
+        let (kanji_data, word_data) = Self::load_data()?;
         Ok(Self {
-            word_list: list_of_words,
-            kanji_list: list_of_kanji,
+            lobbies: Arc::new(Mutex::new(HashMap::new())),
+            db_pool: None,
+            kanji_data,
+            word_data
+
+        })
+    }
+
+    pub async fn new_with_db(db_pool: Arc<DbPool>) -> Result<Self> {
+
+        let (kanji_data, word_data) = Self::load_data()?;
+        Ok(Self {
+            lobbies: Arc::new(Mutex::new(HashMap::new())),
+            db_pool: Some(db_pool),
+            kanji_data,
+            word_data
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct LobbyState {
+    pub kanji_list: KanjiData,
+    pub word_list: WordData,
+    pub players: Shared<Vec<PlayerData>>,
+    pub lobby_leader: Shared<PlayerId>,
+    pub settings: Shared<GameSettings>,
+    pub game_status: Shared<GameStatus>,
+    pub current_kanji: Shared<Option<String>>,
+}
+
+impl LobbyState {
+    pub fn new(kanji_list: KanjiData, word_list: WordData) -> Self {
+        Self {
+            kanji_list,
+            word_list,
             players: Shared::new(Vec::new()),
             lobby_leader: Shared::new(PlayerId::default()),
             settings: Shared::new(GameSettings::default()),
             game_status: Shared::new(GameStatus::Lobby),
             current_kanji: Shared::new(None),
-        })
+        }
     }
 
     pub fn is_leader(&self, player_id: &PlayerId) -> Result<bool> {
@@ -382,6 +392,37 @@ pub fn get_lobby(app_state: &Arc<AppState>, lobby_id: &str) -> Result<SharedStat
 mod tests {
     use super::*;
 
+    fn create_test_lobby() -> LobbyState {
+        let test_kanji = Arc::new(vec![
+            vec![
+                Kanji { kanji: "日".to_string(), frequency: 0 },
+                Kanji { kanji: "月".to_string(), frequency: 0 },
+                Kanji { kanji: "屈".to_string(), frequency: 0 },
+                Kanji { kanji: "理".to_string(), frequency: 0 },
+                Kanji { kanji: "総".to_string(), frequency: 0 },
+                Kanji { kanji: "辱".to_string(), frequency: 0 },
+                Kanji { kanji: "酷".to_string(), frequency: 0 },
+                Kanji { kanji: "関".to_string(), frequency: 0 },
+                Kanji { kanji: "糸".to_string(), frequency: 0 },
+                Kanji { kanji: "木".to_string(), frequency: 0 },
+            ],
+        ]);
+        let test_words = Arc::new(HashSet::from([
+            "日本".to_string(),
+            "弄り回す".to_string(),
+            "月曜日".to_string(),
+            "比律賓".to_string(),
+            "哀歌".to_string(),
+            "猥ら".to_string(),
+            "育ち".to_string(),
+            "縁語".to_string(),
+            "炎".to_string(),
+            "渦紋".to_string(),
+        ]));
+
+        LobbyState::new(test_kanji, test_words)
+    }
+
     #[test]
     fn test_generate_lobby_id() {
         let id = generate_lobby_id();
@@ -392,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_increment_player_score() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
         let player_id = PlayerId(String::from("test_player"));
         lobby_state
             .add_player(player_id.clone(), "Test Player".to_string())
@@ -408,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_get_current_kanji() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         // Initially should be None
         assert_eq!(lobby_state.get_current_kanji().unwrap(), None);
@@ -420,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_generate_random_kanji_list() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         for _ in 0..10 {
             let kanji_list = lobby_state.generate_random_kanji_list();
@@ -432,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_generate_random_kanji() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         // Generate a kanji and verify it's from one of the lists
         let kanji = lobby_state.generate_random_kanji().unwrap();
@@ -449,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_get_all_players() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         // Initially empty
         assert!(lobby_state.get_all_players().unwrap().is_empty());
@@ -492,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_player_not_found_error() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         // Attempt to get score for non-existent player
         let result = lobby_state.get_player_score(&PlayerId(String::from("nonexistent")));
@@ -507,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_get_lobby_not_found() {
-        let app_state = Arc::new(AppState::new());
+        let app_state = Arc::new(AppState::create().expect("Failed to create AppState"));
 
         let result = get_lobby(&app_state, "nonexistent");
         assert!(result.is_err());
@@ -521,11 +562,11 @@ mod tests {
     #[test]
     fn test_lobby_workflow() {
         // Create app state
-        let app_state = Arc::new(AppState::new());
+        let app_state = Arc::new(AppState::create().expect("Failed to create AppState"));
 
         // Create a lobby and add it to the state
         let lobby_id = generate_lobby_id();
-        let lobby_state = Arc::new(LobbyState::create().unwrap());
+        let lobby_state = Arc::new(create_test_lobby());
 
         {
             let mut lobbies = app_state.lobbies.lock().unwrap();
@@ -553,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_lobby_leader_functionality() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         // First player becomes leader
         let is_leader1 = lobby_state
@@ -572,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_update_settings_leader_only() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         lobby_state
             .add_player(PlayerId::from("leader"), "Leader".to_string())
@@ -600,7 +641,7 @@ mod tests {
 
     #[test]
     fn test_start_game_leader_only() {
-        let lobby_state = LobbyState::create().unwrap();
+        let lobby_state = create_test_lobby();
 
         lobby_state
             .add_player(PlayerId::from("leader"), "Leader".to_string())
