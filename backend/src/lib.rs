@@ -10,6 +10,7 @@ use data::{vectorize_joyo_kanji, vectorize_word_list, Kanji};
 use db::DbPool;
 use error::AppError;
 use rand::{Rng, distr::{Alphanumeric, Distribution, weighted::WeightedIndex}};
+use tokio::sync::broadcast;
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -100,6 +101,7 @@ pub struct LobbyState {
     pub settings: Shared<GameSettings>,
     pub game_status: Shared<GameStatus>,
     pub current_kanji: Shared<Option<String>>,
+    pub tx: broadcast::Sender<String>,
 }
 
 impl LobbyState {
@@ -112,6 +114,7 @@ impl LobbyState {
             settings: Shared::new(GameSettings::default()),
             game_status: Shared::new(GameStatus::Lobby),
             current_kanji: Shared::new(None),
+            tx: broadcast::channel(100).0, // .0 = Sender, .1 = Receiver
         }
     }
 
@@ -200,41 +203,56 @@ impl LobbyState {
 
         self.generate_random_kanji()?;
 
+        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+            kanji: self.get_current_kanji()?.unwrap_or_default(),
+            status: GameStatus::Playing,
+            scores: self.get_all_players()?,
+        }).unwrap_or_default());
+
         Ok(())
     }
 
     pub fn add_player(&self, player_id: PlayerId, player_name: String) -> Result<bool> {
-        let mut players = self
-            .players
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))?;
-        let mut leader = self
-            .lobby_leader
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))?;
+        let is_leader;
 
-        let is_leader = players.is_empty();
-        if is_leader {
-            *leader = player_id.clone();
+        {
+            let mut players = self
+                .players
+                .lock()
+                .map_err(|e| AppError::LockError(e.to_string()))?;
+            let mut leader = self
+                .lobby_leader
+                .lock()
+                .map_err(|e| AppError::LockError(e.to_string()))?;
+
+            is_leader = players.is_empty();
+            if is_leader {
+                *leader = player_id.clone();
+            }
+            let trimmed_name = player_name.trim();
+            if trimmed_name.is_empty() {
+                return Err(AppError::InvalidInput(
+                    "Player name cannot be empty".to_string(),
+                ));
+            }
+
+            let normalized_name = trimmed_name
+                .split_whitespace()
+                .collect::<Vec<&str>>()
+                .join(" ");
+
+            players.push(PlayerData {
+                id: player_id,
+                name: normalized_name.to_string(),
+                score: 0,
+                joined_at: Utc::now(),
+            });
         }
-        let trimmed_name = player_name.trim();
-        if trimmed_name.is_empty() {
-            return Err(AppError::InvalidInput(
-                "Player name cannot be empty".to_string(),
-            ));
-        }
 
-        let normalized_name = trimmed_name
-            .split_whitespace()
-            .collect::<Vec<&str>>()
-            .join(" ");
+        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+            players: self.get_all_players()?,
+        }).unwrap_or_default());
 
-        players.push(PlayerData {
-            id: player_id,
-            name: normalized_name.to_string(),
-            score: 0,
-            joined_at: Utc::now(),
-        });
         Ok(is_leader)
     }
 
@@ -279,12 +297,19 @@ impl LobbyState {
     }
 
     // Get all players and scores (for a leaderboard)
-    pub fn get_all_players(&self) -> Result<Vec<PlayerData>> {
+    pub fn get_all_players(&self) -> Result<Vec<shared::PlayerData>> {
         let players = self
             .players
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
-        Ok(players.iter().cloned().collect())
+
+        let shared_players = players.iter().map(|p| shared::PlayerData {
+            id: p.id.clone(),
+            name: p.name.clone(),
+            score: p.score,
+            joined_at: p.joined_at.to_rfc3339(),
+        }).collect();
+        Ok(shared_players)
     }
 
     pub fn get_current_kanji(&self) -> Result<Option<String>> {
@@ -317,6 +342,10 @@ impl LobbyState {
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
         *current_kanji = Some(new_kanji.kanji.clone());
+
+        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
+                    new_kanji: new_kanji.kanji.clone(),
+                }).unwrap_or_default());
 
         Ok(new_kanji.kanji)
     }
@@ -355,6 +384,10 @@ impl LobbyState {
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
         *current_kanji = Some(new_kanji.clone());
+
+        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
+                    new_kanji: new_kanji.clone(),
+                }).unwrap_or_default());
 
         Ok(new_kanji)
 

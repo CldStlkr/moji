@@ -4,8 +4,10 @@ use crate::{
 };
 use axum::{
     debug_handler,
-    extract::{Json, Path, State},
+    extract::{Json, Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    response::IntoResponse,
 };
+use futures::{sink::SinkExt, stream::StreamExt};
 use serde_json::json;
 use shared::{
     CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
@@ -123,7 +125,7 @@ pub async fn get_player_info(
         id: player.id.clone(),
         name: player.name.clone(),
         score: player.score,
-        joined_at: player.joined_at.to_rfc3339(),
+        joined_at: player.joined_at.clone(),
     }))
 }
 
@@ -143,7 +145,7 @@ pub async fn get_lobby_players(
                 "id": p.id,
                 "name": p.name,
                 "score": p.score,
-                "joined_at": p.joined_at.to_rfc3339()
+                "joined_at": p.joined_at
             })
         })
         .collect();
@@ -229,4 +231,98 @@ pub async fn check_word(
         error: None,
         kanji: new_kanji,
     }))
+}
+
+#[debug_handler]
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(app_state): State<Arc<AppState>>,
+    Path((lobby_id, player_id)): Path<(String, PlayerId)>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, app_state, lobby_id, player_id))
+}
+
+async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: String, player_id: PlayerId) {
+    let (mut sender, mut receiver) = socket.split();
+
+    // Get Lobby and Subscribe
+    let lobby = match get_lobby(&app_state, &lobby_id) {
+        Ok(l) => l,
+        Err(_) => return, // Lobby closed or not found
+    };
+
+    let mut rx = lobby.tx.subscribe();
+
+    // Spawn task to forward broadcast messages to this client
+    let mut send_task = tokio::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            if sender.send(Message::Text(msg.into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Listen for client messages
+    let mut recv_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = receiver.next().await {
+            if let Message::Text(text) = msg {
+                if let Ok(client_msg) = serde_json::from_str::<shared::ClientMessage>(&text) {
+                    match client_msg {
+                        shared::ClientMessage::Typing { input } => {
+                            // Broadcast typing status to everyone else
+                            let _ = lobby.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerTyping {
+                                player_id: player_id.clone(),
+                                input,
+                            }).unwrap());
+                        }
+                        shared::ClientMessage::Submit { word, kanji } => {
+                            let word_list = &lobby.word_list;
+                            let input_word = word.trim();
+                            let input_kanji = kanji.trim();
+
+                            let good_kanji = input_word.contains(input_kanji);
+                            let good_word = word_list.contains(input_word);
+
+                            let (message, new_kanji_opt) = if good_kanji && good_word {
+                                let _ = lobby.increment_player_score(&player_id);
+                                let new_k = lobby.generate_random_kanji().ok();
+
+                                let _ = lobby.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+                                    players: lobby.get_all_players().unwrap_or_default()
+                                }).unwrap());
+
+
+                                ("Good guess!".to_string(), new_k)
+                            } else if good_kanji {
+                                ("Bad Guess: Correct kanji, but not valid word.".to_string(), None)
+                            } else if good_word {
+                                ("Bad Guess: Valid word, but does not contain the correct kanji.".to_string(), None)
+                            } else {
+                                ("Bad Guess: Incorrect kanji and not a valid word.".to_string(), None)
+                            };
+
+                            let score = lobby.get_player_score(&player_id).unwrap_or(0);
+
+                            // Broadcast the verification result so clients can show animations/toasts
+                             let _ = lobby.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+                                 player_id: player_id.clone(),
+                                 result: shared::CheckWordResponse {
+                                     message,
+                                     score,
+                                     error: None,
+                                     kanji: new_kanji_opt,
+                                 },
+                             }).unwrap());
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // If any one of these tasks exit, abort the other
+    tokio::select! {
+        _ = (&mut send_task) => recv_task.abort(),
+        _ = (&mut recv_task) => send_task.abort(),
+    }
 }

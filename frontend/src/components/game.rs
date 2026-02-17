@@ -3,8 +3,10 @@ use crate::components::player_scores::CompactPlayerScoresComponent;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use shared::{PlayerData, PlayerId, UserInput};
+use shared::{PlayerData, PlayerId, ClientMessage, ServerMessage};
 use wasm_bindgen_futures::spawn_local;
+use futures::{SinkExt, StreamExt};
+use gloo_net::websocket::{futures::WebSocket, Message};
 
 #[component]
 pub fn GameComponent<F>(lobby_id: String, player_id: PlayerId, on_exit_game: F) -> impl IntoView
@@ -28,116 +30,108 @@ where
     let (lobby_id_signal, _) = signal(lobby_id.clone());
     let (player_id_signal, _) = signal(player_id.clone());
 
-    // Updated polling to get all player data
-    let start_kanji_polling = move || {
+    let ws_sender = RwSignal::new(None::<futures::channel::mpsc::UnboundedSender<String>>);
+
+    Effect::new(move |_| {
         let lobby_id = lobby_id_signal.get();
         let player_id = player_id_signal.get();
+
+        // Create a fresh channel for this connection attempt
+        let (tx, mut rx) = futures::channel::mpsc::unbounded::<String>();
+
+        // Store the sender so perform_submit can use it
+        ws_sender.set(Some(tx));
+
         spawn_local(async move {
-            loop {
-                // Poll every 1 second
-                gloo_timers::future::TimeoutFuture::new(1000).await;
+            // Calculate WS URL
+            let window = web_sys::window().unwrap();
+            let location = window.location();
+            let protocol = if location.protocol().unwrap() == "https:" { "wss" } else { "ws" };
+            let host = location.host().unwrap();
+            let ws_url = format!("{}://{}/ws/{}/{}", protocol, host, lobby_id, player_id);
 
-                if !is_polling.get_untracked() {
-                    break;
+            let ws = match WebSocket::open(&ws_url) {
+                Ok(ws) => ws,
+                Err(e) => {
+                    leptos::logging::error!("Failed to open connection: {:?}", e);
+                    return;
                 }
+            };
 
-                match api::get_kanji(&lobby_id).await {
-                    Ok(prompt) => {
-                        let new_kanji = prompt.kanji;
-                        // Only update if kanji has changed
-                        if kanji.with_untracked(|k| k != &new_kanji) && !new_kanji.is_empty() {
-                            kanji.set(new_kanji);
-                            // Clear the result when new kanji appears
-                            result.set(String::new());
-                        }
-                    }
-                    Err(_) => {
-                        // Silently ignore errors during polling
-                    }
+            let (mut write, mut read) = ws.split();
+
+            // First, forward outgoing messages (channel -> WebSocket)
+            spawn_local(async move {
+                while let Some(msg) = rx.next().await {
+                    let _ = write.send(Message::Text(msg)).await;
                 }
+            });
 
-                // Poll for updated player scores - now get all players
-                if let Ok(players_response) = api::get_lobby_players(&lobby_id).await {
-                    if let Some(players_array) =
-                        players_response.get("players").and_then(|p| p.as_array())
-                    {
-                        let mut players_data = Vec::new();
-
-                        for player_data in players_array {
-                            if let (Some(id_str), Some(name), Some(score_val), Some(joined_at)) = (
-                                player_data.get("id").and_then(|id| id.as_str()),
-                                player_data.get("name").and_then(|n| n.as_str()),
-                                player_data.get("score").and_then(|s| s.as_u64()),
-                                player_data.get("joined_at").and_then(|j| j.as_str()),
-                            ) {
-                                let player_id_parsed = PlayerId::from(id_str);
-                                players_data.push(PlayerData {
-                                    id: player_id_parsed.clone(),
-                                    name: name.to_string(),
-                                    score: score_val as u32,
-                                    joined_at: joined_at.to_string(),
-                                });
-
-                                // Update current player's score if it matches
-                                if player_id_parsed == player_id {
-                                    score.set(score_val as u32);
+            // Second, handle incoming messages (WebSocket -> Signals)
+            while let Some(msg) = read.next().await {
+                if let Ok(Message::Text(text)) = msg {
+                    if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
+                        match server_msg {
+                            ServerMessage::GameState { kanji: new_kanji, status: _, scores } => {
+                                kanji.set(new_kanji);
+                                all_players.set(scores);
+                            },
+                            ServerMessage::WordChecked { player_id: pid, result: res } => {
+                                // Show result if it's our submission
+                                if pid == player_id {
+                                    result.set(res.message);
+                                    score.set(res.score);
+                                    if let Some(k) = res.kanji {
+                                        kanji.set(k);
+                                    }
                                 }
-                            }
+                            },
+                            ServerMessage::KanjiUpdate { new_kanji } => {
+                                // Clear old result when new kanji arrives
+                                result.set(String::new());
+                                kanji.set(new_kanji);
+                            },
+                            ServerMessage::PlayerListUpdate { players } => {
+                                all_players.set(players.clone());
+                                // Update own score locally
+                                if let Some(me) = players.iter().find(|p| p.id == player_id) {
+                                    score.set(me.score);
+                                }
+                            },
+                            _ => {} // Handle typing events later
                         }
-
-                        all_players.set(players_data);
                     }
                 }
             }
+
         });
-    };
+    });
 
     let perform_submit = move || {
         let current_word = word.get();
         let current_kanji = kanji.get();
-        let lobby_id = lobby_id_signal.get();
-        let player_id = player_id_signal.get();
 
-        spawn_local(async move {
-            if current_word.trim().is_empty() || current_kanji.is_empty() {
-                return;
-            }
+        if current_word.trim().is_empty() { return; }
 
-            is_loading.set(true);
-            error_message.set(String::new());
+        let msg = ClientMessage::Submit {
+            word: current_word,
+            kanji: current_kanji
+        };
 
-            let user_input = UserInput {
-                word: current_word.trim().to_string(),
-                kanji: current_kanji,
-                player_id,
-            };
+        // Send to writer task
+        if let Some(mut sender) = ws_sender.get() {
+            let payload = serde_json::to_string(&msg).unwrap();
+            spawn_local(async move { let _ = sender.send(payload).await; });
+        }
 
-            match api::check_word(&lobby_id, user_input).await {
-                Ok(response) => {
-                    result.set(response.message);
-                    score.set(response.score);
-                    word.set(String::new());
 
-                    if let Some(new_kanji) = response.kanji {
-                        kanji.set(new_kanji);
-                    }
+        // Clear inputs
+        word.set("".to_string());
+        if let Some(input) = input_ref.get() {
+            input.set_value("");
+            let _ = input.focus();
+        }
 
-                    if let Some(input) = input_ref.get() {
-                        input.set_value("");
-                        let _ = input.focus();
-                    }
-                }
-                Err(e) => {
-                    error_message.set(format!("Could not submit word: {}", e));
-                    word.set(String::new());
-                    if let Some(input) = input_ref.get() {
-                        input.set_value("");
-                    }
-                }
-            }
-
-            is_loading.set(false);
-        });
     };
 
     Effect::new(move |_| {
@@ -175,7 +169,6 @@ where
                 let _ = input.focus();
             }
 
-            start_kanji_polling();
         });
     });
 

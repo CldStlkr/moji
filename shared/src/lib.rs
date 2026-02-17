@@ -4,15 +4,57 @@
 
 #![cfg_attr(not(feature = "ssr"), no_std)]
 
+// ----------------------DO NOT REMOVE IDIOT -------------------
 extern crate alloc;
 use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-
 use core::ops::Deref;
-
 use serde::{Deserialize, Serialize};
+// -------------------------------------------------------------
+
+///Messages sent from Client -> Server
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
+pub enum ClientMessage {
+    /// User types something in input box
+    Typing { input: String },
+    /// User submits a guess
+    Submit { word: String, kanji: String },
+}
+
+
+
+///Messages sent from Server -> Client
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
+pub enum ServerMessage {
+    /// Sent upon connection and significant state changes
+    GameState {
+        kanji: String,
+        status: GameStatus,
+        scores: Vec<PlayerData>,
+    },
+
+    /// Broadcast when another player is typing
+    PlayerTyping {
+        player_id: PlayerId,
+        input: String,
+    },
+
+    /// Broadcast result of a submission
+    WordChecked {
+        player_id: PlayerId,
+        result: CheckWordResponse,
+    },
+
+    /// Broadcast immediately when a correct word is found
+    KanjiUpdate { new_kanji: String },
+
+    PlayerListUpdate { players: Vec<PlayerData> },
+
+}
 
 /// A prompt sent from the server to each client at the start of a round.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,7 +152,7 @@ pub struct GameSettings {
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            difficulty_levels: alloc::vec![
+            difficulty_levels: alloc::vec![ // Must explicitly refer as alloc::vec!
                 "N1".into(),
                 "N2".into(),
                 "N3".into(),
