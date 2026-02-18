@@ -54,6 +54,8 @@ pub enum ServerMessage {
 
     PlayerListUpdate { players: Vec<PlayerData> },
 
+    SettingsUpdate { settings: GameSettings },
+
 }
 
 /// A prompt sent from the server to each client at the start of a round.
@@ -71,7 +73,7 @@ pub struct UserInput {
 }
 
 /// Wrapper-type so we don’t pass raw strings everywhere.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PlayerId(pub String);
 

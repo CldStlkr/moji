@@ -4,11 +4,11 @@ use shared::{LobbyInfo, PlayerId};
 
 mod lobby_join;
 mod lobby_management;
-mod lobby_polling;
+mod lobby_socket;
 
 use lobby_join::LobbyJoinComponent;
 use lobby_management::LobbyManagementComponent;
-use lobby_polling::{use_lobby_polling, PollingConfig};
+use lobby_socket::{use_lobby_socket, LobbySocketConfig};
 
 // Re-export shared components
 pub use lobby_management::{GameInstructions, StatusMessage};
@@ -28,13 +28,11 @@ where
     let (current_player_id, set_current_player_id) = signal(PlayerId::default());
 
     // Start polling when in lobby
-    use_lobby_polling(PollingConfig {
+    use_lobby_socket(LobbySocketConfig {
         in_lobby,
         current_lobby_id,
         current_player_id,
         set_lobby_info,
-        set_status,
-        set_in_lobby,
         on_lobby_joined,
     });
 

@@ -36,7 +36,3 @@ backend = "http://backend:8080/kanji/"
 [[proxy]]
 rewrite = "/new_kanji/"
 backend = "http://backend:8080/new_kanji/"
-
-[[proxy]]
-rewrite = "/check_word/"
-backend = "http://backend:8080/check_word/"

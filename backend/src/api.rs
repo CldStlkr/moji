@@ -10,8 +10,8 @@ use axum::{
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde_json::json;
 use shared::{
-    CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
-    StartGameRequest, UpdateSettingsRequest, UserInput,
+    JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
+    StartGameRequest, UpdateSettingsRequest,
 };
 use std::sync::Arc;
 
@@ -184,54 +184,6 @@ pub async fn generate_new_kanji(
     Ok(Json(KanjiPrompt { kanji }))
 }
 
-#[debug_handler]
-pub async fn check_word(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-    Json(input): Json<UserInput>,
-) -> Result<Json<CheckWordResponse>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-
-    let word_list = &lobby.word_list;
-    let input_word = input.word.trim();
-    let input_kanji = input.kanji.trim();
-    let player_id = input.player_id;
-
-    let good_kanji = input_word.contains(input_kanji);
-    let good_word = word_list.contains(input_word);
-
-    let (message, new_kanji) = if good_kanji && good_word {
-        // Update the specific player's score
-        let _ = lobby.increment_player_score(&player_id)?;
-        let new_kanji = lobby.generate_weighted_random_kanji()?;
-        ("Good guess!".to_string(), Some(new_kanji))
-    } else if good_kanji {
-        (
-            "Bad Guess: Correct kanji, but not a valid word.".to_string(),
-            None,
-        )
-    } else if good_word {
-        (
-            "Bad Guess: Valid word, but does not contain the correct kanji.".to_string(),
-            None,
-        )
-    } else {
-        (
-            "Bad guess: Incorrect kanji and not a valid word.".to_string(),
-            None,
-        )
-    };
-
-    // Get the current score for this player
-    let score = lobby.get_player_score(&player_id)?;
-
-    Ok(Json(CheckWordResponse {
-        message,
-        score,
-        error: None,
-        kanji: new_kanji,
-    }))
-}
 
 #[debug_handler]
 pub async fn ws_handler(

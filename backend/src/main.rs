@@ -4,7 +4,7 @@ use axum::{
 };
 use moji::{
     api::{
-        check_word, create_lobby, generate_new_kanji, get_kanji, get_lobby_info, get_lobby_players,
+        create_lobby, generate_new_kanji, get_kanji, get_lobby_info, get_lobby_players,
         get_player_info, join_lobby, start_game, update_lobby_settings, ws_handler,
     },
     db::init_db_pool,
@@ -57,7 +57,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/lobby/players/{lobby_id}", get(get_lobby_players))
         .route("/kanji/{lobby_id}", get(get_kanji))
         .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
-        .route("/check_word/{lobby_id}", post(check_word))
         .route("/lobby/{lobby_id}/info", get(get_lobby_info))
         .route("/lobby/{lobby_id}/settings", post(update_lobby_settings))
         .route("/lobby/{lobby_id}/start", post(start_game))

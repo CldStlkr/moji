@@ -133,12 +133,18 @@ impl LobbyState {
             ));
         }
 
-        let mut settings = self
+        {
+            let mut settings = self
             .settings
             .lock()
             .map_err(|e| AppError::LockError(e.to_string()))?;
 
-        *settings = new_settings;
+            *settings = new_settings.clone();
+        }
+
+        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::SettingsUpdate {
+            settings: new_settings
+        }).unwrap_or_default());
 
         Ok(())
     }

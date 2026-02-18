@@ -1,8 +1,8 @@
 use crate::error::{parse_error_response, ClientError};
 use gloo_net::http::Request;
 use shared::{
-    CheckWordResponse, JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
-    StartGameRequest, UpdateSettingsRequest, UserInput,
+    JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
+    StartGameRequest, UpdateSettingsRequest,
 };
 const API_BASE: &str = "";
 
@@ -63,14 +63,6 @@ pub async fn generate_new_kanji(lobby_id: &str) -> ApiResult<KanjiPrompt> {
     make_request::<(), _>("POST", format!("{}/new_kanji/{}", API_BASE, lobby_id), None).await
 }
 
-pub async fn check_word(lobby_id: &str, user_input: UserInput) -> ApiResult<CheckWordResponse> {
-    make_request(
-        "POST",
-        format!("{}/check_word/{}", API_BASE, lobby_id),
-        Some(&user_input),
-    )
-    .await
-}
 
 pub async fn get_player_info(lobby_id: &str, player_id: &PlayerId) -> ApiResult<PlayerData> {
     make_request::<(), _>(

@@ -69,6 +69,7 @@ pub fn PlayerScoresComponent(
 pub fn CompactPlayerScoresComponent(
     players: Vec<PlayerData>,
     current_player_id: ReadSignal<PlayerId>,
+    typing_status: ReadSignal<std::collections::HashMap<PlayerId, String>>,
 ) -> impl IntoView {
     // Sort players by score (highest first)
     let mut sorted_players = players;
@@ -84,17 +85,33 @@ pub fn CompactPlayerScoresComponent(
                     .into_iter()
                     .map(|player| {
                         let is_current = player.id == current_player_id.get();
+                        let pid = StoredValue::new(player.id.clone());
+                        let typing_text = move || {
+                            typing_status.with(|map| {
+                                pid.with_value(|id| map.get(id).cloned().unwrap_or_default())
+                            })
+                        };
+
+                        let typing_text_clone = typing_text;
                         view! {
                             <div class=format!(
-                                "flex justify-between items-center px-3 py-2 rounded bg-white transition-colors hover:bg-gray-50 {}",
+                                "flex flex-col px-3 py-2 rounded bg-white transition-colors hover:bg-gray-50 {}",
                                 if is_current {
                                     "bg-blue-50 font-semibold border-l-4 border-blue-500"
                                 } else {
                                     ""
                                 },
                             )>
-                                <span class="font-medium text-gray-900">{player.name}:</span>
-                                <span class="font-semibold text-blue-600 ml-2">{player.score}</span>
+                                <div class="flex justify-between items-center w-full">
+                                    <span class="font-medium text-gray-900">{player.name}</span>
+                                    <span class="font-semibold text-blue-600 ml-2">{player.score}</span>
+                                </div>
+                                <Show when=move || !typing_text().is_empty()>
+                                    <div class="text-xs text-gray-500 mt-1 italic break-all flex items-center gap-1">
+                                        <span class="animate-pulse">"✎"</span>
+                                        {typing_text_clone}
+                                    </div>
+                                </Show>
                             </div>
                         }
                     })

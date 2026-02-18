@@ -21,8 +21,8 @@ where
     let is_loading = RwSignal::new(false);
     let is_copied = RwSignal::new(false);
     let error_message = RwSignal::new(String::new());
-    let is_polling = RwSignal::new(true);
-    let all_players = RwSignal::<Vec<PlayerData>>::new(Vec::new()); // Add this
+    let all_players = RwSignal::<Vec<PlayerData>>::new(Vec::new()); 
+    let typing_status = RwSignal::new(std::collections::HashMap::<PlayerId, String>::new());
 
     let input_ref = NodeRef::<html::Input>::new();
 
@@ -30,15 +30,16 @@ where
     let (lobby_id_signal, _) = signal(lobby_id.clone());
     let (player_id_signal, _) = signal(player_id.clone());
 
+    // Signal to hold the current WebSocket sender
     let ws_sender = RwSignal::new(None::<futures::channel::mpsc::UnboundedSender<String>>);
 
     Effect::new(move |_| {
         let lobby_id = lobby_id_signal.get();
         let player_id = player_id_signal.get();
 
-        // Create a fresh channel for this connection attempt
+        // Create a FRESH channel for this connection attempt
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<String>();
-
+        
         // Store the sender so perform_submit can use it
         ws_sender.set(Some(tx));
 
@@ -75,6 +76,7 @@ where
                             ServerMessage::GameState { kanji: new_kanji, status: _, scores } => {
                                 kanji.set(new_kanji);
                                 all_players.set(scores);
+                                typing_status.update(|m| m.clear());
                             },
                             ServerMessage::WordChecked { player_id: pid, result: res } => {
                                 // Show result if it's our submission
@@ -85,11 +87,15 @@ where
                                         kanji.set(k);
                                     }
                                 }
+                                // If a word was checked (even if wrong), maybe we don't clear typing?
+                                // Actually, if it was wrong, they might keep typing.
+                                // If it was right (new kanji), that comes via KanjiUpdate usually.
                             },
                             ServerMessage::KanjiUpdate { new_kanji } => {
                                 // Clear old result when new kanji arrives
                                 result.set(String::new());
                                 kanji.set(new_kanji);
+                                typing_status.update(|m| m.clear());
                             },
                             ServerMessage::PlayerListUpdate { players } => {
                                 all_players.set(players.clone());
@@ -98,7 +104,16 @@ where
                                     score.set(me.score);
                                 }
                             },
-                            _ => {} // Handle typing events later
+                            ServerMessage::PlayerTyping { player_id: pid, input } => {
+                                typing_status.update(|m| {
+                                    if input.is_empty() {
+                                        m.remove(&pid);
+                                    } else {
+                                        m.insert(pid, input);
+                                    }
+                                });
+                            }
+                            _ => {},
                         }
                     }
                 }
@@ -110,6 +125,8 @@ where
     let perform_submit = move || {
         let current_word = word.get();
         let current_kanji = kanji.get();
+        let _lobby_id = lobby_id_signal.get();
+        let _player_id = player_id_signal.get();
 
         if current_word.trim().is_empty() { return; }
 
@@ -119,19 +136,34 @@ where
         };
 
         // Send to writer task
-        if let Some(mut sender) = ws_sender.get() {
+        if let Some(mut sender) = ws_sender.get_untracked() {
             let payload = serde_json::to_string(&msg).unwrap();
             spawn_local(async move { let _ = sender.send(payload).await; });
         }
 
-
-        // Clear inputs
+        // Clear input immediately
         word.set("".to_string());
         if let Some(input) = input_ref.get() {
             input.set_value("");
             let _ = input.focus();
         }
 
+    };
+
+    let handle_input = move |ev| {
+        let val = event_target_value(&ev);
+        word.set(val.clone());
+
+        if let Some(mut sender) = ws_sender.get_untracked() {
+             let msg = ClientMessage::Typing { input: val };
+             // Use unwrap_or_default or handle error if needed, but here simple unwrap is fine mostly
+             // or just ignore errors
+             if let Ok(payload) = serde_json::to_string(&msg) {
+                 spawn_local(async move {
+                     let _ = sender.send(payload).await;
+                 });
+             }
+        }
     };
 
     Effect::new(move |_| {
@@ -168,12 +200,10 @@ where
             if let Some(input) = input_ref.get() {
                 let _ = input.focus();
             }
-
         });
     });
 
     on_cleanup(move || {
-        is_polling.set(false);
     });
 
     let submit_word = move |_: ev::MouseEvent| {
@@ -187,7 +217,6 @@ where
     };
 
     let handle_exit_game = move |_: ev::MouseEvent| {
-        is_polling.set(false);
         on_exit_game();
     };
 
@@ -300,7 +329,7 @@ where
                             node_ref=input_ref
                             type="text"
                             value=move || word.get()
-                            on:input=move |ev| word.set(event_target_value(&ev))
+                            on:input=handle_input
                             on:keydown=handle_key_press
                             placeholder="Enter a Japanese word with this kanji"
                             disabled=move || is_loading.get()
@@ -344,6 +373,7 @@ where
                         <CompactPlayerScoresComponent
                             players=all_players.get()
                             current_player_id=player_id_signal
+                            typing_status=typing_status.read_only()
                         />
                     </Show>
                 </div>
