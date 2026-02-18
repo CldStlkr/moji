@@ -139,13 +139,13 @@ where
     };
 
     view! {
-        <div class="card max-w-2xl mx-auto my-8">
-            <h2 class="text-3xl font-bold text-gray-800 mb-8 text-center">
+        <div class="card max-w-2xl mx-auto my-8 bg-white dark:bg-gray-800 shadow-lg p-8 rounded-lg transition-colors">
+            <h2 class="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-8 text-center">
                 "Join or Create a Game"
             </h2>
             <div class="space-y-6">
                 <div class="space-y-2">
-                    <label for="player-name" class="block font-semibold text-gray-800 text-lg">
+                    <label for="player-name" class="block font-semibold text-gray-800 dark:text-gray-200 text-lg">
                         "Your Name:"
                     </label>
                     <input
@@ -155,14 +155,14 @@ where
                         on:input=move |ev| player_name.set(event_target_value(&ev))
                         placeholder="Enter your name"
                         disabled=move || is_loading.get()
-                        class="input-field w-full"
+                        class="input-field w-full p-3 border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded-md text-base transition-colors focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none"
                     />
                 </div>
 
                 <button
                     on:click=create_lobby_action
                     disabled=move || is_loading.get() || player_name.get().trim().is_empty()
-                    class="btn-primary w-full text-lg"
+                    class="btn-primary w-full text-lg bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-semibold py-3 px-5 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                 >
                     "Create New Game"
                 </button>
@@ -175,7 +175,7 @@ where
                         on:keydown=handle_key_press
                         placeholder="Enter Lobby ID"
                         disabled=move || is_loading.get()
-                        class="input-field flex-1"
+                        class="input-field flex-1 p-3 border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded-md text-base transition-colors focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none"
                     />
                     <button
                         on:click=join_lobby_action
@@ -183,7 +183,7 @@ where
                             is_loading.get() || input_lobby_id.get().trim().is_empty()
                                 || player_name.get().trim().is_empty()
                         }
-                        class="btn-secondary whitespace-nowrap"
+                        class="btn-secondary whitespace-nowrap bg-orange-300 hover:bg-orange-400 dark:bg-orange-600 dark:hover:bg-orange-700 text-gray-800 dark:text-gray-100 font-semibold py-3 px-4 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                     >
                         "Join Game"
                     </button>

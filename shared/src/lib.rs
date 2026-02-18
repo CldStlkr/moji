@@ -149,6 +149,7 @@ pub struct GameSettings {
     pub difficulty_levels: Vec<String>,
     pub time_limit_seconds: Option<u32>,
     pub max_players: u32,
+    pub weighted: bool,
 }
 
 impl Default for GameSettings {
@@ -163,6 +164,7 @@ impl Default for GameSettings {
             ],
             time_limit_seconds: None,
             max_players: 4,
+            weighted: false,
         }
     }
 }

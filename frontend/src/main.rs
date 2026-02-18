@@ -62,10 +62,29 @@ fn App() -> impl IntoView {
         clear_session();
     };
 
+    let is_dark_mode = RwSignal::new(false);
+
+    // Toggle dark mode class on html element
+    Effect::new(move |_| {
+        let doc = web_sys::window().unwrap().document().unwrap().document_element().unwrap();
+        if is_dark_mode.get() {
+            let _ = doc.class_list().add_1("dark");
+        } else {
+            let _ = doc.class_list().remove_1("dark");
+        }
+    });
+
     view! {
-        <div class="max-w-4xl mx-auto p-5">
-            <header class="text-center mb-8">
+        <div class="max-w-4xl mx-auto p-5 dark:text-gray-100">
+            <header class="flex justify-between items-center mb-8">
                 <h1 class="text-4xl font-bold text-blue-500">"文字"</h1>
+                <button
+                    on:click=move |_| is_dark_mode.update(|d| *d = !*d)
+                    class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    title="Toggle Dark Mode"
+                >
+                    {move || if is_dark_mode.get() { "🌙" } else { "☀️" }}
+                </button>
             </header>
             <main>
                 <Show
@@ -90,11 +109,11 @@ fn App() -> impl IntoView {
                     }
                 >
                     <div class="text-center p-8">
-                        <div class="text-lg text-gray-600">"Loading..."</div>
+                        <div class="text-lg text-gray-600 dark:text-gray-300">"Loading..."</div>
                     </div>
                 </Show>
             </main>
-            <footer class="text-center mt-8 pt-4 border-t border-gray-200 text-gray-600 text-sm">
+            <footer class="text-center mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
                 <p>"Learn Japanese Kanji through word recognition"</p>
             </footer>
         </div>

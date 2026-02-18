@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Custom animations - moved outside of layers for Tailwind v4 compatibility */
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
@@ -35,6 +37,7 @@
     line-height: 1.6;
     color: var(--neutral-dark);
     background-color: #f9f9f9;
+    @apply dark:bg-gray-900 dark:text-gray-100 transition-colors duration-300;
   }
 }
 

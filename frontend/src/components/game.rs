@@ -245,35 +245,35 @@ where
         if result_text.is_empty() {
             return "".to_string();
         }
-        let base_classes = "p-6 rounded-xl text-center font-bold text-lg border-2";
+        let base_classes = "p-6 rounded-xl text-center font-bold text-lg border-2 transition-colors";
         if result_text.contains("Good guess") {
             format!(
-                "{} bg-green-50 border-green-200 text-green-800",
+                "{} bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300",
                 base_classes
             )
         } else if result_text.contains("Bad") {
-            format!("{} bg-red-50 border-red-200 text-red-800", base_classes)
+            format!("{} bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300", base_classes)
         } else {
-            format!("{} bg-blue-50 border-blue-200 text-blue-800", base_classes)
+            format!("{} bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300", base_classes)
         }
     };
 
     view! {
-        <div class="max-w-6xl mx-auto my-8 p-8 bg-white rounded-lg shadow-lg">
+        <div class="max-w-6xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors">
             // Game Header
             <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
-                <h2 class="text-2xl font-bold text-gray-800">"Kanji Game"</h2>
+                <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">"Kanji Game"</h2>
                 <div class="flex items-center gap-4 flex-wrap">
-                    <div class="bg-blue-50 px-3 py-1 rounded-full text-sm text-blue-700 flex items-center whitespace-nowrap">
+                    <div class="bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full text-sm text-blue-700 dark:text-blue-300 flex items-center whitespace-nowrap">
                         "Player: "
                         <span class="font-semibold ml-1">{move || player_name.get()}</span>
                     </div>
-                    <div class="text-xl font-bold text-blue-500">
+                    <div class="text-xl font-bold text-blue-500 dark:text-blue-400">
                         "Score: " {move || score.get()}
                     </div>
                     <button
                         on:click=handle_exit_game
-                        class="bg-transparent hover:bg-gray-50 text-gray-600 border border-gray-400 font-medium py-2 px-4 rounded transition-colors hover:-translate-y-0.5 active:translate-y-0.5"
+                        class="bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-400 dark:border-gray-500 font-medium py-2 px-4 rounded transition-all hover:-translate-y-0.5 active:translate-y-0.5"
                     >
                         "Exit Game"
                     </button>
@@ -281,12 +281,12 @@ where
             </div>
 
             // Lobby Info
-            <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 rounded text-sm relative">
-                <span class="text-gray-700">"Lobby ID:"</span>
-                <span class="font-bold tracking-wider text-blue-600">{lobby_id.clone()}</span>
+            <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm relative transition-colors">
+                <span class="text-gray-700 dark:text-gray-300">"Lobby ID:"</span>
+                <span class="font-bold tracking-wider text-blue-600 dark:text-blue-400">{lobby_id.clone()}</span>
                 <button
                     on:click=copy_lobby_id
-                    class="ml-2 px-1 py-0.5 text-xs font-medium bg-white border border-gray-300 rounded transition-all duration-200 hover:bg-blue-50 hover:border-blue-400 hover:shadow-sm active:scale-95 active:bg-blue-100"
+                    class="ml-2 px-1 py-0.5 text-xs font-medium bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded transition-all duration-200 hover:bg-blue-50 dark:hover:bg-gray-500 hover:border-blue-400 hover:shadow-sm active:scale-95 active:bg-blue-100 dark:text-gray-200"
                     title="Copy Lobby ID"
                 >
                     "Copy"
@@ -306,20 +306,20 @@ where
                 <div class="flex-1 space-y-8">
                     // Big Kanji Display Box
                     <div
-                        class="flex justify-center items-center bg-gray-100 rounded-lg border-2 border-gray-300"
+                        class="flex justify-center items-center bg-gray-100 dark:bg-gray-700 rounded-lg border-2 border-gray-300 dark:border-gray-600 transition-colors"
                         style="height: 320px;"
                     >
                         <Show
                             when=move || is_loading.get()
                             fallback=move || {
                                 view! {
-                                    <div class="text-9xl leading-none text-gray-800 kanji-font select-none">
+                                    <div class="text-9xl leading-none text-gray-800 dark:text-gray-100 kanji-font select-none">
                                         {move || kanji.get()}
                                     </div>
                                 }
                             }
                         >
-                            <div class="text-lg text-gray-500">"Loading..."</div>
+                            <div class="text-lg text-gray-500 dark:text-gray-400">"Loading..."</div>
                         </Show>
                     </div>
 
@@ -333,7 +333,7 @@ where
                             on:keydown=handle_key_press
                             placeholder="Enter a Japanese word with this kanji"
                             disabled=move || is_loading.get()
-                            class="w-full p-3 text-lg border-2 border-gray-300 rounded focus:border-blue-500 focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            class="w-full p-3 text-lg border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                         />
 
                         <button
@@ -342,7 +342,7 @@ where
                                 is_loading.get() || word.get().trim().is_empty()
                                     || kanji.get().is_empty()
                             }
-                            class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-5 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:transform-none"
+                            class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-5 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:transform-none"
                         >
                             "Submit"
                         </button>
@@ -355,13 +355,13 @@ where
 
                     // Error Message
                     <Show when=move || !error_message.get().is_empty()>
-                        <div class="p-4 rounded bg-red-100 text-red-700 text-center font-medium">
+                        <div class="p-4 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-center font-medium">
                             {move || error_message.get()}
                         </div>
                     </Show>
 
                     // Game Instructions
-                    <div class="mt-8 pt-6 border-t border-gray-200 text-gray-600 text-sm">
+                    <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
                         <p class="mb-2">"Type a Japanese word containing the displayed kanji."</p>
                         <p>"Click \"Submit\" to check your answer."</p>
                     </div>

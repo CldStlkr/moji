@@ -76,8 +76,8 @@ pub fn CompactPlayerScoresComponent(
     sorted_players.sort_by(|a, b| b.score.cmp(&a.score));
 
     view! {
-        <div class="bg-gray-50 rounded-lg p-4 mb-4">
-            <h4 class="text-lg font-semibold text-blue-600 mb-3 pb-2 border-b border-gray-200">
+        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4 transition-colors">
+            <h4 class="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3 pb-2 border-b border-gray-200 dark:border-gray-600">
                 "Scores"
             </h4>
             <div class="space-y-1">
@@ -95,19 +95,19 @@ pub fn CompactPlayerScoresComponent(
                         let typing_text_clone = typing_text;
                         view! {
                             <div class=format!(
-                                "flex flex-col px-3 py-2 rounded bg-white transition-colors hover:bg-gray-50 {}",
+                                "flex flex-col px-3 py-2 rounded bg-white dark:bg-gray-800 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 {}",
                                 if is_current {
-                                    "bg-blue-50 font-semibold border-l-4 border-blue-500"
+                                    "bg-blue-50 dark:bg-blue-900/30 font-semibold border-l-4 border-blue-500 dark:border-blue-400"
                                 } else {
                                     ""
                                 },
                             )>
                                 <div class="flex justify-between items-center w-full">
-                                    <span class="font-medium text-gray-900">{player.name}</span>
-                                    <span class="font-semibold text-blue-600 ml-2">{player.score}</span>
+                                    <span class="font-medium text-gray-900 dark:text-gray-200">{player.name}</span>
+                                    <span class="font-semibold text-blue-600 dark:text-blue-400 ml-2">{player.score}</span>
                                 </div>
                                 <Show when=move || !typing_text().is_empty()>
-                                    <div class="text-xs text-gray-500 mt-1 italic break-all flex items-center gap-1">
+                                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 italic break-all flex items-center gap-1">
                                         <span class="animate-pulse">"✎"</span>
                                         {typing_text_clone}
                                     </div>

@@ -17,7 +17,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-// Re-export model types that are used in API endpoints
 pub use shared::{
     CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, KanjiPrompt, PlayerId, UserInput,
 };
@@ -30,7 +29,7 @@ pub struct PlayerData {
     pub id: PlayerId,
     pub name: String,
     pub score: u32,
-    pub joined_at: DateTime<Utc>, // DateTime internally
+    pub joined_at: DateTime<Utc>,
 }
 
 pub struct AppState {
@@ -56,8 +55,11 @@ impl AppState {
 
         let word_list_path = format!("{}/kanji_words.csv", data_dir);
         let kanji_list_paths: Vec<String> = vec![
-            format!("{}/N5_kanji.csv", data_dir),
+            format!("{}/N1_kanji.csv", data_dir),
             format!("{}/N2_kanji.csv", data_dir),
+            format!("{}/N3_kanji.csv", data_dir),
+            format!("{}/N4_kanji.csv", data_dir),
+            format!("{}/N5_kanji.csv", data_dir),
         ];
 
 
@@ -102,6 +104,8 @@ pub struct LobbyState {
     pub game_status: Shared<GameStatus>,
     pub current_kanji: Shared<Option<String>>,
     pub tx: broadcast::Sender<String>,
+    pub active_level_indices: Shared<Vec<usize>>,
+    pub level_weights: Shared<HashMap<usize, WeightedIndex<f64>>>,
 }
 
 impl LobbyState {
@@ -115,6 +119,8 @@ impl LobbyState {
             game_status: Shared::new(GameStatus::Lobby),
             current_kanji: Shared::new(None),
             tx: broadcast::channel(100).0, // .0 = Sender, .1 = Receiver
+            active_level_indices: Shared::new(Vec::new()),
+            level_weights: Shared::new(HashMap::new()),
         }
     }
 
@@ -206,6 +212,50 @@ impl LobbyState {
         }
 
         *status = GameStatus::Playing;
+
+        {
+            let settings = self.settings.lock().map_err(|e| AppError::LockError(e.to_string()))?;
+            let levels = &settings.difficulty_levels;
+            let weighted = settings.weighted;
+
+            let mut indices: Vec<usize> = Vec::new();
+            for level in levels {
+                let idx = match level.as_str() {
+                    "N1" => 0, "N2" => 1, "N3" => 2, "N4" => 3, "N5" => 4, _ => 99
+                };
+
+                if idx < self.kanji_list.len()  && !self.kanji_list[idx].is_empty() {
+                    indices.push(idx);
+                }
+            }
+
+            if indices.is_empty() && self.kanji_list.len() > 4 {
+                indices.push(4);
+            }
+
+            let mut w_map = HashMap::new();
+            if weighted {
+                for &idx in &indices {
+                    let list = &self.kanji_list[idx];
+                    // Weight = Frequency. Higher is more common
+                    // Filter out kanji with <= 0 frequency
+                    let weights: Vec<f64> = list.iter()
+                        .map(|k| if k.frequency > 0 { k.frequency as f64 } else { 0.0 })
+                        .collect();
+
+                    if let Ok(dist) = WeightedIndex::new(&weights) {
+                        w_map.insert(idx, dist);
+                    }
+                }
+            }
+
+            // Store in state
+            let mut active_indices = self.active_level_indices.lock().map_err(|e| AppError::LockError(e.to_string()))?;
+            *active_indices = indices;
+
+            let mut active_weights = self.level_weights.lock().map_err(|e| AppError::LockError(e.to_string()))?;
+            *active_weights = w_map;
+        }
 
         self.generate_random_kanji()?;
 
@@ -326,27 +376,34 @@ impl LobbyState {
         Ok(kanji.clone())
     }
 
-    pub fn generate_random_kanji_list(&self) -> &Vec<Kanji> {
-        let mut rng = rand::rng();
-        &self.kanji_list[rng.random_range(0..self.kanji_list.len())]
-
-    }
-
     pub fn generate_random_kanji(&self) -> Result<String> {
         let mut rng = rand::rng();
 
-        // Select random JLPT level of the ones available
-        let kanji_list = self.generate_random_kanji_list();
+        let indices = self.active_level_indices.lock().map_err(|e| AppError::LockError(e.to_string()))?;
+        let weights_map = self.level_weights.lock().map_err(|e| AppError::LockError(e.to_string()))?;
 
-        // Select random kanji from that level (non-weighted)
-        let random_index = rng.random_range(0..kanji_list.len());
-        let new_kanji = kanji_list[random_index].clone();
+        if indices.is_empty() {
+             return Err(AppError::InternalError("No active levels configured".to_string()));
+        }
 
-        // Update the current kanji in the lobby state
-        let mut current_kanji = self
-            .current_kanji
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))?;
+        // Pick a Level Uniformly
+        let level_idx = indices[rng.random_range(0..indices.len())];
+        let kanji_list = &self.kanji_list[level_idx];
+
+        // Pick Kanji from that level
+        // Check if we have weights for this level
+        let new_kanji = if let Some(dist) = weights_map.get(&level_idx) {
+             // Weighted Selection
+             let k_idx = dist.sample(&mut rng);
+             kanji_list[k_idx].clone()
+        } else {
+             // Uniform Selection (fallback or if weighted is off)
+             let k_idx = rng.random_range(0..kanji_list.len());
+             kanji_list[k_idx].clone()
+        };
+
+        // Update State
+        let mut current_kanji = self.current_kanji.lock().map_err(|e| AppError::LockError(e.to_string()))?;
         *current_kanji = Some(new_kanji.kanji.clone());
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
@@ -354,49 +411,6 @@ impl LobbyState {
                 }).unwrap_or_default());
 
         Ok(new_kanji.kanji)
-    }
-
-    pub fn generate_weighted_random_kanji(&self) -> Result<String> {
-        let mut rng = rand::rng();
-        let kanji_list = self.generate_random_kanji_list();
-
-        // Filter valid kanji and calculate weights
-        let valid_kanji: Vec<&Kanji> = kanji_list
-            .iter()
-            .filter(|k| k.frequency > 0)
-            .collect();
-
-        if valid_kanji.is_empty() {
-            let random_index = rng.random_range(0..kanji_list.len());
-            return Ok(kanji_list[random_index].kanji.clone());
-        }
-
-        // Calculate weights (inverse of frequency)
-        let weights: Vec<f64> = valid_kanji
-            .iter()
-            .map(|k| 1.0 / k.frequency as f64)
-            .collect();
-
-        let dist = WeightedIndex::new(&weights)
-            .map_err(|e| AppError::DataLoadError(e.to_string()))?;
-
-        // Sample from distribution
-        let index = dist.sample(&mut rng);
-        let new_kanji = valid_kanji[index].kanji.clone();
-
-
-        let mut current_kanji = self
-            .current_kanji
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))?;
-        *current_kanji = Some(new_kanji.clone());
-
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
-                    new_kanji: new_kanji.clone(),
-                }).unwrap_or_default());
-
-        Ok(new_kanji)
-
     }
 }
 
@@ -494,25 +508,26 @@ mod tests {
         assert_eq!(lobby_state.get_current_kanji().unwrap(), None);
 
         // Generate a kanji and verify it's set
+        // NOTE: New generate_random_kanji requires start_game to populate active_indices or manually setting them
+        // Let's manually set them for the test
+        {
+            let mut indices = lobby_state.active_level_indices.lock().unwrap();
+            indices.push(0);
+        }
+
         let kanji = lobby_state.generate_random_kanji().unwrap();
         assert_eq!(lobby_state.get_current_kanji().unwrap(), Some(kanji));
     }
 
     #[test]
-    fn test_generate_random_kanji_list() {
-        let lobby_state = create_test_lobby();
-
-        for _ in 0..10 {
-            let kanji_list = lobby_state.generate_random_kanji_list();
-
-            assert!(lobby_state.kanji_list.contains(kanji_list));
-            assert!(!kanji_list.is_empty());
-        }
-    }
-
-    #[test]
     fn test_generate_random_kanji() {
         let lobby_state = create_test_lobby();
+
+        // Set active indices
+        {
+            let mut indices = lobby_state.active_level_indices.lock().unwrap();
+            indices.push(0);
+        }
 
         // Generate a kanji and verify it's from one of the lists
         let kanji = lobby_state.generate_random_kanji().unwrap();
@@ -623,6 +638,12 @@ mod tests {
             .add_player(PlayerId::from("p2"), "Player 2".to_string())
             .unwrap();
 
+        // Manually start game or set indices to allow generation
+        {
+            let mut indices = retrieved_lobby.active_level_indices.lock().unwrap();
+            indices.push(0);
+        }
+
         // Generate kanji and check word
         let _kanji = retrieved_lobby.generate_random_kanji().unwrap();
 
@@ -665,6 +686,7 @@ mod tests {
             difficulty_levels: vec!["N5".to_string(), "N4".to_string()],
             time_limit_seconds: Some(60),
             max_players: 10,
+            weighted: false,
         };
 
         // Leader can update settings
