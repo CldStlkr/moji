@@ -6,6 +6,7 @@ use wasm_bindgen_futures::spawn_local;
 mod lobby_join;
 mod lobby_management;
 mod lobby_socket;
+pub mod settings;
 
 use lobby_join::LobbyJoinComponent;
 use lobby_management::LobbyManagementComponent;

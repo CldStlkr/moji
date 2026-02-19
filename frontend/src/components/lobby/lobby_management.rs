@@ -1,11 +1,12 @@
 // Component for managing lobby state
 use crate::{
-    api::{start_game, update_lobby_settings},
+    api::start_game,
     error::{get_user_friendly_message, log_error},
+    components::lobby::settings::{LobbySettingsPanel, use_lobby_settings},
 };
 use leptos::ev;
 use leptos::prelude::*;
-use shared::{LobbyInfo, PlayerData, PlayerId, StartGameRequest, UpdateSettingsRequest};
+use shared::{LobbyInfo, PlayerData, PlayerId, StartGameRequest};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
@@ -178,42 +179,9 @@ where
 
     let settings = lobby_info.settings.clone();
     let lobby_id = lobby_info.lobby_id.clone();
-    // Handler for toggling difficulty
-    let toggle_difficulty = move |level: String| {
-        if !is_leader() { return; }
-        let mut new_settings = settings.clone();
-        if new_settings.difficulty_levels.contains(&level) {
-            if new_settings.difficulty_levels.len() > 1 {
-                 new_settings.difficulty_levels.retain(|l| l != &level);
-            }
-        } else {
-            new_settings.difficulty_levels.push(level);
-        }
+    let player_id = current_player_id.get();
 
-        // TODO: Optimize later
-        let l_id = lobby_id.clone();
-        let p_id = current_player_id.get();
-        spawn_local(async move {
-             let req = UpdateSettingsRequest { player_id: p_id, settings: new_settings };
-             let _ = update_lobby_settings(&l_id, req).await;
-        });
-    };
-
-    let settings_weighted = lobby_info.settings.clone();
-    let lobby_id_weighted = lobby_info.lobby_id.clone();
-
-    let toggle_weighted = move |_| {
-        if !is_leader() { return; }
-        let mut new_settings = settings_weighted.clone();
-        new_settings.weighted = !new_settings.weighted;
-
-        let l_id = lobby_id_weighted.clone();
-        let p_id = current_player_id.get();
-        spawn_local(async move {
-             let req = UpdateSettingsRequest { player_id: p_id, settings: new_settings };
-             let _ = update_lobby_settings(&l_id, req).await;
-        });
-    };
+    let update_settings = use_lobby_settings(lobby_id, player_id);
 
 
     view! {
@@ -226,59 +194,11 @@ where
                 max_players=max_players
             />
 
-            // --- NEW SETTINGS SECTION ---
-            <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-200 dark:border-gray-600 transition-colors">
-                <h4 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">"Game Settings"</h4>
-
-                // Difficulty Toggles
-                <div class="mb-4">
-                    <span class="text-sm text-gray-600 dark:text-gray-400 block mb-2">"JLPT Levels:"</span>
-                    <div class="flex gap-2 flex-wrap">
-                        {["N1", "N2", "N3", "N4", "N5"].into_iter().map(|level| {
-                            let is_active = lobby_info.settings.difficulty_levels.contains(&level.to_string());
-                            let level_str = level.to_string();
-                            let interactable = is_leader();
-                            let toggle = toggle_difficulty.clone();
-                            view! {
-                               <button
-                                   on:click=move |_| toggle(level_str.clone())
-                                   disabled=!interactable
-                                   class=format!(
-                                       "px-3 py-1 rounded text-sm font-medium transition-colors border {}",
-                                       if is_active { 
-                                           "bg-blue-500 dark:bg-blue-600 text-white border-blue-600 dark:border-blue-700" 
-                                       } else { 
-                                           "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700" 
-                                       }
-                                   )
-                                >
-                                   {level}
-                               </button>
-                            }
-                        }).collect_view()}
-                    </div>
-                </div>
-
-                // Weighted Toggle
-                <div class="flex items-center justify-between">
-                    <span class="text-sm text-gray-600 dark:text-gray-300">"Weighted Random (Prioritize more common kanji)"</span>
-                    <button
-                        on:click=toggle_weighted
-                        disabled=!is_leader()
-                        class=format!(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 {}",
-                            if lobby_info.settings.weighted { "bg-blue-600" } else { "bg-gray-200 dark:bg-gray-600" }
-                        )
-                    >
-                        <span
-                            class=format!(
-                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out {}",
-                                if lobby_info.settings.weighted { "translate-x-6" } else { "translate-x-1" }
-                            )
-                        />
-                    </button>
-                </div>
-            </div>
+            <LobbySettingsPanel 
+                settings=settings 
+                is_leader=is_leader() 
+                on_update=update_settings
+            />
 
 
 
