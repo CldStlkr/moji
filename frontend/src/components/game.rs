@@ -39,7 +39,7 @@ where
 
         // Create a FRESH channel for this connection attempt
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<String>();
-        
+
         // Store the sender so perform_submit can use it
         ws_sender.set(Some(tx));
 
@@ -176,16 +176,22 @@ where
             error_message.set(String::new());
             result.set(String::new());
 
-            match api::get_player_info(&lobby_id, &player_id).await {
+            // Fetch Lobby Info (Players, etc.)
+            match api::get_lobby_info(&lobby_id).await {
                 Ok(info) => {
-                    player_name.set(info.name);
-                    score.set(info.score);
+                    // Find self in players list
+                    if let Some(me) = info.players.iter().find(|p| p.id == player_id) {
+                        player_name.set(me.name.clone());
+                        score.set(me.score);
+                    }
+                    all_players.set(info.players);
                 }
                 Err(e) => {
-                    error_message.set(format!("Could not fetch player info: {}", e));
+                    error_message.set(format!("Could not fetch lobby info: {}", e));
                 }
             }
 
+            // Fetch Current Kanji
             match api::get_kanji(&lobby_id).await {
                 Ok(prompt) => {
                     kanji.set(prompt.kanji);
@@ -217,7 +223,12 @@ where
     };
 
     let handle_exit_game = move |_: ev::MouseEvent| {
-        on_exit_game();
+        let lobby_id = lobby_id_signal.get_untracked();
+        let player_id = player_id_signal.get_untracked();
+        spawn_local(async move {
+            let _ = api::leave_lobby(&lobby_id, &player_id).await;
+            on_exit_game();
+        });
     };
 
     let copy_lobby_id = move |_: ev::MouseEvent| {

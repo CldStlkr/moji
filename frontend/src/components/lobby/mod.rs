@@ -1,6 +1,7 @@
 // lobby/mod.rs - Main lobby component
 use leptos::prelude::*;
 use shared::{LobbyInfo, PlayerId};
+use wasm_bindgen_futures::spawn_local;
 
 mod lobby_join;
 mod lobby_management;
@@ -43,9 +44,15 @@ where
     };
 
     let leave_lobby = move |_| {
-        set_in_lobby.set(false);
-        set_lobby_info.set(None);
-        set_status.set("Left the lobby".to_string());
+        let lobby_id = current_lobby_id.get_untracked();
+        let player_id = current_player_id.get_untracked();
+        
+        spawn_local(async move {
+            let _ = crate::api::leave_lobby(&lobby_id, &player_id).await;
+            set_in_lobby.set(false);
+            set_lobby_info.set(None);
+            set_status.set("Left the lobby".to_string());
+        });
     };
 
     view! {

@@ -7,6 +7,15 @@ const STORAGE_KEY_PLAYER_ID: &str = "moji_player_id";
 const STORAGE_KEY_PLAYER_NAME: &str = "moji_player_name";
 const STORAGE_KEY_IS_IN_GAME: &str = "moji_is_in_game";
 
+const STORAGE_KEY_AUTH_USERNAME: &str = "moji_auth_username";
+const STORAGE_KEY_AUTH_IS_GUEST: &str = "moji_auth_is_guest";
+
+#[derive(Clone, Debug)]
+pub struct AuthData {
+    pub username: String,
+    pub is_guest: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct SessionData {
     pub lobby_id: String,
@@ -63,8 +72,34 @@ pub fn clear_session() {
     if let Some(storage) = get_storage() {
         let _ = storage.remove_item(STORAGE_KEY_LOBBY_ID);
         let _ = storage.remove_item(STORAGE_KEY_PLAYER_ID);
-        let _ = storage.remove_item(STORAGE_KEY_PLAYER_NAME);
+        // let _ = storage.remove_item(STORAGE_KEY_PLAYER_NAME); // Kept in auth
         let _ = storage.remove_item(STORAGE_KEY_IS_IN_GAME);
+    }
+}
+
+pub fn save_auth(auth: &AuthData) {
+    if let Some(storage) = get_storage() {
+        let _ = storage.set_item(STORAGE_KEY_AUTH_USERNAME, &auth.username);
+        let _ = storage.set_item(STORAGE_KEY_AUTH_IS_GUEST, &auth.is_guest.to_string());
+    }
+}
+
+pub fn load_auth() -> Option<AuthData> {
+    let storage = get_storage()?;
+    let username = storage.get_item(STORAGE_KEY_AUTH_USERNAME).ok()??;
+    let is_guest = storage
+        .get_item(STORAGE_KEY_AUTH_IS_GUEST)
+        .ok()?
+        .and_then(|s| s.parse::<bool>().ok())
+        .unwrap_or(false);
+
+    Some(AuthData { username, is_guest })
+}
+
+pub fn clear_auth() {
+    if let Some(storage) = get_storage() {
+        let _ = storage.remove_item(STORAGE_KEY_AUTH_USERNAME);
+        let _ = storage.remove_item(STORAGE_KEY_AUTH_IS_GUEST);
     }
 }
 

@@ -3,11 +3,14 @@ use wasm_bindgen::prelude::*;
 
 use moji_frontend::api;
 use moji_frontend::components;
-use moji_frontend::persistence;
 
+
+use components::auth_modal::AuthModal;
 use components::game::GameComponent;
 use components::lobby::LobbyComponent;
-use persistence::{clear_session, load_session, use_session_persistence};
+use components::user_menu::UserMenu;
+use moji_frontend::context::{AuthContext, User};
+use moji_frontend::persistence::{clear_session, load_session, load_auth, use_session_persistence};
 use shared::PlayerId;
 use wasm_bindgen_futures::spawn_local;
 
@@ -19,6 +22,17 @@ fn App() -> impl IntoView {
     let is_in_game = RwSignal::new(false);
     let is_restoring = RwSignal::new(true);
 
+    // Auth Context State
+    let (user, set_user) = signal::<Option<User>>(None);
+    let (show_auth_modal, set_show_auth_modal) = signal(false);
+    
+    provide_context(AuthContext {
+        user,
+        set_user,
+        show_auth_modal,
+        set_show_auth_modal,
+    });
+
     use_session_persistence(
         lobby_id.read_only(),
         player_id.read_only(),
@@ -26,8 +40,16 @@ fn App() -> impl IntoView {
         is_in_game.read_only(),
     );
 
-    // Check for existing session on mount
+    // Check for existing session & auth on mount
     Effect::new(move |_| {
+        // Load Auth
+        if let Some(auth) = load_auth() {
+             set_user.set(Some(User {
+                 username: auth.username.clone(),
+                 is_guest: auth.is_guest,
+             }));
+        }
+
         spawn_local(async move {
             // Try to restore session
             if let Some(session_data) = load_session() {
@@ -64,13 +86,27 @@ fn App() -> impl IntoView {
 
     let is_dark_mode = RwSignal::new(false);
 
+    // Initialize dark mode from local storage
+    Effect::new(move |_| {
+        if let Ok(Some(storage)) = window().local_storage() {
+            if let Ok(Some(value)) = storage.get_item("dark_mode") {
+                is_dark_mode.set(value == "true");
+            }
+        }
+    });
+
     // Toggle dark mode class on html element
     Effect::new(move |_| {
+        let is_dark = is_dark_mode.get();
         let doc = web_sys::window().unwrap().document().unwrap().document_element().unwrap();
-        if is_dark_mode.get() {
+        if is_dark {
             let _ = doc.class_list().add_1("dark");
         } else {
             let _ = doc.class_list().remove_1("dark");
+        }
+        
+        if let Ok(Some(storage)) = window().local_storage() {
+            let _ = storage.set_item("dark_mode", if is_dark { "true" } else { "false" });
         }
     });
 
@@ -78,15 +114,25 @@ fn App() -> impl IntoView {
         <div class="max-w-4xl mx-auto p-5 dark:text-gray-100">
             <header class="flex justify-between items-center mb-8">
                 <h1 class="text-4xl font-bold text-blue-500">"文字"</h1>
-                <button
-                    on:click=move |_| is_dark_mode.update(|d| *d = !*d)
-                    class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                    title="Toggle Dark Mode"
-                >
-                    {move || if is_dark_mode.get() { "🌙" } else { "☀️" }}
-                </button>
+                <div class="flex items-center space-x-4">
+                     <UserMenu />
+                     <button
+                        on:click=move |_| is_dark_mode.update(|d| *d = !*d)
+                        class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        title="Toggle Dark Mode"
+                    >
+                        {move || if is_dark_mode.get() { "🌙" } else { "☀️" }}
+                    </button>
+                </div>
             </header>
             <main>
+                <Show when=move || show_auth_modal.get()>
+                    <AuthModal
+                        on_close=Callback::from(move || set_show_auth_modal.set(false)) 
+                        on_success=Callback::from(move || set_show_auth_modal.set(false))
+                    />
+                </Show>
+
                 <Show
                     when=move || is_restoring.get()
                     fallback=move || {

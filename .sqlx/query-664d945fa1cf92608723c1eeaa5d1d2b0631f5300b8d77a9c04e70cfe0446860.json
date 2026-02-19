@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM users WHERE username = $1 AND is_guest = true",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "664d945fa1cf92608723c1eeaa5d1d2b0631f5300b8d77a9c04e70cfe0446860"
+}

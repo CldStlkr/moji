@@ -2,5 +2,5 @@
 pub mod game;
 pub mod user;
 
-pub use game::{GameAction, GameSession, GameSettings, PlayerStats};
+pub use game::{GameAction, GameSession, PlayerStats};
 pub use user::User;

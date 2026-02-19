@@ -81,19 +81,3 @@ impl IntoResponse for AppError {
         (status, body).into_response()
     }
 }
-
-///// Handler to convert anyhow errors into responses
-//pub async fn handle_anyhow_error(err: anyhow::Error) -> impl IntoResponse {
-//    if let Some(app_err) = err.downcast_ref::<AppError>() {
-//        // If it's one of our custom errors, we can use its IntoResponse implementation
-//        return app_err.clone().into_response();
-//    }
-//
-//    // Otherwise, it's an unexpected error
-//    tracing::error!("Unexpected error: {:?}", err);
-//    (
-//        StatusCode::INTERNAL_SERVER_ERROR,
-//        Json(json!({ "error": "An unexpected error occurred" })),
-//    )
-//        .into_response()
-//}

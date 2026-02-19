@@ -11,27 +11,50 @@ pub struct User {
     pub created_at: DateTime<Utc>,
     pub last_login: Option<DateTime<Utc>>,
     pub total_games_played: i32,
+    #[serde(skip_serializing)]
+    pub password_hash: Option<String>,
+    pub is_guest: bool,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
+    pub password: Option<String>,
 }
 
 impl User {
-    /// Create a new user in the database
-    pub async fn create(pool: &DbPool, username: &str) -> Result<Self, sqlx::Error> {
+    /// Create a new user (guest or registered)
+    pub async fn create(
+        pool: &DbPool,
+        username: &str,
+        password_hash: Option<String>,
+        is_guest: bool
+    ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             User,
             r#"
-            INSERT INTO users (username) 
-            VALUES ($1) 
-            RETURNING id, username, created_at, last_login, total_games_played
+            INSERT INTO users (username, password_hash, is_guest) 
+            VALUES ($1, $2, $3) 
+            RETURNING id, username, created_at, last_login, total_games_played, password_hash, is_guest
             "#,
-            username
+            username,
+            password_hash,
+            is_guest
         )
         .fetch_one(pool)
         .await
+    }
+
+    /// Delete a guest user by username to free up the name
+    pub async fn delete_guest_by_username(pool: &DbPool, username: &str) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query!(
+            "DELETE FROM users WHERE username = $1 AND is_guest = true",
+            username
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
     }
 
     /// Find a user by their ID
@@ -39,7 +62,7 @@ impl User {
         sqlx::query_as!(
             User,
             r#"
-            SELECT id, username, created_at, last_login, total_games_played 
+            SELECT id, username, created_at, last_login, total_games_played, password_hash, is_guest
             FROM users 
             WHERE id = $1
             "#,
@@ -57,7 +80,7 @@ impl User {
         sqlx::query_as!(
             User,
             r#"
-            SELECT id, username, created_at, last_login, total_games_played 
+            SELECT id, username, created_at, last_login, total_games_played, password_hash, is_guest
             FROM users 
             WHERE username = $1
             "#,
@@ -105,7 +128,7 @@ impl User {
         sqlx::query_as!(
             User,
             r#"
-            SELECT id, username, created_at, last_login, total_games_played 
+            SELECT id, username, created_at, last_login, total_games_played, password_hash, is_guest
             FROM users 
             ORDER BY total_games_played DESC
             LIMIT $1

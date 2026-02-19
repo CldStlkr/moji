@@ -1,6 +1,7 @@
 use crate::db::DbPool;
+use shared::GameSettings;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::types::Json;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -15,12 +16,6 @@ pub struct GameSession {
     pub settings: Json<GameSettings>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GameSettings {
-    pub time_limit: i32,         // Seconds per turn
-    pub lives: i32,              // Number of mistakes allowed
-    pub kanji_sets: Vec<String>, // N5, N4, etc.
-}
 
 #[derive(Debug, FromRow, Serialize)]
 pub struct GameAction {

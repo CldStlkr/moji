@@ -3,6 +3,7 @@ use crate::{
     api::{create_lobby, join_lobby},
     error::{get_user_friendly_message, log_error},
     persistence::SessionData,
+    context::AuthContext,
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -23,21 +24,23 @@ where
     F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
 {
     let input_lobby_id = RwSignal::new(String::new());
-    let player_name = RwSignal::new(String::new());
+    let auth_context = use_context::<AuthContext>().expect("AuthContext missing");
 
     let create_lobby_action = move |_: ev::MouseEvent| {
-        let name = player_name.get();
-        if name.trim().is_empty() {
-            set_status.set("Please enter your name".to_string());
-            return;
-        }
+        let user = match auth_context.user.get() {
+            Some(u) => u,
+            None => {
+                auth_context.set_show_auth_modal.set(true);
+                return;
+            }
+        };
 
         spawn_local(async move {
             set_is_loading.set(true);
             set_status.set("Creating lobby...".to_string());
 
             let request = JoinLobbyRequest {
-                player_name: name.clone(),
+                player_name: user.username.clone(),
             };
 
             match create_lobby(request).await {
@@ -60,7 +63,7 @@ where
                         let session = SessionData {
                             lobby_id: lobby_id.clone(),
                             player_id: player_id.clone(),
-                            player_name: name.clone(),
+                            player_name: user.username.clone(),
                             is_in_game: false,
                         };
                         crate::persistence::save_session(&session);
@@ -80,23 +83,26 @@ where
 
     let join_lobby_action = move |_: ev::MouseEvent| {
         let lobby_id = input_lobby_id.get();
-        let name = player_name.get();
 
         if lobby_id.trim().is_empty() {
             set_status.set("Please enter a lobby ID".to_string());
             return;
         }
-        if name.trim().is_empty() {
-            set_status.set("Please enter your name".to_string());
-            return;
-        }
+
+        let user = match auth_context.user.get() {
+            Some(u) => u,
+            None => {
+                 auth_context.set_show_auth_modal.set(true);
+                 return;
+            }
+        };
 
         spawn_local(async move {
             set_is_loading.set(true);
             set_status.set(format!("Joining lobby {}...", lobby_id));
 
             let request = JoinLobbyRequest {
-                player_name: name.clone(),
+                player_name: user.username.clone(),
             };
 
             match join_lobby(&lobby_id, request).await {
@@ -114,7 +120,7 @@ where
                         let session = SessionData {
                             lobby_id: lobby_id.clone(),
                             player_id: player_id.clone(),
-                            player_name: name.clone(),
+                            player_name: user.username.clone(),
                             is_in_game: false,
                         };
                         crate::persistence::save_session(&session);
@@ -144,24 +150,11 @@ where
                 "Join or Create a Game"
             </h2>
             <div class="space-y-6">
-                <div class="space-y-2">
-                    <label for="player-name" class="block font-semibold text-gray-800 dark:text-gray-200 text-lg">
-                        "Your Name:"
-                    </label>
-                    <input
-                        type="text"
-                        id="player-name"
-                        value=move || player_name.get()
-                        on:input=move |ev| player_name.set(event_target_value(&ev))
-                        placeholder="Enter your name"
-                        disabled=move || is_loading.get()
-                        class="input-field w-full p-3 border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded-md text-base transition-colors focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none"
-                    />
-                </div>
+                // Removed player name input
 
                 <button
                     on:click=create_lobby_action
-                    disabled=move || is_loading.get() || player_name.get().trim().is_empty()
+                    disabled=move || is_loading.get()
                     class="btn-primary w-full text-lg bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-semibold py-3 px-5 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                 >
                     "Create New Game"
@@ -181,7 +174,6 @@ where
                         on:click=join_lobby_action
                         disabled=move || {
                             is_loading.get() || input_lobby_id.get().trim().is_empty()
-                                || player_name.get().trim().is_empty()
                         }
                         class="btn-secondary whitespace-nowrap bg-orange-300 hover:bg-orange-400 dark:bg-orange-600 dark:hover:bg-orange-700 text-gray-800 dark:text-gray-100 font-semibold py-3 px-4 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                     >

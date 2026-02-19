@@ -5,7 +5,8 @@ use axum::{
 use moji::{
     api::{
         create_lobby, generate_new_kanji, get_kanji, get_lobby_info, get_lobby_players,
-        get_player_info, join_lobby, start_game, update_lobby_settings, ws_handler,
+        get_player_info, join_lobby, start_game, update_lobby_settings, ws_handler, check_username,
+        authenticate, logout, leave_lobby,
     },
     db::init_db_pool,
     AppState,
@@ -55,12 +56,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/lobby/join/{lobby_id}", post(join_lobby))
         .route("/player/{lobby_id}/{player_id}", get(get_player_info))
         .route("/lobby/players/{lobby_id}", get(get_lobby_players))
+        .route("/lobby/{lobby_id}/leave", post(leave_lobby))
         .route("/kanji/{lobby_id}", get(get_kanji))
         .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
         .route("/lobby/{lobby_id}/info", get(get_lobby_info))
         .route("/lobby/{lobby_id}/settings", post(update_lobby_settings))
         .route("/lobby/{lobby_id}/start", post(start_game))
         .route("/ws/{lobby_id}/{player_id}", get(ws_handler))
+        .route("/auth/check/{username}", get(check_username))
+        .route("/auth/login", post(authenticate))
+        .route("/auth/logout", post(logout))
+
         .with_state(app_state)
         .layer(
             ServiceBuilder::new()

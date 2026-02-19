@@ -4,6 +4,27 @@ use shared::{
     JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
     StartGameRequest, UpdateSettingsRequest,
 };
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CheckUsernameResponse {
+    pub available: bool,
+    pub is_guest: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthRequest {
+    pub username: String,
+    pub password: Option<String>,
+    pub create_guest: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthResponse {
+    pub message: String,
+    pub user: serde_json::Value,
+    pub token: String,
+}
 const API_BASE: &str = "";
 
 pub type ApiResult<T> = Result<T, ClientError>;
@@ -63,6 +84,14 @@ pub async fn generate_new_kanji(lobby_id: &str) -> ApiResult<KanjiPrompt> {
     make_request::<(), _>("POST", format!("{}/new_kanji/{}", API_BASE, lobby_id), None).await
 }
 
+pub async fn check_username(username: &str) -> ApiResult<CheckUsernameResponse> {
+    make_request::<(), _>("GET", format!("{}/auth/check/{}", API_BASE, username), None).await
+}
+
+pub async fn authenticate(request: AuthRequest) -> ApiResult<AuthResponse> {
+    make_request("POST", format!("{}/auth/login", API_BASE), Some(&request)).await
+}
+
 
 pub async fn get_player_info(lobby_id: &str, player_id: &PlayerId) -> ApiResult<PlayerData> {
     make_request::<(), _>(
@@ -73,14 +102,22 @@ pub async fn get_player_info(lobby_id: &str, player_id: &PlayerId) -> ApiResult<
     .await
 }
 
-// pub async fn get_lobby_players(lobby_id: &str) -> ApiResult<serde_json::Value> {
-//     make_request::<(), _>(
-//         "GET",
-//         format!("{}/lobby/players/{}", API_BASE, lobby_id),
-//         None,
-//     )
-//     .await
-// }
+pub async fn leave_lobby(lobby_id: &str, player_id: &PlayerId) -> ApiResult<serde_json::Value> {
+    make_request(
+        "POST",
+        format!("{}/lobby/{}/leave", API_BASE, lobby_id),
+        Some(&serde_json::json!({ "player_id": player_id }))
+    ).await
+}
+
+pub async fn logout(username: &str) -> ApiResult<serde_json::Value> {
+    make_request(
+        "POST",
+        format!("{}/auth/logout", API_BASE),
+        Some(&serde_json::json!({ "username": username }))
+    ).await
+}
+
 
 // Helper function for making HTTP requests
 async fn make_request<T, U>(method: &str, url: String, body: Option<&T>) -> ApiResult<U>

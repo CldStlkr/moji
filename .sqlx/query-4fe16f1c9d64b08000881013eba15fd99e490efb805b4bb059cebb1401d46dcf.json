@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE users \n            SET total_games_played = total_games_played + 1 \n            WHERE id = $1\n            RETURNING total_games_played\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total_games_played",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4fe16f1c9d64b08000881013eba15fd99e490efb805b4bb059cebb1401d46dcf"
+}

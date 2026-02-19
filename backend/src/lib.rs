@@ -106,10 +106,12 @@ pub struct LobbyState {
     pub tx: broadcast::Sender<String>,
     pub active_level_indices: Shared<Vec<usize>>,
     pub level_weights: Shared<HashMap<usize, WeightedIndex<f64>>>,
+    pub game_session_id: Option<uuid::Uuid>
 }
 
 impl LobbyState {
-    pub fn new(kanji_list: KanjiData, word_list: WordData) -> Self {
+    pub fn new(kanji_list: KanjiData, word_list: WordData,
+    game_session_id: Option<uuid::Uuid>) -> Self {
         Self {
             kanji_list,
             word_list,
@@ -121,6 +123,7 @@ impl LobbyState {
             tx: broadcast::channel(100).0, // .0 = Sender, .1 = Receiver
             active_level_indices: Shared::new(Vec::new()),
             level_weights: Shared::new(HashMap::new()),
+            game_session_id,
         }
     }
 
@@ -312,6 +315,46 @@ impl LobbyState {
         Ok(is_leader)
     }
 
+    pub fn remove_player(&self, player_id: &PlayerId) -> Result<bool> {
+        let mut players = self
+            .players
+            .lock()
+            .map_err(|e| AppError::LockError(e.to_string()))?;
+
+        if let Some(pos) = players.iter().position(|p| &p.id == player_id) {
+            players.remove(pos);
+
+            // Handle leadership transfer if needed
+            let mut leader = self
+                .lobby_leader
+                .lock()
+                .map_err(|e| AppError::LockError(e.to_string()))?;
+
+            if leader.to_string() == player_id.to_string() {
+                if let Some(new_leader) = players.first() {
+                    *leader = new_leader.id.clone();
+                } else {
+                    // No players left, leader remains as is (or clears, doesn't matter as lobby will be removed)
+                    *leader = PlayerId::default(); 
+                }
+            }
+
+            // Broadcast update
+            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+                players: players.iter().map(|p| shared::PlayerData {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                    score: p.score,
+                    joined_at: p.joined_at.to_rfc3339(),
+                }).collect()
+            }).unwrap_or_default());
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     pub fn get_player_score(&self, player_id: &PlayerId) -> Result<u32> {
         let players = self
             .players
@@ -473,7 +516,7 @@ mod tests {
             "渦紋".to_string(),
         ]));
 
-        LobbyState::new(test_kanji, test_words)
+        LobbyState::new(test_kanji, test_words, None)
     }
 
     #[test]
@@ -509,7 +552,7 @@ mod tests {
 
         // Generate a kanji and verify it's set
         // NOTE: New generate_random_kanji requires start_game to populate active_indices or manually setting them
-        // Let's manually set them for the test
+        // Manually set them for the test
         {
             let mut indices = lobby_state.active_level_indices.lock().unwrap();
             indices.push(0);
