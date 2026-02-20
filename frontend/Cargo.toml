@@ -11,12 +11,12 @@ uuid.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 shared = { path = "../shared", default-features = false }
-leptos = { version = "0.8", features = ["csr"] }
-leptos_router = "0.8"
-wasm-bindgen = "0.2.100"
-wasm-bindgen-futures = "0.4.50"
-js-sys = "0.3.77"
-web-sys = { version = "0.3", features = [
+leptos = { version = "0.8.16", features = ["csr"] }
+leptos_router = "0.8.12"
+wasm-bindgen = "0.2.109"
+wasm-bindgen-futures = "0.4.59"
+js-sys = "0.3.86"
+web-sys = { version = "0.3.86", features = [
   "Window",
   "Navigator",
   "Clipboard",
@@ -29,7 +29,7 @@ getrandom = { version = "0.2", features = ["js"] }
 futures = "0.3.32"
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.50"
+wasm-bindgen-test = "0.3.59"
 
 [profile.release]
 # Optimize for size

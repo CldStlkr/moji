@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use data::{vectorize_joyo_kanji, vectorize_word_list, Kanji};
 use db::DbPool;
 use error::AppError;
-use rand::{Rng, distr::{Alphanumeric, Distribution, weighted::WeightedIndex}};
+use rand::{RngExt, distr::{Alphanumeric, Distribution, weighted::WeightedIndex}};
 use tokio::sync::broadcast;
 use std::{
     collections::{HashMap, HashSet},
@@ -421,13 +421,6 @@ impl LobbyState {
             }).collect();
 
             if settings.mode == shared::GameMode::Duel && status == GameStatus::Playing {
-                // We need to check turn order
-                // Inside read lock of players, we ask for read lock of turn_order.
-                // This is safe if consistent with other locks.
-                // start_game locks players -> turn_order.
-                // remove_player locks players -> turn_order.
-                // So this is consistent.
-                
                 self.turn_order.read(|order| {
                     self.current_turn_index.read(|idx| {
                          if let Some(current_id) = order.get(*idx) {
@@ -475,10 +468,10 @@ impl LobbyState {
              };
              (level_idx, new_kanji)
         };
-        
+
         // Update current kanji with the new one
 
-        
+
         self.current_kanji.with(|current| *current = Some(new_kanji_data.kanji.clone()))?;
 
         if broadcast {
