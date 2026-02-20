@@ -105,11 +105,15 @@ pub fn clear_auth() {
 
 // Hook to handle session persistence
 pub fn use_session_persistence(
-    lobby_id: ReadSignal<String>,
-    player_id: ReadSignal<PlayerId>,
-    player_name: ReadSignal<String>,
-    is_in_game: ReadSignal<bool>,
+    lobby_id: impl Into<Signal<String>> + 'static,
+    player_id: impl Into<Signal<PlayerId>> + 'static,
+    player_name: impl Into<Signal<String>> + 'static,
+    is_in_game: impl Into<Signal<bool>> + 'static,
 ) {
+    let lobby_id = lobby_id.into();
+    let player_id = player_id.into();
+    let player_name = player_name.into();
+    let is_in_game = is_in_game.into();
     Effect::new(move |_| {
         // Save session whenever these values change
         let session = SessionData {

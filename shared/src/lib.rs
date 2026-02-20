@@ -138,7 +138,7 @@ pub struct PlayerData {
 
 /// Full lobby state, sent to all clients every poll / push.
 #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LobbyInfo {
     pub lobby_id: String,
     pub leader_id: PlayerId,
@@ -190,8 +190,9 @@ impl Default for GameSettings {
 }
 
 /// Where the lobby / game is in its lifecycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GameStatus {
+    #[default]
     Lobby,
     Playing,
     Finished,

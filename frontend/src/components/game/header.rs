@@ -2,13 +2,15 @@ use leptos::prelude::*;
 
 #[component]
 pub fn GameHeader<F>(
-    player_name: ReadSignal<String>,
-    score: ReadSignal<u32>,
+    player_name: impl Into<Signal<String>> + 'static,
+    score: impl Into<Signal<u32>> + 'static,
     on_exit: F,
 ) -> impl IntoView
 where
     F: Fn() + 'static + Copy,
 {
+    let player_name = player_name.into();
+    let score = score.into();
     view! {
         <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
             <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">"Kanji Game"</h2>

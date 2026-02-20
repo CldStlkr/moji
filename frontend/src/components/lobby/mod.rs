@@ -1,16 +1,13 @@
 // lobby/mod.rs - Main lobby component
 use leptos::prelude::*;
 use shared::{LobbyInfo, PlayerId};
-use wasm_bindgen_futures::spawn_local;
 
 mod lobby_join;
 mod lobby_management;
-mod lobby_socket;
 pub mod settings;
 
 use lobby_join::LobbyJoinComponent;
 use lobby_management::LobbyManagementComponent;
-use lobby_socket::{use_lobby_socket, LobbySocketConfig};
 
 // Re-export shared components
 pub use lobby_management::{GameInstructions, StatusMessage};
@@ -21,6 +18,7 @@ pub fn LobbyComponent<F>(
     initial_lobby_id: Option<String>,
     initial_player_id: Option<PlayerId>,
     #[prop(optional)] on_left: Option<Callback<()>>,
+    lobby_info: ReadSignal<Option<LobbyInfo>>,
 ) -> impl IntoView
 where
     F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
@@ -31,7 +29,6 @@ where
     // Lobby state - Initialize from props if available
     let has_initial = initial_lobby_id.is_some() && initial_player_id.is_some();
     let (in_lobby, set_in_lobby) = signal(has_initial);
-    let (lobby_info, set_lobby_info) = signal::<Option<LobbyInfo>>(None);
     let (current_lobby_id, set_current_lobby_id) = signal(initial_lobby_id.unwrap_or_default());
     let (current_player_id, set_current_player_id) = signal(initial_player_id.unwrap_or_default());
 
@@ -44,42 +41,25 @@ where
         }
     });
 
-    // Start polling when in lobby
-    use_lobby_socket(LobbySocketConfig {
-        in_lobby,
-        current_lobby_id,
-        current_player_id,
-        set_lobby_info,
-        on_lobby_joined,
-    });
-
     let handle_lobby_joined = move |lobby_id: String, player_id: PlayerId| {
         let lobby_id_clone = lobby_id.clone();
-        set_current_lobby_id.set(lobby_id);
-        set_current_player_id.set(player_id);
+        set_current_lobby_id.set(lobby_id.clone());
+        set_current_player_id.set(player_id.clone());
         set_in_lobby.set(true);
         
         navigate_path.set(Some(format!("/join/{}", lobby_id_clone)));
         
-        // NOTE: We do NOT call on_lobby_joined here.
-        // on_lobby_joined (which sets is_in_game=true in Home) is only called
-        // by lobby_socket.rs when GameState { Playing } arrives — i.e. when the
-        // game actually starts, not when a player creates/joins the lobby.
+        on_lobby_joined(lobby_id, player_id);
     };
 
     let leave_lobby = move |_| {
-        let lobby_id = current_lobby_id.get_untracked();
-        let player_id = current_player_id.get_untracked();
-        
-        spawn_local(async move {
-            let _ = crate::api::leave_lobby(&lobby_id, &player_id).await;
-            set_in_lobby.set(false);
-            set_lobby_info.set(None);
-            set_status.set("Left the lobby".to_string());
-            if let Some(cb) = on_left {
-                cb.run(());
-            }
-        });
+        // Cleanup (leave_lobby API call, state reset, nav) is handled by
+        // Home::handle_leave_and_cleanup which is passed as on_left.
+        set_in_lobby.set(false);
+        set_status.set("Left the lobby".to_string());
+        if let Some(cb) = on_left {
+            cb.run(());
+        }
     };
 
     view! {
