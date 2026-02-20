@@ -296,7 +296,7 @@ where
                         !lid.to_string().is_empty() && lid == pid
                     })
                     on_return_to_lobby=handle_return_to_lobby
-                    on_exit=on_exit_game
+                    on_exit=handle_exit_game
                 />
             </Show>
         </div>

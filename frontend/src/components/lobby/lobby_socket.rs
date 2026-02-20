@@ -67,6 +67,7 @@ where
 
                                     if status == GameStatus::Playing {
                                         on_lobby_joined(lobby_id.clone(), player_id.clone());
+                                        break; // Disconnect lobby WS — game view takes over
                                     }
                                 },
                                 ServerMessage::PlayerListUpdate { players } => {

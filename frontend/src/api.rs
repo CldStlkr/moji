@@ -5,6 +5,7 @@ use shared::{
     StartGameRequest, UpdateSettingsRequest,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CheckUsernameResponse {
@@ -99,6 +100,19 @@ pub async fn check_username(username: &str) -> ApiResult<CheckUsernameResponse> 
 
 pub async fn authenticate(request: AuthRequest) -> ApiResult<AuthResponse> {
     make_request("POST", format!("{}/auth/login", API_BASE), Some(&request)).await
+}
+
+pub async fn create_guest_account(username: &str) -> ApiResult<serde_json::Value> {
+    let request = AuthRequest {
+        username: username.to_string(),
+        password: None,
+        create_guest: true,
+    };
+    let response: AuthResponse = authenticate(request).await?;
+    Ok(json!({
+        "username": response.user["username"],
+        "token": response.token
+    }))
 }
 
 

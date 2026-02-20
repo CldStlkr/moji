@@ -20,6 +20,7 @@ pub fn LobbyComponent<F>(
     on_lobby_joined: F,
     initial_lobby_id: Option<String>,
     initial_player_id: Option<PlayerId>,
+    #[prop(optional)] on_left: Option<Callback<()>>,
 ) -> impl IntoView
 where
     F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
@@ -34,6 +35,15 @@ where
     let (current_lobby_id, set_current_lobby_id) = signal(initial_lobby_id.unwrap_or_default());
     let (current_player_id, set_current_player_id) = signal(initial_player_id.unwrap_or_default());
 
+    let navigate = leptos_router::hooks::use_navigate();
+    let navigate_path = RwSignal::new(None::<String>);
+
+    Effect::new(move |_| {
+        if let Some(path) = navigate_path.get() {
+            navigate(&path, Default::default());
+        }
+    });
+
     // Start polling when in lobby
     use_lobby_socket(LobbySocketConfig {
         in_lobby,
@@ -44,9 +54,17 @@ where
     });
 
     let handle_lobby_joined = move |lobby_id: String, player_id: PlayerId| {
+        let lobby_id_clone = lobby_id.clone();
         set_current_lobby_id.set(lobby_id);
         set_current_player_id.set(player_id);
         set_in_lobby.set(true);
+        
+        navigate_path.set(Some(format!("/join/{}", lobby_id_clone)));
+        
+        // NOTE: We do NOT call on_lobby_joined here.
+        // on_lobby_joined (which sets is_in_game=true in Home) is only called
+        // by lobby_socket.rs when GameState { Playing } arrives — i.e. when the
+        // game actually starts, not when a player creates/joins the lobby.
     };
 
     let leave_lobby = move |_| {
@@ -58,6 +76,9 @@ where
             set_in_lobby.set(false);
             set_lobby_info.set(None);
             set_status.set("Left the lobby".to_string());
+            if let Some(cb) = on_left {
+                cb.run(());
+            }
         });
     };
 

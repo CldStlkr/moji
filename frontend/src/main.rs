@@ -1,31 +1,25 @@
 use leptos::prelude::*;
+use leptos_router::{
+    components::{Route, Router, Routes},
+    path,
+};
 use wasm_bindgen::prelude::*;
 
-use moji_frontend::api;
 use moji_frontend::components;
 
-
 use components::auth_modal::AuthModal;
-use components::game::GameComponent;
-use components::lobby::LobbyComponent;
 use components::user_menu::UserMenu;
+use components::join_handler::JoinHandler;
+use components::home::Home;
 use moji_frontend::context::{AuthContext, User};
-use moji_frontend::persistence::{clear_session, load_session, load_auth, use_session_persistence};
-use shared::PlayerId;
-use wasm_bindgen_futures::spawn_local;
+use moji_frontend::persistence::load_auth;
 
 #[component]
 fn App() -> impl IntoView {
-    let lobby_id = RwSignal::new(String::new());
-    let player_id = RwSignal::new(PlayerId::default());
-    let player_name = RwSignal::new(String::new());
-    let is_in_game = RwSignal::new(false);
-    let is_restoring = RwSignal::new(true);
-
     // Auth Context State
     let (user, set_user) = signal::<Option<User>>(None);
     let (show_auth_modal, set_show_auth_modal) = signal(false);
-    
+
     provide_context(AuthContext {
         user,
         set_user,
@@ -33,63 +27,15 @@ fn App() -> impl IntoView {
         set_show_auth_modal,
     });
 
-    use_session_persistence(
-        lobby_id.read_only(),
-        player_id.read_only(),
-        player_name.read_only(),
-        is_in_game.read_only(),
-    );
-
-    // Check for existing session & auth on mount
+    // Check for auth on mount
     Effect::new(move |_| {
-        // Load Auth
         if let Some(auth) = load_auth() {
              set_user.set(Some(User {
                  username: auth.username.clone(),
                  is_guest: auth.is_guest,
              }));
         }
-
-        spawn_local(async move {
-            // Try to restore session
-            if let Some(session_data) = load_session() {
-                // Validate the session is still valid by checking with the server
-                match api::get_player_info(&session_data.lobby_id, &session_data.player_id).await {
-                    Ok(player_info) => {
-                        lobby_id.set(session_data.lobby_id);
-                        player_id.set(session_data.player_id);
-                        player_name.set(player_info.name);
-                        is_in_game.set(session_data.is_in_game);
-                    }
-                    Err(_) => {
-                        clear_session();
-                    }
-                }
-            }
-            is_restoring.set(false);
-        });
     });
-
-    let handle_lobby_joined = move |new_lobby_id: String, new_player_id: PlayerId| {
-        lobby_id.set(new_lobby_id);
-        player_id.set(new_player_id);
-        is_in_game.set(true);
-    };
-
-    let handle_exit_game = move || {
-        is_in_game.set(false);
-        lobby_id.set(String::new());
-        player_id.set(PlayerId::default());
-        player_name.set(String::new());
-        clear_session();
-    };
-
-    let handle_return_to_lobby = move || {
-        is_in_game.set(false);
-        // Logic: setting is_in_game to false triggers the Show fallback (LobbyComponent).
-        // Since we didn't clear lobby_id/player_id, we can pass them to LobbyComponent
-        // to restore the "In Lobby" state instead of "Join Lobby" state.
-    };
 
     let is_dark_mode = RwSignal::new(false);
 
@@ -111,16 +57,18 @@ fn App() -> impl IntoView {
         } else {
             let _ = doc.class_list().remove_1("dark");
         }
-        
+
         if let Ok(Some(storage)) = window().local_storage() {
             let _ = storage.set_item("dark_mode", if is_dark { "true" } else { "false" });
         }
     });
 
     view! {
-        <div class="max-w-4xl mx-auto p-5 dark:text-gray-100">
+        <div class="max-w-4xl mx-auto p-5 dark:text-gray-100 min-h-screen flex flex-col">
             <header class="flex justify-between items-center mb-8">
-                <h1 class="text-4xl font-bold text-blue-500">"文字"</h1>
+                <h1 class="text-4xl font-bold text-blue-500">
+                    <a href="/" class="hover:text-blue-600 transition-colors">"文字"</a>
+                </h1>
                 <div class="flex items-center space-x-4">
                      <UserMenu />
                      <button
@@ -132,7 +80,8 @@ fn App() -> impl IntoView {
                     </button>
                 </div>
             </header>
-            <main>
+
+            <main class="flex-grow">
                 <Show when=move || show_auth_modal.get()>
                     <AuthModal
                         on_close=Callback::from(move || set_show_auth_modal.set(false)) 
@@ -140,43 +89,14 @@ fn App() -> impl IntoView {
                     />
                 </Show>
 
-                <Show
-                    when=move || is_restoring.get()
-                    fallback=move || {
-                        view! {
-                            <Show
-                                when=move || !is_in_game.get()
-                                fallback=move || {
-                                    view! {
-                                        <GameComponent
-                                            lobby_id=lobby_id.get()
-                                            player_id=player_id.get()
-                                            on_exit_game=handle_exit_game
-                                            on_return_to_lobby=handle_return_to_lobby
-                                        />
-                                    }
-                                }
-                            >
-                                <LobbyComponent 
-                                    on_lobby_joined=handle_lobby_joined 
-                                    initial_lobby_id={
-                                        let id = lobby_id.get();
-                                        if id.is_empty() { None } else { Some(id) }
-                                    }
-                                    initial_player_id={
-                                        let id = player_id.get();
-                                        if id.to_string().is_empty() { None } else { Some(id) }
-                                    }
-                                />
-                            </Show>
-                        }
-                    }
-                >
-                    <div class="text-center p-8">
-                        <div class="text-lg text-gray-600 dark:text-gray-300">"Loading..."</div>
-                    </div>
-                </Show>
+                <Router>
+                    <Routes fallback=|| "Not Found.">
+                        <Route path=path!("/") view=Home />
+                        <Route path=path!("/join/:id") view=JoinHandler />
+                    </Routes>
+                </Router>
             </main>
+
             <footer class="text-center mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
                 <p>"Learn Japanese Kanji through word recognition"</p>
             </footer>

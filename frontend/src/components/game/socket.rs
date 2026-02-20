@@ -61,7 +61,7 @@ pub fn use_game_socket(config: UseGameSocketConfig) -> impl Fn(ClientMessage) + 
                     return;
                 }
             };
-            
+
             on_cleanup(move || {
                 ws_sender.set(None);
             });
@@ -75,7 +75,7 @@ pub fn use_game_socket(config: UseGameSocketConfig) -> impl Fn(ClientMessage) + 
                 // We need to pin the futures for select
                 let recv_fut = read.next();
                 let send_fut = rx.next();
-                
+
                 match select(recv_fut, send_fut).await {
                     Either::Left((msg, _)) => {
                         // Message from Server (read)

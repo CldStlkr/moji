@@ -270,7 +270,7 @@ impl LobbyState {
             })????;
         }
 
-        self.generate_random_kanji()?;
+        self.generate_random_kanji(false)?;
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
             kanji: self.get_current_kanji()?.unwrap_or_default(),
@@ -449,7 +449,10 @@ impl LobbyState {
         self.current_kanji.read(|kanji| kanji.clone())
     }
 
-    pub fn generate_random_kanji(&self) -> Result<String> {
+    /// Generate a new random kanji and store it as current.
+    /// If `broadcast` is true, a `KanjiUpdate` WS message is sent to all clients.
+    /// Pass `false` when the caller will send a more complete message (e.g. `GameState`).
+    pub fn generate_random_kanji(&self, broadcast: bool) -> Result<String> {
         let (_level_idx, new_kanji_data) = {
              let mut rng = rand::rng();
              let indices = self.active_level_indices.read(|i| i.clone())?;
@@ -478,9 +481,11 @@ impl LobbyState {
         
         self.current_kanji.with(|current| *current = Some(new_kanji_data.kanji.clone()))?;
 
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
-                    new_kanji: new_kanji_data.kanji.clone(),
-                }).unwrap_or_default());
+        if broadcast {
+            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
+                new_kanji: new_kanji_data.kanji.clone(),
+            }).unwrap_or_default());
+        }
 
         Ok(new_kanji_data.kanji)
     }
@@ -563,13 +568,13 @@ impl LobbyState {
                         message = "Winner!".to_string();
                     } else {
                         message = "Good guess!".to_string();
-                        let _ = self.generate_random_kanji();
+                        let _ = self.generate_random_kanji(true);
                         new_kanji_opt = self.get_current_kanji().ok().flatten();
                     }
                 }
             } else if settings.mode == shared::GameMode::Duel {
                 message = "Good guess!".to_string();
-                let _ = self.generate_random_kanji();
+                let _ = self.generate_random_kanji(true);
                 new_kanji_opt = self.get_current_kanji().ok().flatten();
                 let _ = self.advance_turn();
             }
@@ -604,7 +609,7 @@ impl LobbyState {
                 }
 
                 if !settings.duel_allow_kanji_reuse {
-                    let _ = self.generate_random_kanji();
+                    let _ = self.generate_random_kanji(true);
                     new_kanji_opt = self.get_current_kanji().ok().flatten();
                 }
 
@@ -762,7 +767,7 @@ mod tests {
             lobby_state.active_level_indices.with(|indices| indices.push(0)).unwrap();
         }
 
-        let kanji = lobby_state.generate_random_kanji().unwrap();
+        let kanji = lobby_state.generate_random_kanji(false).unwrap();
         assert_eq!(lobby_state.get_current_kanji().unwrap(), Some(kanji));
     }
 
@@ -776,7 +781,7 @@ mod tests {
         }
 
         // Generate a kanji and verify it's from one of the lists
-        let kanji = lobby_state.generate_random_kanji().unwrap();
+        let kanji = lobby_state.generate_random_kanji(false).unwrap();
         let kanji_exists = lobby_state.kanji_list
             .iter()
             .flatten()
@@ -784,7 +789,7 @@ mod tests {
         assert!(kanji_exists);
 
         // Generate another and ensure it's set as current
-        let kanji2 = lobby_state.generate_random_kanji().unwrap();
+        let kanji2 = lobby_state.generate_random_kanji(false).unwrap();
         assert_eq!(lobby_state.get_current_kanji().unwrap(), Some(kanji2));
     }
 
@@ -891,7 +896,7 @@ mod tests {
         }
 
         // Generate kanji and check word
-        let _kanji = retrieved_lobby.generate_random_kanji().unwrap();
+        let _kanji = retrieved_lobby.generate_random_kanji(false).unwrap();
 
         // Verify players and scores
         let players = retrieved_lobby.get_all_players().unwrap();
@@ -964,5 +969,178 @@ mod tests {
         // Game status should change to Playing
         let status = lobby_state.game_status.read(|s| *s).unwrap();
         assert_eq!(status, GameStatus::Playing);
+    }
+
+    // ── Player management ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_add_player_empty_name_fails() {
+        let lobby = create_test_lobby();
+        assert!(lobby.add_player(PlayerId::from("p1"), "".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_add_player_whitespace_name_fails() {
+        let lobby = create_test_lobby();
+        assert!(lobby.add_player(PlayerId::from("p1"), "   ".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_remove_player() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
+        lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
+
+        assert!(lobby.remove_player(&PlayerId::from("p2")).unwrap());
+        let players = lobby.get_all_players().unwrap();
+        assert_eq!(players.len(), 1);
+        assert_eq!(players[0].name, "Alice");
+    }
+
+    #[test]
+    fn test_remove_nonexistent_player_returns_false() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
+        assert!(!lobby.remove_player(&PlayerId::from("ghost")).unwrap());
+    }
+
+    #[test]
+    fn test_remove_leader_transfers_leadership() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("leader"), "Leader".to_string()).unwrap();
+        lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
+
+        lobby.remove_player(&PlayerId::from("leader")).unwrap();
+        assert!(lobby.is_leader(&PlayerId::from("p2")).unwrap());
+    }
+
+    // ── Game flow ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_start_game_non_leader() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("leader"), "Leader".to_string()).unwrap();
+        lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
+        assert!(lobby.start_game(&PlayerId::from("p2")).is_err());
+    }
+
+    #[test]
+    fn test_start_game_twice_fails() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("leader"), "Leader".to_string()).unwrap();
+        assert!(lobby.start_game(&PlayerId::from("leader")).is_ok());
+        assert!(lobby.start_game(&PlayerId::from("leader")).is_err());
+    }
+
+    #[test]
+    fn test_reset_lobby_returns_to_lobby_status() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("leader"), "Leader".to_string()).unwrap();
+        lobby.start_game(&PlayerId::from("leader")).unwrap();
+
+        lobby.reset_lobby(&PlayerId::from("leader")).unwrap();
+        assert_eq!(lobby.game_status.read(|s| *s).unwrap(), GameStatus::Lobby);
+    }
+
+    #[test]
+    fn test_advance_turn_wraps() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
+        lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
+        lobby.turn_order.with(|o| { o.push(PlayerId::from("p1")); o.push(PlayerId::from("p2")); }).unwrap();
+
+        assert_eq!(lobby.advance_turn().unwrap(), PlayerId::from("p2"));
+        assert_eq!(lobby.advance_turn().unwrap(), PlayerId::from("p1")); // wraps
+    }
+
+    #[test]
+    fn test_get_lobby_info_reflects_state() {
+        let lobby = create_test_lobby();
+        lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
+        lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
+
+        let info = lobby.get_lobby_info("test-lobby").unwrap();
+        assert_eq!(info.lobby_id, "test-lobby");
+        assert_eq!(info.status, GameStatus::Lobby);
+        assert_eq!(info.leader_id, PlayerId::from("p1"));
+        assert_eq!(info.players.len(), 2);
+    }
+
+    // ── Guess processing ────────────────────────────────────────────────────
+
+    /// Shared setup: start a single-player Deathmatch with target_score=3,
+    /// current kanji set to "日", and game status = Playing.
+    fn setup_deathmatch_playing() -> (LobbyState, PlayerId) {
+        let lobby = create_test_lobby();
+        let leader = PlayerId::from("leader");
+        lobby.add_player(leader.clone(), "Leader".to_string()).unwrap();
+        lobby.settings.with(|s| { s.target_score = Some(3); }).unwrap();
+        lobby.active_level_indices.with(|i| i.push(0)).unwrap();
+        lobby.current_kanji.with(|k| *k = Some("日".to_string())).unwrap();
+        lobby.game_status.with(|s| *s = GameStatus::Playing).unwrap();
+        (lobby, leader)
+    }
+
+    #[test]
+    fn test_process_guess_correct_increments_score() {
+        let (lobby, leader) = setup_deathmatch_playing();
+        lobby.process_guess(&leader, "日本", "日").unwrap();
+        assert_eq!(lobby.get_player_score(&leader).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_process_guess_wrong_word_no_score() {
+        let (lobby, leader) = setup_deathmatch_playing();
+        // "日xyz" contains "日" but is NOT in the word list
+        lobby.process_guess(&leader, "日xyz", "日").unwrap();
+        assert_eq!(lobby.get_player_score(&leader).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_process_guess_wrong_kanji_no_score() {
+        let (lobby, leader) = setup_deathmatch_playing();
+        // "日本" is valid but kanji hint is wrong
+        lobby.process_guess(&leader, "日本", "月").unwrap();
+        assert_eq!(lobby.get_player_score(&leader).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_process_guess_while_not_playing_is_noop() {
+        let lobby = create_test_lobby();
+        let leader = PlayerId::from("leader");
+        lobby.add_player(leader.clone(), "Leader".to_string()).unwrap();
+        // Default status is Lobby — should be silently ignored
+        assert!(lobby.process_guess(&leader, "日本", "日").is_ok());
+        assert_eq!(lobby.get_player_score(&leader).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_deathmatch_target_score_ends_game() {
+        let (lobby, leader) = setup_deathmatch_playing();
+        for _ in 0..3 {
+            lobby.current_kanji.with(|k| *k = Some("日".to_string())).unwrap();
+            let empty = lobby.active_level_indices.read(|i| i.is_empty()).unwrap();
+            if empty { lobby.active_level_indices.with(|i| i.push(0)).unwrap(); }
+            lobby.process_guess(&leader, "日本", "日").unwrap();
+        }
+        assert_eq!(lobby.game_status.read(|s| *s).unwrap(), GameStatus::Finished);
+    }
+
+    #[test]
+    fn test_duel_wrong_turn_is_ignored() {
+        let lobby = create_test_lobby();
+        let p1 = PlayerId::from("p1");
+        let p2 = PlayerId::from("p2");
+        lobby.add_player(p1.clone(), "Alice".to_string()).unwrap();
+        lobby.add_player(p2.clone(), "Bob".to_string()).unwrap();
+        lobby.settings.with(|s| { s.mode = shared::GameMode::Duel; s.initial_lives = Some(3); }).unwrap();
+        lobby.game_status.with(|s| *s = GameStatus::Playing).unwrap();
+        lobby.turn_order.with(|o| { o.push(p1.clone()); o.push(p2.clone()); }).unwrap();
+        lobby.current_kanji.with(|k| *k = Some("日".to_string())).unwrap();
+        lobby.active_level_indices.with(|i| i.push(0)).unwrap();
+
+        // p2 submits on p1's turn — should be silently ignored
+        lobby.process_guess(&p2, "日本", "日").unwrap();
+        assert_eq!(lobby.get_player_score(&p2).unwrap(), 0);
     }
 }

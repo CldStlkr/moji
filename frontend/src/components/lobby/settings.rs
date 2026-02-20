@@ -161,7 +161,7 @@ pub fn LobbySettingsPanel(
                                 class="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                             />
                         </div>
-                        
+
                          <div class="flex items-center justify-between">
                             <span class="text-sm text-gray-600 dark:text-gray-300">"Reuse Kanji on Miss"</span>
                             <button

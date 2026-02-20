@@ -79,14 +79,6 @@ pub async fn parse_error_response(response: gloo_net::http::Response) -> ClientE
     }
 }
 
-// // Helper function to extract error from a server JSON response
-// pub fn extract_server_error(response: &serde_json::Value) -> Option<String> {
-//     response
-//         .get("error")
-//         .and_then(|e| e.as_str())
-//         .map(|s| s.to_string())
-// }
-
 // Get a user-friendly error message for displaying to users
 pub fn get_user_friendly_message(error: &ClientError) -> String {
     match error {

@@ -32,8 +32,10 @@ sqlx = { version = "0.8.5", features = [
 dotenv = "0.15"
 argon2 = "0.5.3"
 
-# [dev-dependencies]
-# criterion = "0.5"
+[dev-dependencies]
+axum-test = "17"
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+reqwest = { version = "0.12", features = ["json"] }
 
 [lib]
 name = "moji"

@@ -1,6 +1,6 @@
 use crate::{
     error::AppError, generate_lobby_id, generate_player_id, get_lobby, types::Result, AppState,
-    LobbyState, models::{
+    GameStatus, LobbyState, models::{
         user::User,
         game::{GameAction, GameSession},
     },
@@ -290,7 +290,7 @@ pub async fn get_kanji(
     let kanji = match lobby.get_current_kanji()? {
         Some(kanji) => kanji,
         None => {
-            lobby.generate_random_kanji()?
+            lobby.generate_random_kanji(true)?
         }
     };
     Ok(Json(KanjiPrompt { kanji }))
@@ -304,7 +304,7 @@ pub async fn generate_new_kanji(
     let lobby = get_lobby(&app_state, &lobby_id)?;
 
     // Always generate a new kanji
-    let kanji = lobby.generate_random_kanji()?;
+    let kanji = lobby.generate_random_kanji(true)?;
     Ok(Json(KanjiPrompt { kanji }))
 }
 
@@ -350,22 +350,18 @@ pub async fn authenticate(
                     .map_err(|_| AppError::InternalError("Invalid password hash".to_string()))?;
 
                 if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok() {
-                    // Login Cuccess
+                    // Login success
                     Ok(Json(json!({
                         "message": "Login successful",
                         "user": user,
-                        // TODO: Sessions
-                        "token": "TODO_SESSION_TOKEN"
+                        "token": "TODO_SESSION_TOKEN" // Sessions not yet implemented
                     })))
                 } else {
                     Err(AppError::AuthError("Invalid password".to_string()))
                 }
             } else {
-                // User exits but no password (guest account).
-                // TODO: Create password for existing guest conversion flow
-                // For now, if they provide a password but user is guest, it's invalid unless we
-                // support "claim guest".
-                Err(AppError::AuthError("Account is a guest accoutn. Cannot login with password yet".to_string()))
+                // Guest accounts cannot log in with a password.
+                Err(AppError::AuthError("Account is a guest account. Cannot login with password.".to_string()))
             }
         } else {
             // No password provided for existing user
@@ -380,8 +376,7 @@ pub async fn authenticate(
             Ok(Json(json!({
                 "message": "Guest account created",
                 "user": user,
-                // TODO: Sessions
-                "token": "TODO_SESSION_TOKEN"
+                "token": "TODO_SESSION_TOKEN" // Sessions not yet implemented
             })))
         } else if let Some(password) = payload.password {
             // Register real user
@@ -393,10 +388,9 @@ pub async fn authenticate(
             let user = User::create(db_pool, &payload.username, Some(password_hash), false).await?;
 
             Ok(Json(json!({
-                "message": "Account craeted",
+                "message": "Account created",
                 "user": user,
-                // TODO: Sessions
-                "token":"TODO_SESSION_TOKEN"
+                "token": "TODO_SESSION_TOKEN" // Sessions not yet implemented
             })))
         } else {
             Err(AppError::InvalidInput("Password required to register".to_string()))
@@ -425,10 +419,42 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
 
     let mut rx = lobby.tx.subscribe();
 
+    // Send initial state directly to THIS client (not broadcast) so they
+    // don't miss state that was established before their subscription.
+    {
+        let players = lobby.get_all_players().unwrap_or_default();
+        let init_msg = serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+            players,
+        }).unwrap_or_default();
+        let _ = sender.send(Message::Text(init_msg.into())).await;
+
+        let status = lobby.game_status.read(|s| *s).unwrap_or(GameStatus::Lobby);
+        let kanji = lobby.get_current_kanji().unwrap_or_default().unwrap_or_default();
+        let scores = lobby.get_all_players().unwrap_or_default();
+        let game_msg = serde_json::to_string(&shared::ServerMessage::GameState {
+            kanji,
+            status,
+            scores,
+        }).unwrap_or_default();
+        let _ = sender.send(Message::Text(game_msg.into())).await;
+    }
+
+    // Now relay broadcast messages to this client
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            if sender.send(Message::Text(msg.into())).await.is_err() {
-                break;
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    if sender.send(axum::extract::ws::Message::Text(msg.into())).await.is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!("WebSocket receiver lagged behind by {} messages", n);
+                    // Continue receiving the latest messages
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
             }
         }
     });
@@ -465,5 +491,5 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
         _ = (&mut recv_task) => send_task.abort(),
     }
 
-    let _ = lobby.remove_player(&player_id);
+    // let _ = lobby.remove_player(&player_id);
 }

@@ -95,7 +95,7 @@ pub fn CompactPlayerScoresComponent(
                                 pid.with_value(|id| map.get(id).cloned().unwrap_or_default())
                             })
                         };
-                        
+
                         let is_turn = player.is_turn;
                         let is_eliminated = player.is_eliminated;
                         let lives = player.lives;
@@ -143,7 +143,7 @@ pub fn CompactPlayerScoresComponent(
                                                 }).collect_view()}
                                             </div>
                                          </Show>
-                                        
+
                                         <Show when=move || mode != shared::GameMode::Duel>
                                             <div class="flex flex-col items-end min-w-[3rem]">
                                                  <span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">"Pts"</span>
