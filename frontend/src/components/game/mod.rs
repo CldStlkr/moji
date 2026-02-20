@@ -6,7 +6,6 @@ use leptos::prelude::*;
 use shared::{PlayerData, PlayerId, ClientMessage};
 use wasm_bindgen_futures::spawn_local;
 
-// Sub-components
 mod header;
 mod kanji;
 mod input;
@@ -18,11 +17,19 @@ use kanji::KanjiDisplay;
 use input::GameInput;
 use feedback::GameFeedback;
 use socket::{use_game_socket, UseGameSocketConfig};
+use game_over::GameOver;
+
+mod game_over;
 
 #[component]
-pub fn GameComponent<F>(lobby_id: String, player_id: PlayerId, on_exit_game: F) -> impl IntoView
+pub fn GameComponent<F>(
+    lobby_id: String,
+    player_id: PlayerId,
+    on_exit_game: F,
+    #[prop(into)] on_return_to_lobby: Callback<()>,
+) -> impl IntoView
 where
-    F: Fn() + 'static + Copy,
+    F: Fn() + 'static + Copy + Send + Sync,
 {
     let kanji = RwSignal::new(String::new());
     let word = RwSignal::new(String::new());
@@ -32,12 +39,15 @@ where
     let is_loading = RwSignal::new(false);
     let is_copied = RwSignal::new(false);
     let error_message = RwSignal::new(String::new());
-    let all_players = RwSignal::<Vec<PlayerData>>::new(Vec::new()); 
+    let all_players = RwSignal::<Vec<PlayerData>>::new(Vec::new());
     let typing_status = RwSignal::new(std::collections::HashMap::<PlayerId, String>::new());
+    let settings = RwSignal::new(shared::GameSettings::default());
+    let status = RwSignal::new(shared::GameStatus::Playing);
+    let leader_id = RwSignal::new(PlayerId::default());
 
     let input_ref = NodeRef::<html::Input>::new();
 
-    // Store signals for use in async contexts
+    // Store signals for async use
     let (lobby_id_signal, _) = signal(lobby_id.clone());
     let (player_id_signal, _) = signal(player_id.clone());
 
@@ -49,6 +59,8 @@ where
         set_score: score.write_only(),
         set_all_players: all_players.write_only(),
         set_typing_status: typing_status.write_only(),
+        set_status: status.write_only(),
+        set_leader_id: leader_id.write_only(),
     });
 
     let perform_submit = move || {
@@ -79,6 +91,16 @@ where
         send_message(msg);
     };
 
+
+
+    // Watch for status changes during gameplay (e.g. Leader resets lobby)
+    Effect::new(move |_| {
+        if status.get() == shared::GameStatus::Lobby {
+             leptos::logging::log!("Game status is Lobby, returning to lobby view");
+             on_return_to_lobby.run(());
+        }
+    });
+
     Effect::new(move |_| {
         let lobby_id = lobby_id_signal.get();
         let player_id = player_id_signal.get();
@@ -89,7 +111,6 @@ where
             error_message.set(String::new());
             result.set(String::new());
 
-            // Fetch Lobby Info (Players, etc.)
             match api::get_lobby_info(&lobby_id).await {
                 Ok(info) => {
                     // Find self in players list
@@ -97,14 +118,23 @@ where
                         player_name.set(me.name.clone());
                         score.set(me.score);
                     }
+                    settings.set(info.settings);
                     all_players.set(info.players);
+                    status.set(info.status);
+                    leader_id.set(info.leader_id);
+
+                    // Watch for status changing back to Lobby (Reset)
+                    if info.status == shared::GameStatus::Lobby {
+                         leptos::logging::log!("Game reset detected, returning to lobby view");
+                         on_return_to_lobby.run(());
+                    }
                 }
                 Err(e) => {
+                    leptos::logging::error!("Could not fetch lobby info: {}", e);
                     error_message.set(format!("Could not fetch lobby info: {}", e));
                 }
             }
 
-            // Fetch Current Kanji
             match api::get_kanji(&lobby_id).await {
                 Ok(prompt) => {
                     kanji.set(prompt.kanji);
@@ -130,7 +160,13 @@ where
     };
 
     let handle_key_press = move |ev: ev::KeyboardEvent| {
-        if ev.key() == "Enter" && !is_loading.get() {
+        let is_my_turn = if settings.get().mode == shared::GameMode::Duel {
+            all_players.get().iter().find(|p| p.id == player_id_signal.get()).map(|p| p.is_turn).unwrap_or(false)
+        } else {
+            true
+        };
+
+        if ev.key() == "Enter" && !is_loading.get() && is_my_turn {
             perform_submit();
         }
     };
@@ -164,10 +200,17 @@ where
         });
     };
 
+    let handle_return_to_lobby = move || {
+        let lobby_id = lobby_id_signal.get_untracked();
+        let player_id = player_id_signal.get_untracked();
+
+        spawn_local(async move { let _ = api::reset_lobby(&lobby_id, &player_id).await; });
+    };
+
     view! {
         <div class="max-w-6xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors">
-            
-            <GameHeader 
+
+            <GameHeader
                 player_name=player_name.read_only()
                 score=score.read_only()
                 on_exit=handle_exit_game
@@ -197,13 +240,13 @@ where
             <div class="flex gap-8 flex-col lg:flex-row">
                 // Main Game Area
                 <div class="flex-1 space-y-8">
-                    
-                    <KanjiDisplay 
+
+                    <KanjiDisplay
                         kanji=kanji.read_only()
                         is_loading=is_loading.read_only()
                     />
 
-                    <GameInput 
+                    <GameInput
                         input_ref=input_ref
                         word=word.read_only()
                         kanji=kanji.read_only()
@@ -211,6 +254,14 @@ where
                         on_input=handle_input
                         on_submit=submit_word
                         on_keydown=handle_key_press
+                        disabled=Signal::derive(move || {
+                             if settings.get().mode == shared::GameMode::Duel {
+                                 let me = all_players.get().into_iter().find(|p| p.id == player_id_signal.get());
+                                 !me.map(|p| p.is_turn).unwrap_or(false)
+                             } else {
+                                 false
+                             }
+                        })
                     />
 
                     <GameFeedback 
@@ -227,10 +278,27 @@ where
                             players=all_players.get()
                             current_player_id=player_id_signal
                             typing_status=typing_status.read_only()
+                            game_mode=Signal::derive(move || settings.get().mode)
                         />
                     </Show>
                 </div>
             </div>
+
+            <Show when=move || status.get() == shared::GameStatus::Finished>
+                <GameOver
+                    players=all_players.get()
+                    mode=settings.get().mode
+                    current_player_id=player_id_signal.get()
+                    is_leader=Signal::derive(move || {
+                        let lid = leader_id.get();
+                        let pid = player_id_signal.get();
+                        // Handle default cases where IDs might be empty/default
+                        !lid.to_string().is_empty() && lid == pid
+                    })
+                    on_return_to_lobby=handle_return_to_lobby
+                    on_exit=on_exit_game
+                />
+            </Show>
         </div>
     }
 }

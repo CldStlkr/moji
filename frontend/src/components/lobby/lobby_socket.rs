@@ -57,10 +57,16 @@ where
                     if let Ok(Message::Text(text)) = msg {
                         if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
                             match server_msg {
-                                ServerMessage::GameState { status, .. } => {
+                                ServerMessage::GameState { status, scores, .. } => {
+                                    set_lobby_info.update(|info| {
+                                        if let Some(i) = info {
+                                            i.status = status;
+                                            i.players = scores;
+                                        }
+                                    });
+
                                     if status == GameStatus::Playing {
                                         on_lobby_joined(lobby_id.clone(), player_id.clone());
-                                        return; 
                                     }
                                 },
                                 ServerMessage::PlayerListUpdate { players } => {
@@ -74,6 +80,13 @@ where
                                     set_lobby_info.update(|info| {
                                         if let Some(i) = info {
                                             i.settings = settings;
+                                        }
+                                    });
+                                },
+                                ServerMessage::LeaderUpdate { leader_id } => {
+                                    set_lobby_info.update(|info| {
+                                        if let Some(i) = info {
+                                            i.leader_id = leader_id;
                                         }
                                     });
                                 },

@@ -4,6 +4,7 @@ use wasm_bindgen_futures::spawn_local;
 use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
 use std::collections::HashMap;
+use futures::future::{select, Either};
 
 #[derive(Clone)]
 pub struct UseGameSocketConfig {
@@ -14,6 +15,8 @@ pub struct UseGameSocketConfig {
     pub set_score: WriteSignal<u32>,
     pub set_all_players: WriteSignal<Vec<PlayerData>>,
     pub set_typing_status: WriteSignal<HashMap<PlayerId, String>>,
+    pub set_status: WriteSignal<shared::GameStatus>,
+    pub set_leader_id: WriteSignal<PlayerId>,
 }
 
 pub fn use_game_socket(config: UseGameSocketConfig) -> impl Fn(ClientMessage) + Copy + 'static {
@@ -27,12 +30,14 @@ pub fn use_game_socket(config: UseGameSocketConfig) -> impl Fn(ClientMessage) + 
     let set_score = config.set_score;
     let set_all_players = config.set_all_players;
     let set_typing_status = config.set_typing_status;
+    let set_status = config.set_status;
+    let set_leader_id = config.set_leader_id;
 
     Effect::new(move |_| {
         let lobby_id = lobby_id.get();
         let player_id = player_id.get();
 
-        // Create a FRESH channel for this connection attempt
+        // Create a fresh channel for this connection attempt
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<String>();
 
         // Store the sender so perform_submit can use it
@@ -47,65 +52,104 @@ pub fn use_game_socket(config: UseGameSocketConfig) -> impl Fn(ClientMessage) + 
             let ws_url = format!("{}://{}/ws/{}/{}", protocol, host, lobby_id, player_id);
 
             let ws = match WebSocket::open(&ws_url) {
-                Ok(ws) => ws,
+                Ok(ws) => {
+                    leptos::logging::log!("WebSocket connected to {}", ws_url);
+                    ws
+                },
                 Err(e) => {
                     leptos::logging::error!("Failed to open connection: {:?}", e);
                     return;
                 }
             };
+            
+            on_cleanup(move || {
+                ws_sender.set(None);
+            });
 
             let (mut write, mut read) = ws.split();
 
-            // First, forward outgoing messages (channel -> WebSocket)
-            spawn_local(async move {
-                while let Some(msg) = rx.next().await {
-                    let _ = write.send(Message::Text(msg)).await;
-                }
-            });
-
-            // Second, handle incoming messages (WebSocket -> Signals)
-            while let Some(msg) = read.next().await {
-                if let Ok(Message::Text(text)) = msg {
-                    if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
-                        match server_msg {
-                            ServerMessage::GameState { kanji: new_kanji, status: _, scores } => {
-                                set_kanji.set(new_kanji);
-                                set_all_players.set(scores);
-                                set_typing_status.update(|m| m.clear());
-                            },
-                            ServerMessage::WordChecked { player_id: pid, result: res } => {
-                                // Show result if it's our submission
-                                if pid == player_id {
-                                    set_result.set(res.message);
-                                    set_score.set(res.score);
-                                    if let Some(k) = res.kanji {
-                                        set_kanji.set(k);
+            // Combined loop to ensure everything is dropped when one side closes
+            // Using a loop with select ensures we process both Read (from server) and Write (from client)
+            // If either stream closes (Server disconnects OR Client Cleanup closes rx), we exit the loop.
+            loop {
+                // We need to pin the futures for select
+                let recv_fut = read.next();
+                let send_fut = rx.next();
+                
+                match select(recv_fut, send_fut).await {
+                    Either::Left((msg, _)) => {
+                        // Message from Server (read)
+                        match msg {
+                            Some(Ok(Message::Text(text))) => {
+                                if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
+                                    match server_msg {
+                                        ServerMessage::GameState { kanji: new_kanji, status, scores } => {
+                                            set_kanji.set(new_kanji);
+                                            set_status.set(status);
+                                            set_all_players.set(scores);
+                                            set_typing_status.update(|m| m.clear());
+                                        },
+                                        ServerMessage::WordChecked { player_id: pid, result: res } => {
+                                            if pid == player_id {
+                                                set_result.set(res.message);
+                                                set_score.set(res.score);
+                                                if let Some(k) = res.kanji {
+                                                    set_kanji.set(k);
+                                                }
+                                            }
+                                        },
+                                        ServerMessage::KanjiUpdate { new_kanji } => {
+                                            set_result.set(String::new());
+                                            set_kanji.set(new_kanji);
+                                            set_typing_status.update(|m| m.clear());
+                                        },
+                                        ServerMessage::PlayerListUpdate { players } => {
+                                            set_all_players.set(players.clone());
+                                            if let Some(me) = players.iter().find(|p| p.id == player_id) {
+                                                set_score.set(me.score);
+                                            }
+                                        },
+                                        ServerMessage::PlayerTyping { player_id: pid, input } => {
+                                            set_typing_status.update(|m| {
+                                                if input.is_empty() {
+                                                    m.remove(&pid);
+                                                } else {
+                                                    m.insert(pid, input);
+                                                }
+                                            });
+                                        },
+                                        ServerMessage::LeaderUpdate { leader_id } => {
+                                            set_leader_id.set(leader_id);
+                                        },
+                                        _ => {},
                                     }
                                 }
                             },
-                            ServerMessage::KanjiUpdate { new_kanji } => {
-                                // Clear old result when new kanji arrives
-                                set_result.set(String::new());
-                                set_kanji.set(new_kanji);
-                                set_typing_status.update(|m| m.clear());
+                            Some(Ok(Message::Bytes(_))) => {},
+                            Some(Err(e)) => {
+                                leptos::logging::error!("WS Error: {:?}", e);
+                                break;
                             },
-                            ServerMessage::PlayerListUpdate { players } => {
-                                set_all_players.set(players.clone());
-                                // Update own score locally
-                                if let Some(me) = players.iter().find(|p| p.id == player_id) {
-                                    set_score.set(me.score);
-                                }
-                            },
-                            ServerMessage::PlayerTyping { player_id: pid, input } => {
-                                set_typing_status.update(|m| {
-                                    if input.is_empty() {
-                                        m.remove(&pid);
-                                    } else {
-                                        m.insert(pid, input);
-                                    }
-                                });
+                            None => {
+                                leptos::logging::log!("WS Server closed connection");
+                                break;
                             }
-                            _ => {},
+                        }
+                    },
+                    Either::Right((msg, _)) => {
+                        // Message from Client (rx) to be sent
+                        match msg {
+                            Some(text) => {
+                                if let Err(e) = write.send(Message::Text(text)).await {
+                                    leptos::logging::error!("Failed to send WS message: {:?}", e);
+                                    break; 
+                                }
+                            },
+                            None => {
+                                // RX closed (cleanup)
+                                let _ = write.close().await;
+                                break;
+                            }
                         }
                     }
                 }

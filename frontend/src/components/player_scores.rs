@@ -70,6 +70,7 @@ pub fn CompactPlayerScoresComponent(
     players: Vec<PlayerData>,
     current_player_id: ReadSignal<PlayerId>,
     typing_status: ReadSignal<std::collections::HashMap<PlayerId, String>>,
+    #[prop(into)] game_mode: Signal<shared::GameMode>,
 ) -> impl IntoView {
     // Sort players by score (highest first)
     let mut sorted_players = players;
@@ -77,8 +78,11 @@ pub fn CompactPlayerScoresComponent(
 
     view! {
         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4 transition-colors">
-            <h4 class="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3 pb-2 border-b border-gray-200 dark:border-gray-600">
-                "Scores"
+            <h4 class="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3 pb-2 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                <span>"Scores"</span>
+                <Show when=move || game_mode.get() == shared::GameMode::Duel>
+                    <span class="text-xs font-normal text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">"Duel Mode"</span>
+                </Show>
             </h4>
             <div class="space-y-1">
                 {sorted_players
@@ -91,25 +95,68 @@ pub fn CompactPlayerScoresComponent(
                                 pid.with_value(|id| map.get(id).cloned().unwrap_or_default())
                             })
                         };
+                        
+                        let is_turn = player.is_turn;
+                        let is_eliminated = player.is_eliminated;
+                        let lives = player.lives;
+                        let mode = game_mode.get();
 
                         let typing_text_clone = typing_text;
                         view! {
                             <div class=format!(
-                                "flex flex-col px-3 py-2 rounded bg-white dark:bg-gray-800 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 {}",
+                                "flex flex-col px-4 py-3 rounded-lg mb-2 shadow-sm transition-all border {} {}",
                                 if is_current {
-                                    "bg-blue-50 dark:bg-blue-900/30 font-semibold border-l-4 border-blue-500 dark:border-blue-400"
+                                    "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
                                 } else {
-                                    ""
+                                    "bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700"
                                 },
+                                if is_eliminated { "opacity-60 grayscale bg-gray-100 dark:bg-gray-800" } else { "" }
                             )>
                                 <div class="flex justify-between items-center w-full">
-                                    <span class="font-medium text-gray-900 dark:text-gray-200">{player.name}</span>
-                                    <span class="font-semibold text-blue-600 dark:text-blue-400 ml-2">{player.score}</span>
+                                    <div class="flex items-center gap-3">
+                                        // Rank/Status Indicator
+                                        <div class=format!(
+                                            "w-2 h-2 rounded-full {}",
+                                            if is_turn && mode == shared::GameMode::Duel { "bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" }
+                                            else if is_eliminated { "bg-red-500" }
+                                            else { "bg-gray-300 dark:bg-gray-600" }
+                                        )></div>
+
+                                        <div class="flex flex-col">
+                                            <span class=format!(
+                                                "font-medium text-lg {}",
+                                                if is_current { "text-blue-700 dark:text-blue-300" }
+                                                else { "text-gray-900 dark:text-gray-200" }
+                                            )>{player.name}</span>
+
+                                            <Show when=move || is_eliminated>
+                                                <span class="text-[10px] uppercase tracking-wider font-bold text-red-500">"Eliminated"</span>
+                                            </Show>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-6">
+                                         <Show when=move || mode == shared::GameMode::Duel && !is_eliminated>
+                                            <div class="flex items-center gap-1" title={format!("{} Lives Remaining", lives.unwrap_or(0))}>
+                                                {(0..lives.unwrap_or(0)).map(|_| view! {
+                                                    <span class="text-xl leading-none transform hover:scale-125 transition-transform cursor-help filter drop-shadow-sm">"❤️"</span>
+                                                }).collect_view()}
+                                            </div>
+                                         </Show>
+                                        
+                                        <Show when=move || mode != shared::GameMode::Duel>
+                                            <div class="flex flex-col items-end min-w-[3rem]">
+                                                 <span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">"Pts"</span>
+                                                 <span class="font-bold text-2xl text-blue-600 dark:text-blue-400 leading-none">{player.score}</span>
+                                            </div>
+                                        </Show>
+                                    </div>
                                 </div>
+
                                 <Show when=move || !typing_text().is_empty()>
-                                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 italic break-all flex items-center gap-1">
-                                        <span class="animate-pulse">"✎"</span>
-                                        {typing_text_clone}
+                                    <div class="mt-2 text-sm text-gray-600 dark:text-gray-300 italic flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 px-2 py-1 rounded">
+                                        <span class="animate-bounce">"✎"</span>
+                                        <span class="truncate">{typing_text_clone}</span>
                                     </div>
                                 </Show>
                             </div>

@@ -4,7 +4,7 @@
 
 #![cfg_attr(not(feature = "ssr"), no_std)]
 
-// ----------------------DO NOT REMOVE IDIOT -------------------
+// ---------------------- DO NOT REMOVE -------------------
 extern crate alloc;
 use alloc::{
     string::{String, ToString},
@@ -55,6 +55,7 @@ pub enum ServerMessage {
     PlayerListUpdate { players: Vec<PlayerData> },
 
     SettingsUpdate { settings: GameSettings },
+    LeaderUpdate { leader_id: PlayerId },
 
 }
 
@@ -130,6 +131,9 @@ pub struct PlayerData {
     pub name: String,
     pub score: u32,
     pub joined_at: String, // ISO-8601 for simplicity
+    pub lives: Option<u32>,
+    pub is_eliminated: bool,
+    pub is_turn: bool,
 }
 
 /// Full lobby state, sent to all clients every poll / push.
@@ -150,7 +154,19 @@ pub struct GameSettings {
     pub time_limit_seconds: Option<u32>,
     pub max_players: u32,
     pub weighted: bool,
+    pub mode: GameMode,
+    pub target_score: Option<u32>,
+    pub initial_lives: Option<u32>,
+    pub duel_allow_kanji_reuse: bool,
 }
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GameMode {
+    #[default]
+    Deathmatch,
+    Duel,
+}
+
 
 impl Default for GameSettings {
     fn default() -> Self {
@@ -165,6 +181,10 @@ impl Default for GameSettings {
             time_limit_seconds: None,
             max_players: 4,
             weighted: false,
+            mode: GameMode::Deathmatch,
+            target_score: Some(10), // Default target score for Deathmatch
+            initial_lives: Some(3), // Default lives for Duel
+            duel_allow_kanji_reuse: false,
         }
     }
 }

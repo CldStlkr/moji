@@ -84,6 +84,13 @@ fn App() -> impl IntoView {
         clear_session();
     };
 
+    let handle_return_to_lobby = move || {
+        is_in_game.set(false);
+        // Logic: setting is_in_game to false triggers the Show fallback (LobbyComponent).
+        // Since we didn't clear lobby_id/player_id, we can pass them to LobbyComponent
+        // to restore the "In Lobby" state instead of "Join Lobby" state.
+    };
+
     let is_dark_mode = RwSignal::new(false);
 
     // Initialize dark mode from local storage
@@ -145,11 +152,22 @@ fn App() -> impl IntoView {
                                             lobby_id=lobby_id.get()
                                             player_id=player_id.get()
                                             on_exit_game=handle_exit_game
+                                            on_return_to_lobby=handle_return_to_lobby
                                         />
                                     }
                                 }
                             >
-                                <LobbyComponent on_lobby_joined=handle_lobby_joined />
+                                <LobbyComponent 
+                                    on_lobby_joined=handle_lobby_joined 
+                                    initial_lobby_id={
+                                        let id = lobby_id.get();
+                                        if id.is_empty() { None } else { Some(id) }
+                                    }
+                                    initial_player_id={
+                                        let id = player_id.get();
+                                        if id.to_string().is_empty() { None } else { Some(id) }
+                                    }
+                                />
                             </Show>
                         }
                     }

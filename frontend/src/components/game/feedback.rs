@@ -36,8 +36,7 @@ pub fn GameFeedback(
                     {move || error_message.get()}
                 </div>
             </Show>
-            
-            // Instructions moved here or can stay in main component, but fitting here is often nice
+
              <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
                 <p class="mb-2">"Type a Japanese word containing the displayed kanji."</p>
                 <p>"Click \"Submit\" to check your answer."</p>

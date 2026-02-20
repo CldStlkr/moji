@@ -58,6 +58,15 @@ pub async fn start_game(lobby_id: &str, request: StartGameRequest) -> ApiResult<
     .await
 }
 
+pub async fn reset_lobby(lobby_id: &str, player_id: &PlayerId) -> ApiResult<serde_json::Value> {
+    make_request(
+        "POST",
+        format!("{}/lobby/{}/reset", API_BASE, lobby_id),
+        Some(&serde_json::json!({ "player_id": player_id })),
+    )
+    .await
+}
+
 pub async fn get_lobby_players(lobby_id: &str) -> ApiResult<serde_json::Value> {
     make_request::<(), _>(
         "GET",

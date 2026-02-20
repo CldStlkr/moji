@@ -101,7 +101,7 @@ pub fn AuthModal(
             let req = AuthRequest {
                 username: name.clone(),
                 password: Some(pass),
-                create_guest: false, // Register logic
+                create_guest: false,
             };
             match authenticate(req).await {
                  Ok(_) => finalize_auth(name, false),
@@ -141,7 +141,7 @@ pub fn AuthModal(
                     </div>
                 </Show>
 
-                // STAGE 1: ENTER USERNAME
+                // 1: ENTER USERNAME
                 {move || (stage.get() == "username").then(|| view! {
                     <div class="space-y-4">
                         <div>
@@ -172,7 +172,7 @@ pub fn AuthModal(
                     </div>
                 })}
 
-                // STAGE 2: GUEST OR LOGIN
+                // 2: GUEST OR LOGIN
                 {move || (stage.get() == "guest_or_login").then(|| view! {
                     <div class="space-y-3">
                          <p class="text-gray-600 dark:text-gray-400 text-sm mb-4">
@@ -197,7 +197,7 @@ pub fn AuthModal(
                     </div>
                 })}
 
-                // STAGE 3: PASSWORD LOGIN
+                // 3: PASSWORD LOGIN
                 {move || (stage.get() == "password_login").then(|| view! {
                     <div class="space-y-4">
                          <div class="flex items-center justify-between mb-2">
@@ -231,7 +231,7 @@ pub fn AuthModal(
                     </div>
                 })}
 
-                // STAGE 4: REGISTER PASSWORD
+                // 4: REGISTER PASSWORD
                 {move || (stage.get() == "password_register").then(|| view! {
                     <div class="space-y-4">
                          <div>

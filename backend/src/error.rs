@@ -71,7 +71,17 @@ impl IntoResponse for AppError {
         };
 
         // Log detailed error internally
-        tracing::error!("API error: {:?}", self);
+        match &self {
+            AppError::LobbyNotFound(_) | AppError::PlayerNotFound(_) => {
+                tracing::warn!("Client requested missing resource: {:?}", self);
+            }
+            AppError::InvalidInput(_) | AppError::AuthError(_) => {
+                tracing::warn!("Client error: {:?}", self);
+            }
+            _ => {
+                tracing::error!("Internal API error: {:?}", self);
+            }
+        }
 
         // Return user-friendly error to client
         let body = Json(json!({

@@ -78,14 +78,9 @@ pub async fn create_lobby(
     // Add the player who created the lobby (will automatically become leader)
     let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
 
-    {
-        let mut lobbies = app_state
-            .lobbies
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))?;
-
+    app_state.lobbies.with(|lobbies| {
         lobbies.insert(lobby_id.clone(), lobby_state);
-    }
+    })?;
 
 
     Ok(Json(json!({
@@ -112,16 +107,12 @@ pub async fn leave_lobby(
     lobby.remove_player(&request.player_id)?;
 
     // Check if empty and remove lobby if so
-    let is_empty = {
-        let players = lobby.players.lock().map_err(|e| AppError::LockError(e.to_string()))?;
-        players.is_empty()
-    };
+    let is_empty = lobby.players.read(|players| players.is_empty())?;
 
     if is_empty {
-        {
-            let mut lobbies = app_state.lobbies.lock().map_err(|e| AppError::LockError(e.to_string()))?;
+        app_state.lobbies.with(|lobbies| {
             lobbies.remove(&lobby_id);
-        }
+        })?;
 
         // End game session in DB if exists
         if let Some(game_id) = lobby.game_session_id {
@@ -222,6 +213,21 @@ pub async fn start_game(
     })))
 }
 
+// NOTE: Leader Only
+#[debug_handler]
+pub async fn reset_lobby(
+    State(app_state): State<Arc<AppState>>,
+    Path(lobby_id): Path<String>,
+    Json(request): Json<StartGameRequest>, // We can reuse StartGameRequest as it has player_id
+) -> Result<Json<serde_json::Value>> {
+    let lobby = get_lobby(&app_state, &lobby_id)?;
+    lobby.reset_lobby(&request.player_id)?;
+
+    Ok(Json(json!({
+        "message": "Lobby reset successfully"
+    })))
+}
+
 #[debug_handler]
 pub async fn get_player_info(
     State(app_state): State<Arc<AppState>>,
@@ -229,7 +235,6 @@ pub async fn get_player_info(
 ) -> Result<Json<PlayerData>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
 
-    // Get the full player data from the lobby
     let players = lobby.get_all_players()?;
     let player = players
         .iter()
@@ -242,6 +247,9 @@ pub async fn get_player_info(
         name: player.name.clone(),
         score: player.score,
         joined_at: player.joined_at.clone(),
+        lives: player.lives,
+        is_eliminated: player.is_eliminated,
+        is_turn: player.is_turn,
     }))
 }
 
@@ -410,7 +418,6 @@ pub async fn ws_handler(
 async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: String, player_id: PlayerId) {
     let (mut sender, mut receiver) = socket.split();
 
-    // Get Lobby and Subscribe
     let lobby = match get_lobby(&app_state, &lobby_id) {
         Ok(l) => l,
         Err(_) => return, // Lobby closed or not found
@@ -418,7 +425,6 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
 
     let mut rx = lobby.tx.subscribe();
 
-    // Spawn task to forward broadcast messages to this client
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
             if sender.send(Message::Text(msg.into())).await.is_err() {
@@ -427,89 +433,28 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
         }
     });
 
-    // Capture DB pool for the receiver task if available
-    let db_pool = app_state.db_pool.clone();
+    let _db_pool = app_state.db_pool.clone();
 
-    // Listen for client messages
+    let lobby_ref = lobby.clone();
+    let player_id_ref = player_id.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             if let Message::Text(text) = msg {
-                if let Ok(client_msg) = serde_json::from_str::<shared::ClientMessage>(&text) {
-                    match client_msg {
-                        shared::ClientMessage::Typing { input } => {
-                            // Broadcast typing status to everyone else
-                            let _ = lobby.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerTyping {
-                                player_id: player_id.clone(),
+                 if let Ok(client_msg) = serde_json::from_str::<shared::ClientMessage>(&text) {
+                     match client_msg {
+                         shared::ClientMessage::Typing { input } => {
+                            let _ = lobby_ref.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerTyping {
+                                player_id: player_id_ref.clone(),
                                 input,
-                            }).unwrap());
-                        }
-                        shared::ClientMessage::Submit { word, kanji } => {
-                            let word_list = &lobby.word_list;
-                            let input_word = word.trim();
-                            let input_kanji = kanji.trim();
-
-                            let good_kanji = input_word.contains(input_kanji);
-                            let good_word = word_list.contains(input_word);
-                            let is_correct = good_kanji && good_word;
-
-                            let (message, new_kanji_opt) = if is_correct {
-                                let _ = lobby.increment_player_score(&player_id);
-                                let new_k = lobby.generate_random_kanji().ok();
-
-                                let _ = lobby.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
-                                    players: lobby.get_all_players().unwrap_or_default()
-                                }).unwrap());
-
-                                ("Good guess!".to_string(), new_k)
-                            } else if good_kanji {
-                                ("Bad Guess: Correct kanji, but not valid word.".to_string(), None)
-                            } else if good_word {
-                                ("Bad Guess: Valid word, but does not contain the correct kanji.".to_string(), None)
-                            } else {
-                                ("Bad Guess: Incorrect kanji and not a valid word.".to_string(), None)
-                            };
-
-                            let score = lobby.get_player_score(&player_id).unwrap_or(0);
-
-                            // Broadcast the verification result so clients can show animations/toasts
-                            let _ = lobby.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
-                                player_id: player_id.clone(),
-                                result: shared::CheckWordResponse {
-                                    message: message.clone(),
-                                    score,
-                                    error: None,
-                                    kanji: new_kanji_opt,
-                                },
-                            }).unwrap());
-
-                            // NEW: Persist to DB if session exists
-                            if let (Some(game_id), Some(pool)) = (lobby.game_session_id, &db_pool) {
-                                let action_data = json!({
-                                    "player_id": player_id.to_string(),
-                                    "word": input_word,
-                                    "kanji": input_kanji,
-                                    "correct": is_correct,
-                                    "score": score,
-                                    "message": message
-                                });
-
-                                // Spawn a background task to record the action
-                                let pool = Arc::clone(pool);
-                                tokio::spawn(async move {
-                                    if let Err(e) = GameAction::create(
-                                        &pool,
-                                        game_id,
-                                        None, // User ID is None for guests
-                                        "word_submission",
-                                        action_data
-                                    ).await {
-                                        tracing::error!("Failed to log word submission: {:?}", e);
-                                    }
-                                });
-                            }
-                        }
-                    }
-                }
+                            }).unwrap_or_default());
+                         },
+                         shared::ClientMessage::Submit { word, kanji } => {
+                             if let Err(e) = lobby_ref.process_guess(&player_id_ref, &word, &kanji) {
+                                 tracing::error!("Error processing guess: {:?}", e);
+                             }
+                         }
+                     }
+                 }
             }
         }
     });
@@ -519,4 +464,6 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
         _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort(),
     }
+
+    let _ = lobby.remove_player(&player_id);
 }

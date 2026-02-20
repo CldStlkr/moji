@@ -16,18 +16,23 @@ use lobby_socket::{use_lobby_socket, LobbySocketConfig};
 pub use lobby_management::{GameInstructions, StatusMessage};
 
 #[component]
-pub fn LobbyComponent<F>(on_lobby_joined: F) -> impl IntoView
+pub fn LobbyComponent<F>(
+    on_lobby_joined: F,
+    initial_lobby_id: Option<String>,
+    initial_player_id: Option<PlayerId>,
+) -> impl IntoView
 where
     F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
 {
     let (status, set_status) = signal(String::new());
     let (is_loading, set_is_loading) = signal(false);
 
-    // Lobby state
-    let (in_lobby, set_in_lobby) = signal(false);
+    // Lobby state - Initialize from props if available
+    let has_initial = initial_lobby_id.is_some() && initial_player_id.is_some();
+    let (in_lobby, set_in_lobby) = signal(has_initial);
     let (lobby_info, set_lobby_info) = signal::<Option<LobbyInfo>>(None);
-    let (current_lobby_id, set_current_lobby_id) = signal(String::new());
-    let (current_player_id, set_current_player_id) = signal(PlayerId::default());
+    let (current_lobby_id, set_current_lobby_id) = signal(initial_lobby_id.unwrap_or_default());
+    let (current_player_id, set_current_player_id) = signal(initial_player_id.unwrap_or_default());
 
     // Start polling when in lobby
     use_lobby_socket(LobbySocketConfig {
