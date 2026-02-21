@@ -6,7 +6,7 @@ pub mod models;
 pub mod types;
 
 use chrono::{DateTime, Utc};
-use data::{vectorize_joyo_kanji, vectorize_word_list, Kanji};
+use data::{vectorize_joyo_kanji, load_dictionary, Kanji};
 use db::DbPool;
 use error::AppError;
 use rand::{RngExt, distr::{Alphanumeric, Distribution, weighted::WeightedIndex}};
@@ -23,6 +23,7 @@ pub use shared::{
 pub use types::{Result, Shared, SharedState};
 pub type KanjiData = Arc<Vec<Vec<Kanji>>>;
 pub type WordData = Arc<HashSet<String>>;
+pub type JlptWordData = Arc<Vec<HashMap<String, Vec<String>>>>;
 
 #[derive(Clone, Debug)]
 pub struct PlayerData {
@@ -55,7 +56,7 @@ impl AppState {
             "../data"
         };
 
-        let word_list_path = format!("{}/kanji_words.csv", data_dir);
+        let dictionary_path = format!("{}/kanji_words.csv", data_dir);
         let kanji_list_paths: Vec<String> = vec![
             format!("{}/N1_kanji.csv", data_dir),
             format!("{}/N2_kanji.csv", data_dir),
@@ -68,7 +69,7 @@ impl AppState {
         let list_of_kanji = Arc::new(vectorize_joyo_kanji(&kanji_list_paths)
             .map_err(|e| AppError::DataLoadError(e.to_string()))?);
 
-        let list_of_words = Arc::new(vectorize_word_list(&word_list_path)
+        let list_of_words = Arc::new(load_dictionary(&dictionary_path)
             .map_err(|e| AppError::DataLoadError(e.to_string()))?);
 
         Ok((list_of_kanji, list_of_words))
@@ -146,7 +147,7 @@ impl LobbyState {
             ));
         }
 
-        self.settings.with(|settings| {
+        self.settings.write(|settings| {
             *settings = new_settings.clone();
         })?;
 
@@ -169,7 +170,7 @@ impl LobbyState {
         let api_players = self.players.read(|players| {
              players.iter()
             .map(|p| shared::PlayerData {
-                id: PlayerId(p.id.0.clone()),
+                id: p.id.clone(),
                 name: p.name.clone(),
                 score: p.score,
                 joined_at: p.joined_at.to_rfc3339(),
@@ -196,7 +197,7 @@ impl LobbyState {
             ))?;
         }
 
-        self.game_status.with(|status| {
+        self.game_status.write(|status| {
             if *status != GameStatus::Lobby {
                 return Err(AppError::InvalidInput("game is not in lobby state".to_string()));
             }
@@ -239,12 +240,12 @@ impl LobbyState {
                 }
             }
 
-            self.active_level_indices.with(|ai| *ai = indices.clone())?;
-            self.level_weights.with(|lw| *lw = w_map)?;
+            self.active_level_indices.write(|ai| *ai = indices)?;
+            self.level_weights.write(|lw| *lw = w_map)?;
 
-            self.players.with(|players| {
-                self.turn_order.with(|turn_order| {
-                     self.current_turn_index.with(|idx| {
+            self.players.write(|players| {
+                self.turn_order.write(|turn_order| {
+                     self.current_turn_index.write(|idx| {
                         *idx = 0;
                         turn_order.clear();
 
@@ -258,7 +259,7 @@ impl LobbyState {
                                 p.lives = None;
                             }
                         }
-                        
+
                         if settings.mode == shared::GameMode::Duel {
                             use rand::seq::SliceRandom;
                             let mut rng = rand::rng();
@@ -282,10 +283,10 @@ impl LobbyState {
     }
 
     pub fn add_player(&self, player_id: PlayerId, player_name: String) -> Result<bool> {
-        let is_leader_result = self.players.with(|players| {
+        let is_leader_result = self.players.write(|players| {
             let is_leader = players.is_empty();
             if is_leader {
-                 self.lobby_leader.with(|leader| *leader = player_id.clone())?;
+                 self.lobby_leader.write(|leader| *leader = player_id.clone())?;
             }
 
             let trimmed_name = player_name.trim();
@@ -319,15 +320,15 @@ impl LobbyState {
     }
 
     pub fn remove_player(&self, player_id: &PlayerId) -> Result<bool> {
-        self.players.with(|players| {
+        self.players.write(|players| {
             if let Some(pos) = players.iter().position(|p| &p.id == player_id) {
                 let p_id = players[pos].id.clone();
                 players.remove(pos);
 
-                self.turn_order.with(|turn_order| {
+                self.turn_order.write(|turn_order| {
                     if let Some(t_pos) = turn_order.iter().position(|id| id == &p_id) {
                          turn_order.remove(t_pos);
-                         self.current_turn_index.with(|idx| {
+                         self.current_turn_index.write(|idx| {
                              if *idx >= turn_order.len() && !turn_order.is_empty() {
                                  *idx = 0;
                              }
@@ -338,7 +339,7 @@ impl LobbyState {
                     }
                 })??;
 
-                self.lobby_leader.with(|leader| {
+                self.lobby_leader.write(|leader| {
                     if leader.to_string() == player_id.to_string() {
                         if let Some(new_leader) = players.first() {
                             *leader = new_leader.id.clone();
@@ -392,7 +393,7 @@ impl LobbyState {
     }
 
     pub fn increment_player_score(&self, player_id: &PlayerId) -> Result<u32> {
-        self.players.with(|players| {
+        self.players.write(|players| {
              let player = players
                 .iter_mut()
                 .find(|p| &p.id == player_id)
@@ -472,7 +473,7 @@ impl LobbyState {
         // Update current kanji with the new one
 
 
-        self.current_kanji.with(|current| *current = Some(new_kanji_data.kanji.clone()))?;
+        self.current_kanji.write(|current| *current = Some(new_kanji_data.kanji.clone()))?;
 
         if broadcast {
             let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
@@ -490,7 +491,7 @@ impl LobbyState {
             ));
         }
 
-        self.game_status.with(|status| *status = GameStatus::Lobby)?;
+        self.game_status.write(|status| *status = GameStatus::Lobby)?;
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
             kanji: "".to_string(),
@@ -502,8 +503,8 @@ impl LobbyState {
     }
 
     pub fn advance_turn(&self) -> Result<PlayerId> {
-        self.turn_order.with(|order| {
-             self.current_turn_index.with(|idx| {
+        self.turn_order.write(|order| {
+             self.current_turn_index.write(|idx| {
                  if order.is_empty() {
                      return Err(AppError::InternalError("No players in turn order".to_string()));
                  }
@@ -581,7 +582,7 @@ impl LobbyState {
             }
 
             if settings.mode == shared::GameMode::Duel {
-                let eliminated = self.players.with(|players| {
+                let eliminated = self.players.write(|players| {
                      let mut eliminated = false;
                      if let Some(p) = players.iter_mut().find(|p| p.id == *player_id) {
                          if let Some(lives) = p.lives.as_mut() {
@@ -607,10 +608,10 @@ impl LobbyState {
                 }
 
                 if eliminated {
-                     self.turn_order.with(|order| {
+                     self.turn_order.write(|order| {
                          if let Some(pos) = order.iter().position(|id| id == player_id) {
                              order.remove(pos);
-                             self.current_turn_index.with(|idx| {
+                             self.current_turn_index.write(|idx| {
                                  if *idx >= order.len() && !order.is_empty() {
                                      *idx = 0;
                                  }
@@ -650,7 +651,7 @@ impl LobbyState {
         }).unwrap_or_default());
 
         if game_over {
-            self.game_status.with(|st| *st = GameStatus::Finished)?;
+            self.game_status.write(|st| *st = GameStatus::Finished)?;
             let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
                 kanji: self.get_current_kanji()?.unwrap_or_default(),
                 status: GameStatus::Finished,
@@ -679,7 +680,7 @@ pub fn generate_lobby_id() -> String {
 }
 
 pub fn get_lobby(app_state: &Arc<AppState>, lobby_id: &str) -> Result<SharedState> {
-    app_state.lobbies.with(|lobbies| {
+    app_state.lobbies.write(|lobbies| {
         lobbies
             .get(lobby_id)
             .cloned()
@@ -757,7 +758,7 @@ mod tests {
         // NOTE: New generate_random_kanji requires start_game to populate active_indices or manually setting them
         // Manually set them for the test
         {
-            lobby_state.active_level_indices.with(|indices| indices.push(0)).unwrap();
+            lobby_state.active_level_indices.write(|indices| indices.push(0)).unwrap();
         }
 
         let kanji = lobby_state.generate_random_kanji(false).unwrap();
@@ -770,7 +771,7 @@ mod tests {
 
         // Set active indices
         {
-             lobby_state.active_level_indices.with(|indices| indices.push(0)).unwrap();
+             lobby_state.active_level_indices.write(|indices| indices.push(0)).unwrap();
         }
 
         // Generate a kanji and verify it's from one of the lists
@@ -867,7 +868,7 @@ mod tests {
         let lobby_state = Arc::new(create_test_lobby());
 
         {
-             app_state.lobbies.with(|lobbies| {
+             app_state.lobbies.write(|lobbies| {
                  lobbies.insert(lobby_id.clone(), lobby_state.clone());
              }).unwrap();
         }
@@ -885,7 +886,7 @@ mod tests {
 
         // Manually start game or set indices to allow generation
         {
-             retrieved_lobby.active_level_indices.with(|indices| indices.push(0)).unwrap();
+             retrieved_lobby.active_level_indices.write(|indices| indices.push(0)).unwrap();
         }
 
         // Generate kanji and check word
@@ -1040,7 +1041,7 @@ mod tests {
         let lobby = create_test_lobby();
         lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
         lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
-        lobby.turn_order.with(|o| { o.push(PlayerId::from("p1")); o.push(PlayerId::from("p2")); }).unwrap();
+        lobby.turn_order.write(|o| { o.push(PlayerId::from("p1")); o.push(PlayerId::from("p2")); }).unwrap();
 
         assert_eq!(lobby.advance_turn().unwrap(), PlayerId::from("p2"));
         assert_eq!(lobby.advance_turn().unwrap(), PlayerId::from("p1")); // wraps
@@ -1067,10 +1068,10 @@ mod tests {
         let lobby = create_test_lobby();
         let leader = PlayerId::from("leader");
         lobby.add_player(leader.clone(), "Leader".to_string()).unwrap();
-        lobby.settings.with(|s| { s.target_score = Some(3); }).unwrap();
-        lobby.active_level_indices.with(|i| i.push(0)).unwrap();
-        lobby.current_kanji.with(|k| *k = Some("日".to_string())).unwrap();
-        lobby.game_status.with(|s| *s = GameStatus::Playing).unwrap();
+        lobby.settings.write(|s| { s.target_score = Some(3); }).unwrap();
+        lobby.active_level_indices.write(|i| i.push(0)).unwrap();
+        lobby.current_kanji.write(|k| *k = Some("日".to_string())).unwrap();
+        lobby.game_status.write(|s| *s = GameStatus::Playing).unwrap();
         (lobby, leader)
     }
 
@@ -1111,9 +1112,9 @@ mod tests {
     fn test_deathmatch_target_score_ends_game() {
         let (lobby, leader) = setup_deathmatch_playing();
         for _ in 0..3 {
-            lobby.current_kanji.with(|k| *k = Some("日".to_string())).unwrap();
+            lobby.current_kanji.write(|k| *k = Some("日".to_string())).unwrap();
             let empty = lobby.active_level_indices.read(|i| i.is_empty()).unwrap();
-            if empty { lobby.active_level_indices.with(|i| i.push(0)).unwrap(); }
+            if empty { lobby.active_level_indices.write(|i| i.push(0)).unwrap(); }
             lobby.process_guess(&leader, "日本", "日").unwrap();
         }
         assert_eq!(lobby.game_status.read(|s| *s).unwrap(), GameStatus::Finished);
@@ -1126,11 +1127,11 @@ mod tests {
         let p2 = PlayerId::from("p2");
         lobby.add_player(p1.clone(), "Alice".to_string()).unwrap();
         lobby.add_player(p2.clone(), "Bob".to_string()).unwrap();
-        lobby.settings.with(|s| { s.mode = shared::GameMode::Duel; s.initial_lives = Some(3); }).unwrap();
-        lobby.game_status.with(|s| *s = GameStatus::Playing).unwrap();
-        lobby.turn_order.with(|o| { o.push(p1.clone()); o.push(p2.clone()); }).unwrap();
-        lobby.current_kanji.with(|k| *k = Some("日".to_string())).unwrap();
-        lobby.active_level_indices.with(|i| i.push(0)).unwrap();
+        lobby.settings.write(|s| { s.mode = shared::GameMode::Duel; s.initial_lives = Some(3); }).unwrap();
+        lobby.game_status.write(|s| *s = GameStatus::Playing).unwrap();
+        lobby.turn_order.write(|o| { o.push(p1.clone()); o.push(p2.clone()); }).unwrap();
+        lobby.current_kanji.write(|k| *k = Some("日".to_string())).unwrap();
+        lobby.active_level_indices.write(|i| i.push(0)).unwrap();
 
         // p2 submits on p1's turn — should be silently ignored
         lobby.process_guess(&p2, "日本", "日").unwrap();

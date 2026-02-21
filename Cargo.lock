@@ -1977,7 +1977,6 @@ dependencies = [
  "anyhow",
  "console_error_panic_hook",
  "futures",
- "getrandom 0.2.16",
  "gloo-net",
  "gloo-timers",
  "js-sys",

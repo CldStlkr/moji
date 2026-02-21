@@ -78,7 +78,7 @@ pub async fn create_lobby(
     // Add the player who created the lobby (will automatically become leader)
     let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
 
-    app_state.lobbies.with(|lobbies| {
+    app_state.lobbies.write(|lobbies| {
         lobbies.insert(lobby_id.clone(), lobby_state);
     })?;
 
@@ -110,7 +110,7 @@ pub async fn leave_lobby(
     let is_empty = lobby.players.read(|players| players.is_empty())?;
 
     if is_empty {
-        app_state.lobbies.with(|lobbies| {
+        app_state.lobbies.write(|lobbies| {
             lobbies.remove(&lobby_id);
         })?;
 

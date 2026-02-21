@@ -16,7 +16,7 @@ impl<T> Shared<T> {
 
     /// Execute a closure with mutable access to the shared value
     /// Automatically converts poison errors to AppError
-    pub fn with<F, R>(&self, f: F) -> crate::types::Result<R>
+    pub fn write<F, R>(&self, f: F) -> crate::types::Result<R>
     where
         F: FnOnce(&mut T) -> R,
     {
