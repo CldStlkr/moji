@@ -18,7 +18,7 @@ pub fn UserMenu() -> impl IntoView {
     let handle_logout  = move |_| {
         if let Some(user) = auth_context.user.get() {
             spawn_local(async move {
-                let _ = crate::api::logout(&user.username).await;
+                let _ = shared::logout(user.username.clone()).await;
             });
         }
 

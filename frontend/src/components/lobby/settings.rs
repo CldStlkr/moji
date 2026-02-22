@@ -1,6 +1,6 @@
-use crate::api::update_lobby_settings;
+
 use leptos::prelude::*;
-use shared::{GameSettings, PlayerId, UpdateSettingsRequest, GameMode};
+use shared::{GameSettings, PlayerId, UpdateSettingsRequest, GameMode, update_lobby_settings};
 use wasm_bindgen_futures::spawn_local;
 
 /// Hook to handle updating lobby settings
@@ -16,7 +16,7 @@ pub fn use_lobby_settings(
                 player_id: p_id,
                 settings: new_settings,
             };
-            let _ = update_lobby_settings(&l_id, req).await;
+            let _ = update_lobby_settings(l_id, req).await;
         });
     })
 }

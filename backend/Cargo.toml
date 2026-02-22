@@ -31,6 +31,9 @@ sqlx = { version = "0.8.5", features = [
 ] }
 dotenv = "0.15"
 argon2 = "0.5.3"
+leptos = { version = "0.8.16", features = ["ssr"] }
+leptos_axum = { version = "0.8.8" }
+async-trait = { version = "0.1.89" }
 
 [dev-dependencies]
 axum-test = "18.7"

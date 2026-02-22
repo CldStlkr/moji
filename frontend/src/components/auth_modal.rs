@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
-use crate::api::{check_username, authenticate, AuthRequest};
+use shared::{check_username, authenticate, AuthRequest};
 use crate::context::{AuthContext, User};
 use crate::persistence::{save_auth, AuthData};
 
@@ -43,12 +43,15 @@ pub fn AuthModal(
         }
 
         spawn_local(async move {
-            match check_username(&name).await {
+            match check_username(name).await {
                 Ok(res) => {
-                    if res.available {
+                    let available = res["available"].as_bool().unwrap_or(false);
+                    let is_guest = res["is_guest"].as_bool().unwrap_or(false);
+
+                    if available {
                         set_stage.set("guest_or_login".to_string());
                         set_error.set(String::new());
-                    } else if res.is_guest {
+                    } else if is_guest {
                         set_error.set("Username already taken".to_string());
                     } else {
                         set_stage.set("password_login".to_string());
@@ -81,13 +84,8 @@ pub fn AuthModal(
     let submit_guest = move || {
          let name = username.get();
          spawn_local(async move {
-             let req = AuthRequest {
-                 username: name.clone(),
-                 password: None,
-                 create_guest: true,
-             };
-             match authenticate(req).await {
-                 Ok(_) => finalize_auth(name, true),
+             match crate::context::create_guest_account(name.clone()).await {
+                 Ok(final_name) => finalize_auth(final_name, true),
                  Err(e) => set_error.set(format!("Guest login failed: {}", e)),
              }
          });

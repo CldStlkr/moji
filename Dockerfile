@@ -38,7 +38,7 @@ RUN bun install
 
 # Build dependencies first (cached layer)
 WORKDIR /usr/src
-RUN cargo chef cook --release --target wasm32-unknown-unknown --recipe-path recipe.json --bin moji-frontend
+RUN cargo chef cook --release --target wasm32-unknown-unknown --recipe-path recipe.json --package moji-frontend
 
 # Copy source and build
 COPY . .

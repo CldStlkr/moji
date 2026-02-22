@@ -1,4 +1,4 @@
-pub mod api;
+#![recursion_limit = "512"]
 pub mod error;
 pub mod persistence;
 

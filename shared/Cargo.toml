@@ -6,6 +6,9 @@ authors.workspace = true
 
 [dependencies]
 serde.workspace = true
+leptos = { version = "0.8.16" }
+async-trait = { version = "0.1.89" }
+serde_json = { version = "1.0.149" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sqlx = { version = "0.8.6", optional = true, features = [
@@ -14,4 +17,4 @@ sqlx = { version = "0.8.6", optional = true, features = [
 ] }
 
 [features]
-ssr = ["dep:sqlx"]
+ssr = ["dep:sqlx", "leptos/ssr"]

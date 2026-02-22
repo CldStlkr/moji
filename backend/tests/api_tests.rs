@@ -1,326 +1,183 @@
-/// HTTP integration tests for the moji backend REST API.
-///
-/// These tests spin up an in-process Axum router via `axum_test::TestServer`
-/// (no real TCP socket) and exercise every REST endpoint.
-///
-/// `AppState::create()` loads kanji data from `../data/` relative to the
-/// backend build dir — run tests from the `backend/` directory (default with
-/// `cargo test`).
-use axum::{
-    routing::{get, post},
-    Router,
-};
-use axum_test::TestServer;
-use moji::{
-    api::{
-        create_lobby, get_prompt, generate_new_prompt, get_lobby_info, get_lobby_players,
-        get_player_info, join_lobby, leave_lobby, reset_lobby, start_game, update_lobby_settings,
-    },
-    AppState,
-};
-use serde_json::{json, Value};
+use moji::AppState;
+use shared::{ApiContext, JoinLobbyRequest, StartGameRequest, UpdateSettingsRequest};
 use std::sync::Arc;
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-fn make_router() -> Router {
-    let state = Arc::new(AppState::create().expect("Failed to create AppState"));
-    Router::new()
-        .route("/lobby/create", post(create_lobby))
-        .route("/lobby/join/{lobby_id}", post(join_lobby))
-        .route("/player/{lobby_id}/{player_id}", get(get_player_info))
-        .route("/lobby/players/{lobby_id}", get(get_lobby_players))
-        .route("/lobby/{lobby_id}/leave", post(leave_lobby))
-        .route("/prompt/{lobby_id}", get(get_prompt))
-        .route("/new_prompt/{lobby_id}", post(generate_new_prompt))
-        .route("/lobby/{lobby_id}/info", get(get_lobby_info))
-        .route("/lobby/{lobby_id}/settings", post(update_lobby_settings))
-        .route("/lobby/{lobby_id}/start", post(start_game))
-        .route("/lobby/{lobby_id}/reset", post(reset_lobby))
-        .with_state(state)
+// Helper to create state
+async fn get_state() -> Arc<AppState> {
+    Arc::new(AppState::create().expect("Failed to create AppState"))
 }
-
-/// Create a lobby and return `(server, lobby_id, player_id)`.
-async fn create_lobby_helper(server: &TestServer) -> (String, String) {
-    let res = server
-        .post("/lobby/create")
-        .json(&json!({ "player_name": "Alice" }))
-        .await;
-    res.assert_status_ok();
-    let body: Value = res.json();
-    let lobby_id = body["lobby_id"].as_str().unwrap().to_string();
-    let player_id = body["player_id"].as_str().unwrap().to_string();
-    (lobby_id, player_id)
-}
-
-// ── Lobby creation ────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_create_lobby_returns_ids() {
-    let server = TestServer::new(make_router()).unwrap();
-    let res = server
-        .post("/lobby/create")
-        .json(&json!({ "player_name": "Alice" }))
-        .await;
-
-    res.assert_status_ok();
-    let body: Value = res.json();
-    assert!(body["lobby_id"].as_str().is_some_and(|id| id.len() == 6));
-    assert!(body["player_id"].as_str().is_some_and(|id| !id.is_empty()));
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    assert!(res["lobby_id"].as_str().is_some_and(|id| id.len() == 6));
+    assert!(res["player_id"].as_str().is_some_and(|id| !id.is_empty()));
 }
-
-// ── Joining ───────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_join_lobby_gives_unique_player_id() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, creator_id) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
+    let creator_id = res["player_id"].as_str().unwrap().to_string();
 
-    let res = server
-        .post(&format!("/lobby/join/{lobby_id}"))
-        .json(&json!({ "player_name": "Bob" }))
-        .await;
-
-    res.assert_status_ok();
-    let body: Value = res.json();
-    let joiner_id = body["player_id"].as_str().unwrap();
+    let res2 = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let joiner_id = res2["player_id"].as_str().unwrap();
     assert_ne!(joiner_id, creator_id.as_str());
 }
 
 #[tokio::test]
-async fn test_join_nonexistent_lobby_is_404() {
-    let server = TestServer::new(make_router()).unwrap();
-    let res = server
-        .post("/lobby/join/NOPE00")
-        .json(&json!({ "player_name": "Nobody" }))
-        .await;
-    res.assert_status_not_found();
+async fn test_join_nonexistent_lobby_is_error() {
+    let state = get_state().await;
+    let res = state.join_lobby("NOPE00".into(), JoinLobbyRequest { player_name: "Nobody".into() }).await;
+    assert!(res.is_err());
 }
-
-// ── Lobby info & players ──────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_get_lobby_info_contains_creator() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, _) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
 
-    let res = server.get(&format!("/lobby/{lobby_id}/info")).await;
-    res.assert_status_ok();
-    let body: Value = res.json();
-    assert_eq!(body["lobby_id"].as_str().unwrap(), lobby_id);
-    assert_eq!(body["players"].as_array().unwrap().len(), 1);
-    assert_eq!(body["players"][0]["name"].as_str().unwrap(), "Alice");
+    let info = state.get_lobby_info(lobby_id.clone()).await.unwrap();
+    assert_eq!(info.lobby_id, lobby_id);
+    assert_eq!(info.players.len(), 1);
+    assert_eq!(info.players[0].name, "Alice");
 }
 
 #[tokio::test]
 async fn test_get_lobby_players_returns_list() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, _) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
 
-    server
-        .post(&format!("/lobby/join/{lobby_id}"))
-        .json(&json!({ "player_name": "Bob" }))
-        .await;
+    state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
 
-    let res = server.get(&format!("/lobby/players/{lobby_id}")).await;
-    res.assert_status_ok();
-    let body: Value = res.json();
-    assert_eq!(body["players"].as_array().unwrap().len(), 2);
+    let players_res = state.get_lobby_players(lobby_id.clone()).await.unwrap();
+    assert_eq!(players_res["players"].as_array().unwrap().len(), 2);
 }
-
-// ── Player info ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_get_player_info_found() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, player_id) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
+    let player_id = res["player_id"].as_str().unwrap().to_string();
 
-    let res = server
-        .get(&format!("/player/{lobby_id}/{player_id}"))
-        .await;
-    res.assert_status_ok();
-    let body: Value = res.json();
-    assert_eq!(body["name"].as_str().unwrap(), "Alice");
-    assert_eq!(body["score"].as_u64().unwrap(), 0);
+    let player = state.get_player_info(lobby_id.clone(), shared::PlayerId(player_id.clone())).await.unwrap();
+    assert_eq!(player.name, "Alice");
+    assert_eq!(player.score, 0);
 }
 
 #[tokio::test]
-async fn test_get_player_info_not_found_is_404() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, _) = create_lobby_helper(&server).await;
+async fn test_get_player_info_not_found_is_error() {
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
 
-    let res = server
-        .get(&format!("/player/{lobby_id}/nonexistent_player"))
-        .await;
-    res.assert_status_not_found();
+    let res = state.get_player_info(lobby_id.clone(), shared::PlayerId("nonexistent".into())).await;
+    assert!(res.is_err());
 }
-
-// ── Leaving ───────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_leave_lobby_removes_player() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, _) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
 
-    let join_res = server
-        .post(&format!("/lobby/join/{lobby_id}"))
-        .json(&json!({ "player_name": "Bob" }))
-        .await;
-    let joiner_id = join_res.json::<Value>()["player_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let joiner_id = join_res["player_id"].as_str().unwrap().to_string();
 
-    // Leave
-    let leave_res = server
-        .post(&format!("/lobby/{lobby_id}/leave"))
-        .json(&json!({ "player_id": joiner_id }))
-        .await;
-    leave_res.assert_status_ok();
+    state.leave_lobby(lobby_id.clone(), shared::PlayerId(joiner_id.clone())).await.unwrap();
 
-    // Confirm player is gone
-    let info: Value = server
-        .get(&format!("/lobby/{lobby_id}/info"))
-        .await
-        .json();
-    assert_eq!(info["players"].as_array().unwrap().len(), 1);
+    let info = state.get_lobby_info(lobby_id.clone()).await.unwrap();
+    assert_eq!(info.players.len(), 1);
 }
-
-// ── Settings ──────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_update_settings_leader_succeeds() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, player_id) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
+    let player_id = res["player_id"].as_str().unwrap().to_string();
 
-    let res = server
-        .post(&format!("/lobby/{lobby_id}/settings"))
-        .json(&json!({
-            "player_id": player_id,
-            "settings": {
-                "difficulty_levels": ["N5", "N4"],
-                "max_players": 6,
-                "weighted": false,
-                "mode": "Deathmatch",
-                "content_mode": "Kanji",
-                "target_score": 5,
-                "time_limit_seconds": null,
-                "initial_lives": null,
-                "duel_allow_kanji_reuse": false
-            }
-        }))
-        .await;
-    res.assert_status_ok();
+    let settings = shared::GameSettings {
+        mode: shared::GameMode::Deathmatch,
+        ..Default::default()
+    };
+
+    state.update_lobby_settings(lobby_id.clone(), UpdateSettingsRequest {
+        player_id: shared::PlayerId(player_id.clone()),
+        settings,
+    }).await.unwrap();
 }
 
 #[tokio::test]
 async fn test_update_settings_non_leader_fails() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, _) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
 
-    let join_res: Value = server
-        .post(&format!("/lobby/join/{lobby_id}"))
-        .json(&json!({ "player_name": "Bob" }))
-        .await
-        .json();
-    let bob_id = join_res["player_id"].as_str().unwrap().to_string();
+    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let joiner_id = join_res["player_id"].as_str().unwrap().to_string();
 
-    let res = server
-        .post(&format!("/lobby/{lobby_id}/settings"))
-        .json(&json!({
-            "player_id": bob_id,
-            "settings": {
-                "difficulty_levels": ["N5"],
-                "max_players": 4,
-                "weighted": false,
-                "mode": "Deathmatch",
-                "content_mode": "Kanji",
-                "target_score": 5,
-                "time_limit_seconds": null,
-                "initial_lives": null,
-                "duel_allow_kanji_reuse": false
-            }
-        }))
-        .await;
-    // Non-leader should get a 4xx
-    assert!(res.status_code().is_client_error());
+    let res = state.update_lobby_settings(lobby_id.clone(), UpdateSettingsRequest {
+        player_id: shared::PlayerId(joiner_id.clone()),
+        settings: shared::GameSettings::default(),
+    }).await;
+    assert!(res.is_err());
 }
-
-// ── Starting the game ─────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_start_game_leader_succeeds() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, player_id) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
+    let player_id = res["player_id"].as_str().unwrap().to_string();
 
-    let res = server
-        .post(&format!("/lobby/{lobby_id}/start"))
-        .json(&json!({ "player_id": player_id }))
-        .await;
-    res.assert_status_ok();
+    state.start_game(lobby_id.clone(), StartGameRequest { player_id: shared::PlayerId(player_id.clone()) }).await.unwrap();
 
-    let info: Value = server.get(&format!("/lobby/{lobby_id}/info")).await.json();
-    assert_eq!(info["status"].as_str().unwrap(), "Playing");
+    let info = state.get_lobby_info(lobby_id.clone()).await.unwrap();
+    assert_eq!(info.status, shared::GameStatus::Playing);
 }
 
 #[tokio::test]
 async fn test_start_game_non_leader_fails() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, _) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
 
-    let join_body: Value = server
-        .post(&format!("/lobby/join/{lobby_id}"))
-        .json(&json!({ "player_name": "Bob" }))
-        .await
-        .json();
-    let bob_id = join_body["player_id"].as_str().unwrap();
+    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let bob_id = join_res["player_id"].as_str().unwrap().to_string();
 
-    let res = server
-        .post(&format!("/lobby/{lobby_id}/start"))
-        .json(&json!({ "player_id": bob_id }))
-        .await;
-    assert!(res.status_code().is_client_error());
+    let res = state.start_game(lobby_id.clone(), StartGameRequest { player_id: shared::PlayerId(bob_id) }).await;
+    assert!(res.is_err());
 }
-
-// ── Reset ─────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_reset_lobby_returns_to_lobby_status() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, player_id) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
+    let player_id = res["player_id"].as_str().unwrap().to_string();
 
-    server
-        .post(&format!("/lobby/{lobby_id}/start"))
-        .json(&json!({ "player_id": player_id }))
-        .await;
+    state.start_game(lobby_id.clone(), StartGameRequest { player_id: shared::PlayerId(player_id.clone()) }).await.unwrap();
+    state.reset_lobby(lobby_id.clone(), shared::PlayerId(player_id.clone())).await.unwrap();
 
-    server
-        .post(&format!("/lobby/{lobby_id}/reset"))
-        .json(&json!({ "player_id": player_id }))
-        .await
-        .assert_status_ok();
-
-    let info: Value = server.get(&format!("/lobby/{lobby_id}/info")).await.json();
-    assert_eq!(info["status"].as_str().unwrap(), "Lobby");
+    let info = state.get_lobby_info(lobby_id.clone()).await.unwrap();
+    assert_eq!(info.status, shared::GameStatus::Lobby);
 }
-
-// ── Kanji ─────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_get_kanji_after_game_start() {
-    let server = TestServer::new(make_router()).unwrap();
-    let (lobby_id, player_id) = create_lobby_helper(&server).await;
+    let state = get_state().await;
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let lobby_id = res["lobby_id"].as_str().unwrap().to_string();
+    let player_id = res["player_id"].as_str().unwrap().to_string();
 
-    server
-        .post(&format!("/lobby/{lobby_id}/start"))
-        .json(&json!({ "player_id": player_id }))
-        .await;
+    state.start_game(lobby_id.clone(), StartGameRequest { player_id: shared::PlayerId(player_id.clone()) }).await.unwrap();
 
-    let res = server.get(&format!("/prompt/{lobby_id}")).await;
-    res.assert_status_ok();
-    let body: Value = res.json();
-    assert!(
-        body["prompt"].as_str().is_some_and(|k| !k.is_empty()),
-        "Expected a non-empty kanji string"
-    );
+    let res = state.get_prompt(lobby_id.clone()).await.unwrap();
+    assert!(!res.prompt.is_empty());
 }

@@ -3,11 +3,7 @@ use axum::{
     Router,
 };
 use moji::{
-    api::{
-        create_lobby, generate_new_prompt, get_prompt, get_lobby_info, get_lobby_players,
-        get_player_info, join_lobby, start_game, update_lobby_settings, ws_handler, check_username,
-        authenticate, logout, leave_lobby, reset_lobby,
-    },
+    api::ws_handler,
     db::init_db_pool,
     AppState,
 };
@@ -51,23 +47,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Serving frontend from: {:?}", frontend_dir);
     let index_path = frontend_dir.join("index.html");
 
-    let app = Router::new()
-        .route("/lobby/create", post(create_lobby))
-        .route("/lobby/join/{lobby_id}", post(join_lobby))
-        .route("/player/{lobby_id}/{player_id}", get(get_player_info))
-        .route("/lobby/players/{lobby_id}", get(get_lobby_players))
-        .route("/lobby/{lobby_id}/leave", post(leave_lobby))
-        .route("/prompt/{lobby_id}", get(get_prompt))
-        .route("/new_prompt/{lobby_id}", post(generate_new_prompt))
-        .route("/lobby/{lobby_id}/info", get(get_lobby_info))
-        .route("/lobby/{lobby_id}/settings", post(update_lobby_settings))
-        .route("/lobby/{lobby_id}/start", post(start_game))
-        .route("/lobby/{lobby_id}/reset", post(reset_lobby))
-        .route("/ws/{lobby_id}/{player_id}", get(ws_handler))
-        .route("/auth/check/{username}", get(check_username))
-        .route("/auth/login", post(authenticate))
-        .route("/auth/logout", post(logout))
+    let api_context: Arc<dyn shared::ApiContext> = app_state.clone();
+    let api_context_post = api_context.clone();
+    let api_context_get = api_context.clone();
 
+    let app = Router::new()
+        .route("/ws/{lobby_id}/{player_id}", get(ws_handler))
+        .route("/api/{*fn_name}", post(move |req: axum::extract::Request| {
+            let ctx = api_context_post.clone();
+            leptos_axum::handle_server_fns_with_context(
+                move || {
+                    leptos::context::provide_context(ctx.clone());
+                },
+                req,
+            )
+        }))
+        .route("/api/{*fn_name}", get(move |req: axum::extract::Request| {
+            let ctx = api_context_get.clone();
+            leptos_axum::handle_server_fns_with_context(
+                move || {
+                    leptos::context::provide_context(ctx.clone());
+                },
+                req,
+            )
+        }))
         .with_state(app_state)
         .layer(
             ServiceBuilder::new()

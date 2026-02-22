@@ -1,13 +1,12 @@
 // Component for joining/creating lobbies
 use crate::{
-    api::{create_lobby, join_lobby},
     error::{get_user_friendly_message, log_error},
     persistence::SessionData,
     context::AuthContext,
 };
 use leptos::ev;
 use leptos::prelude::*;
-use shared::{JoinLobbyRequest, PlayerId};
+use shared::{JoinLobbyRequest, PlayerId, create_lobby, join_lobby};
 use wasm_bindgen_futures::spawn_local;
 
 use super::{GameInstructions, StatusMessage};
@@ -73,8 +72,8 @@ where
                     }
                 }
                 Err(e) => {
-                    log_error("Failed to create lobby", &e);
-                    set_status.set(get_user_friendly_message(&e));
+                    log_error("Failed to create lobby", e.clone());
+                    set_status.set(get_user_friendly_message(e.clone()));
                 }
             }
             set_is_loading.set(false);
@@ -105,7 +104,7 @@ where
                 player_name: user.username.clone(),
             };
 
-            match join_lobby(&lobby_id, request).await {
+            match join_lobby(lobby_id.clone(), request).await {
                 Ok(response) => {
                     let player_id = PlayerId::from(
                         response
@@ -130,8 +129,8 @@ where
                     }
                 }
                 Err(e) => {
-                    log_error("Failed to join lobby", &e);
-                    set_status.set(get_user_friendly_message(&e));
+                    log_error("Failed to join lobby", e.clone());
+                    set_status.set(get_user_friendly_message(e.clone()));
                 }
             }
             set_is_loading.set(false);

@@ -20,3 +20,21 @@ impl AuthContext {
         self.user.get().is_some()
     }
 }
+
+pub async fn create_guest_account(username: String) -> Result<String, leptos::server_fn::error::ServerFnError> {
+    let req = shared::AuthRequest {
+        username: username.clone(),
+        password: None,
+        create_guest: true,
+    };
+
+    let response = shared::authenticate(req).await?;
+    let final_username = response
+        .get("user")
+        .and_then(|u| u.get("username"))
+        .and_then(|u| u.as_str())
+        .unwrap_or(&username)
+        .to_string();
+
+    Ok(final_username)
+}

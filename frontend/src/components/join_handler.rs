@@ -1,13 +1,12 @@
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use crate::{
-    api::{join_lobby, create_guest_account}, 
     context::AuthContext, 
     error::{get_user_friendly_message, log_error},
     persistence::SessionData,
     components::home::Home,
 };
-use shared::{JoinLobbyRequest, PlayerId};
+use shared::{JoinLobbyRequest, PlayerId, join_lobby};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
@@ -56,7 +55,7 @@ pub fn JoinHandler() -> impl IntoView {
                     player_name: user.username.clone(),
                 };
 
-                match join_lobby(&id, request).await {
+                match join_lobby(id.clone(), request).await {
                     Ok(response) => {
                          let player_id = PlayerId::from(
                             response
@@ -83,8 +82,8 @@ pub fn JoinHandler() -> impl IntoView {
                         }
                     }
                     Err(e) => {
-                        log_error("Failed to join lobby via link", &e);
-                        set_status.set(get_user_friendly_message(&e));
+                        log_error("Failed to join lobby via link", e.clone());
+                        set_status.set(get_user_friendly_message(e.clone()));
                         set_is_loading.set(false);
                     }
                 }
@@ -102,11 +101,11 @@ pub fn JoinHandler() -> impl IntoView {
             }).collect();
             let guest_name = format!("Guest{}", random_suffix);
 
-            match create_guest_account(&guest_name).await {
-                Ok(user) => {
+            match crate::context::create_guest_account(guest_name.clone()).await {
+                Ok(final_username) => {
                     // Update Auth Context - this will trigger the Effect above to join!
                     auth_context.set_user.set(Some(crate::context::User {
-                        username: user["username"].as_str().unwrap_or(&guest_name).to_string(),
+                        username: final_username,
                         is_guest: true,
                     }));
                 }

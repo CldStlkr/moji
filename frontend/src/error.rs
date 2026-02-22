@@ -26,6 +26,12 @@ pub enum ClientError {
     Network(String),
 }
 
+impl From<&ClientError> for ClientError {
+    fn from(error: &ClientError) -> Self {
+        error.clone()
+    }
+}
+
 // Helper function to convert network errors to our ClientError
 impl From<gloo_net::Error> for ClientError {
     fn from(error: gloo_net::Error) -> Self {
@@ -42,6 +48,15 @@ impl From<gloo_net::Error> for ClientError {
                 // General Gloo error
                 ClientError::Connection(gloo_err.to_string())
             }
+        }
+    }
+}
+
+impl From<leptos::server_fn::error::ServerFnError> for ClientError {
+    fn from(error: leptos::server_fn::error::ServerFnError) -> Self {
+        ClientError::Server {
+            status_code: 500, // Generic status since ServerFnError abstracts it
+            message: error.to_string(),
         }
     }
 }
@@ -80,7 +95,8 @@ pub async fn parse_error_response(response: gloo_net::http::Response) -> ClientE
 }
 
 // Get a user-friendly error message for displaying to users
-pub fn get_user_friendly_message(error: &ClientError) -> String {
+pub fn get_user_friendly_message<E: Into<ClientError>>(error: E) -> String {
+    let error = error.into();
     match error {
         ClientError::Network(_) => {
             "Unable to connect to the server. Please check your internet connection.".to_string()
@@ -101,6 +117,6 @@ pub fn get_user_friendly_message(error: &ClientError) -> String {
 }
 
 // Debug log an error (for developers)
-pub fn log_error(message: &str, error: &ClientError) {
-    console::log_1(&format!("{}: {:?}", message, error).into());
+pub fn log_error<E: Into<ClientError> + std::fmt::Debug>(message: &str, error: E) {
+    console::log_1(&format!("{}: {:?}", message, error.into()).into());
 }

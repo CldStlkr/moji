@@ -1,12 +1,11 @@
 // Component for managing lobby state
 use crate::{
-    api::start_game,
     error::{get_user_friendly_message, log_error},
     components::lobby::settings::{LobbySettingsPanel, use_lobby_settings},
 };
 use leptos::ev;
 use leptos::prelude::*;
-use shared::{LobbyInfo, PlayerData, PlayerId, StartGameRequest};
+use shared::{LobbyInfo, PlayerData, PlayerId, StartGameRequest, start_game};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
@@ -36,13 +35,13 @@ where
                 player_id: player_id.clone(),
             };
 
-            match start_game(&lobby_id, request).await {
+            match start_game(lobby_id.clone(), request).await {
                 Ok(_) => {
                     set_status.set("Game starting...".to_string());
                 }
                 Err(e) => {
-                    log_error("Failed to start game", &e);
-                    set_status.set(get_user_friendly_message(&e));
+                    log_error("Failed to start game", e.clone());
+                    set_status.set(get_user_friendly_message(e.clone()));
                 }
             }
             set_is_loading.set(false);

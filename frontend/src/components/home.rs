@@ -3,11 +3,11 @@ use shared::PlayerId;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
-    api,
+
     components::{game::GameComponent, lobby::LobbyComponent, shared_socket::{use_shared_socket, UseSharedSocketConfig}},
     persistence::{clear_session, load_session, use_session_persistence},
 };
-use shared::LobbyInfo;
+use shared::{LobbyInfo, get_player_info, get_lobby_info, leave_lobby};
 use std::collections::HashMap;
 
 #[component]
@@ -53,15 +53,15 @@ pub fn Home() -> impl IntoView {
     Effect::new(move |_| {
         spawn_local(async move {
             if let Some(session_data) = load_session() {
-                match api::get_player_info(&session_data.lobby_id, &session_data.player_id).await {
+                match get_player_info(session_data.lobby_id.clone(), session_data.player_id.clone()).await {
                     Ok(player_info) => {
                         lobby_id.set(session_data.lobby_id.clone());
-                        player_id.set(session_data.player_id);
+                        player_id.set(session_data.player_id.clone());
                         player_name.set(player_info.name);
 
                         // Because is_in_game is now derived from lobby_info, we need to fetch lobby_info 
                         // here to properly restore the state.
-                        if let Ok(info) = api::get_lobby_info(&session_data.lobby_id).await {
+                        if let Ok(info) = get_lobby_info(session_data.lobby_id.clone()).await {
                              lobby_info.set(Some(info));
                         }
                     }
@@ -95,7 +95,7 @@ pub fn Home() -> impl IntoView {
         let current_player_id = player_id.get_untracked();
 
         spawn_local(async move {
-            let _ = api::leave_lobby(&current_lobby_id, &current_player_id).await;
+            let _ = leave_lobby(current_lobby_id, current_player_id).await;
 
             lobby_id.set(String::new());
             player_id.set(PlayerId::default());

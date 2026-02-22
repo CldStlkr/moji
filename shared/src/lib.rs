@@ -1,15 +1,6 @@
-//! Shared domain types for Moji.
-//! Compiles to `no_std` + `serde` in WASM, and
-//! gets extra DB derives when the `ssr` feature is enabled.
+pub mod api_fns;
+pub use api_fns::*;
 
-#![cfg_attr(not(feature = "ssr"), no_std)]
-
-// ---------------------- DO NOT REMOVE -------------------
-extern crate alloc;
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
 use core::ops::Deref;
 use serde::{Deserialize, Serialize};
 // -------------------------------------------------------------
@@ -114,6 +105,13 @@ pub struct JoinLobbyRequest {
     pub player_name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthRequest {
+    pub username: String,
+    pub password: Option<String>,
+    pub create_guest: bool,
+}
+
 /// Snapshot of a player inside a lobby.
 #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,7 +161,7 @@ pub enum GameMode {
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            difficulty_levels: alloc::vec![ // Must explicitly refer as alloc::vec!
+            difficulty_levels: vec![ // Replaced alloc::vec!
                 "N1".into(),
                 "N2".into(),
                 "N3".into(),
@@ -240,4 +238,3 @@ impl ActivePrompt {
         }
     }
 }
-

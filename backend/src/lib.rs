@@ -19,9 +19,10 @@ use std::{
 };
 
 pub use shared::{
-    CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, PlayerId
+    CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, PlayerId, ApiContext,
 };
 pub use types::{Result, Shared, SharedState};
+
 
 
 #[derive(Clone, Debug)]

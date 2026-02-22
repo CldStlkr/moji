@@ -1,9 +1,9 @@
-use crate::api;
+
 use crate::components::player_scores::CompactPlayerScoresComponent;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use shared::{PlayerId, ClientMessage};
+use shared::{PlayerId, ClientMessage, reset_lobby};
 use wasm_bindgen_futures::spawn_local;
 
 mod header;
@@ -128,7 +128,7 @@ where
         let lobby_id = lobby_id.get_untracked();
         let player_id = player_id.get_untracked();
 
-        spawn_local(async move { let _ = api::reset_lobby(&lobby_id, &player_id).await; });
+        spawn_local(async move { let _ = reset_lobby(lobby_id, player_id).await; });
     };
 
     let player_name = Signal::derive(move || {

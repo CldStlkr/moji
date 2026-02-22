@@ -1,18 +1,16 @@
 use crate::{
-    error::AppError, generate_lobby_id, generate_player_id, get_lobby, types::Result, AppState,
+    generate_lobby_id, generate_player_id, AppState,
     GameStatus, LobbyState, models::{
         user::User,
         game::{GameAction, GameSession},
     },
 };
 use axum::{
-    debug_handler,
-    extract::{Json, Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
     response::IntoResponse,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde_json::json;
-use serde::Deserialize;
 use argon2::{
     Argon2, password_hash::{
         PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng
@@ -20,388 +18,277 @@ use argon2::{
 };
 use shared::{
     JoinLobbyRequest, PromptResponse, LobbyInfo, PlayerData, PlayerId,
-    StartGameRequest, UpdateSettingsRequest
+    StartGameRequest, UpdateSettingsRequest, ApiContext
 };
 use std::sync::Arc;
+use async_trait::async_trait;
+use leptos::server_fn::error::ServerFnError;
 
-#[derive(Deserialize)]
-pub struct AuthRequest {
-    pub username: String,
-    pub password: Option<String>,
-    pub create_guest: bool,
-}
+#[async_trait]
+impl ApiContext for AppState {
+    async fn create_lobby(&self, request: JoinLobbyRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let lobby_id: String = generate_lobby_id();
+        let player_id: PlayerId = generate_player_id();
 
-#[derive(Deserialize)]
-pub struct LogoutRequest {
-    pub username: String,
-}
+        let game_session_id = if let Some(db_pool) = &self.db_pool {
+            let default_settings = shared::GameSettings::default();
+            let session = GameSession::create(db_pool, &lobby_id, 1, default_settings).await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Some(session.id)
+        } else {
+            None
+        };
 
+        let lobby_state = Arc::new(LobbyState::new(
+            Arc::clone(&self.kanji_data),
+            Arc::clone(&self.word_data),
+            Arc::clone(&self.dict_data),
+            game_session_id
+        ));
 
-#[debug_handler]
-pub async fn logout(
-    State(app_state): State<Arc<AppState>>,
-    Json(payload): Json<LogoutRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let db_pool = app_state.db_pool.as_ref()
-    .ok_or(AppError::InternalError("Database not configured".to_string()))?;
+        let _ = lobby_state.add_player(player_id.clone(), request.player_name)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    User::delete_guest_by_username(db_pool, &payload.username).await?;
+        self.lobbies.write(|lobbies| {
+            lobbies.insert(lobby_id.clone(), lobby_state);
+        }).map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    Ok(Json(json!({ "message": "Logged out" })))
-}
-
-#[debug_handler]
-pub async fn create_lobby(
-    State(app_state): State<Arc<AppState>>,
-    Json(request): Json<JoinLobbyRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let lobby_id: String = generate_lobby_id();
-    let player_id: PlayerId = generate_player_id();
-
-    let game_session_id = if let Some(db_pool) = &app_state.db_pool {
-        let default_settings = shared::GameSettings::default();
-
-        let session = GameSession::create(db_pool, &lobby_id, 1, default_settings).await?;
-
-        Some(session.id)
-    } else {
-        None // In case we run without DB?
-    };
-
-    let lobby_state =
-        Arc::new(LobbyState::new(
-        Arc::clone(&app_state.kanji_data),
-        Arc::clone(&app_state.word_data),
-        Arc::clone(&app_state.dict_data),
-        game_session_id
-    ));
-
-    // Add the player who created the lobby (will automatically become leader)
-    let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
-
-    app_state.lobbies.write(|lobbies| {
-        lobbies.insert(lobby_id.clone(), lobby_state);
-    })?;
-
-
-    Ok(Json(json!({
-        "message": "Lobby created successfully!",
-        "lobby_id": lobby_id,
-        "player_id": player_id.to_string()
-    })))
-}
-
-
-#[derive(Deserialize)]
-pub struct LeaveLobbyRequest {
-    pub player_id: PlayerId,
-}
-
-#[debug_handler]
-pub async fn leave_lobby(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-    Json(request): Json<LeaveLobbyRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-
-    lobby.remove_player(&request.player_id)?;
-
-    // Check if empty and remove lobby if so
-    let is_empty = lobby.players.read(|players| players.is_empty())?;
-
-    if is_empty {
-        app_state.lobbies.write(|lobbies| {
-            lobbies.remove(&lobby_id);
-        })?;
-
-        // End game session in DB if exists
-        if let Some(game_id) = lobby.game_session_id {
-            if let Some(db_pool) = &app_state.db_pool {
-                let pool = db_pool.clone();
-                tokio::spawn(async move {
-                    let _ = GameSession::end_session(&pool, game_id).await;
-                });
-            }
-        }
+        Ok(json!({
+            "message": "Lobby created successfully!",
+            "lobby_id": lobby_id,
+            "player_id": player_id.to_string()
+        }))
     }
 
-    Ok(Json(json!({ "message": "Left lobby" })))
-}
-
-#[debug_handler]
-pub async fn join_lobby(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-    Json(request): Json<JoinLobbyRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-
-    let player_id = generate_player_id();
-    let _ = lobby.add_player(player_id.clone(), request.player_name.clone())?;
-
-    if let Some(game_id) = lobby.game_session_id {
-        if let Some(db_pool) = &app_state.db_pool {
-            let db = Arc::clone(db_pool);
-            let name = request.player_name.clone();
-            let pid = player_id.to_string();
-
-            tokio::spawn(async move {
-                let action_data = json!({
-                    "player_id": pid,
-                    "player_name": name
-                });
-
-                if let Err(e) = GameAction::create(
-                    &db,
-                    game_id,
-                    None,
-                    "player_joined",
-                    action_data
-                ).await {
-                    tracing::error!("Failed to log player join: {:?}", e);
-                }
-
-            });
-        }
+    async fn get_lobby_info(&self, lobby_id: String) -> std::result::Result<LobbyInfo, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        
+        lobby.get_lobby_info(&lobby_id).map_err(|e| ServerFnError::new(e.to_string()))
     }
 
+    async fn update_lobby_settings(&self, lobby_id: String, request: UpdateSettingsRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        
+        lobby.update_settings(&request.player_id, request.settings).map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(json!({ "message": "Settings updated successfully" }))
+    }
 
-    Ok(Json(json!({
-        "message": "Joined lobby successfully!",
-        "lobby_id": lobby_id,
-        "player_id": player_id
-    })))
-}
+    async fn start_game(&self, lobby_id: String, request: StartGameRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        
+        lobby.start_game(&request.player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(json!({ "message": "Game started successfully" }))
+    }
 
-#[debug_handler]
-pub async fn get_lobby_info(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-) -> Result<Json<LobbyInfo>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-    let lobby_info = lobby.get_lobby_info(&lobby_id)?;
-    Ok(Json(lobby_info))
-}
+    async fn reset_lobby(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        
+        lobby.reset_lobby(&player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(json!({ "message": "Lobby reset successfully" }))
+    }
 
-// NOTE: Leader Only
-#[debug_handler]
-pub async fn update_lobby_settings(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-    Json(request): Json<UpdateSettingsRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-    lobby.update_settings(&request.player_id, request.settings)?;
-
-    Ok(Json(json!({
-        "message": "Settings updated successfully"
-    })))
-}
-
-// NOTE: Leader Only
-#[debug_handler]
-pub async fn start_game(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-    Json(request): Json<StartGameRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-    lobby.start_game(&request.player_id)?;
-
-    Ok(Json(json!({
-        "message": "Game started successfully"
-    })))
-}
-
-// NOTE: Leader Only
-#[debug_handler]
-pub async fn reset_lobby(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-    Json(request): Json<StartGameRequest>, // We can reuse StartGameRequest as it has player_id
-) -> Result<Json<serde_json::Value>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-    lobby.reset_lobby(&request.player_id)?;
-
-    Ok(Json(json!({
-        "message": "Lobby reset successfully"
-    })))
-}
-
-#[debug_handler]
-pub async fn get_player_info(
-    State(app_state): State<Arc<AppState>>,
-    Path((lobby_id, player_id)): Path<(String, PlayerId)>,
-) -> Result<Json<PlayerData>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-
-    let players = lobby.get_all_players()?;
-    let player = players
-        .iter()
-        .find(|p| p.id == player_id)
-        .ok_or_else(|| AppError::PlayerNotFound(player_id.to_string()))?;
-
-    // Convert internal PlayerData to API PlayerData
-    Ok(Json(PlayerData {
-        id: player.id.clone(),
-        name: player.name.clone(),
-        score: player.score,
-        joined_at: player.joined_at.clone(),
-        lives: player.lives,
-        is_eliminated: player.is_eliminated,
-        is_turn: player.is_turn,
-    }))
-}
-
-#[debug_handler]
-pub async fn get_lobby_players(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-) -> Result<Json<serde_json::Value>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-    let players = lobby.get_all_players()?;
-
-    // Convert internal PlayerData to API PlayerData
-    let player_data: Vec<_> = players
-        .into_iter()
-        .map(|p| {
+    async fn get_lobby_players(&self, lobby_id: String) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        
+        let players = lobby.get_all_players().map_err(|e| ServerFnError::new(e.to_string()))?;
+        
+        let player_data: Vec<_> = players.into_iter().map(|p| {
             json!({
                 "id": p.id,
                 "name": p.name,
                 "score": p.score,
                 "joined_at": p.joined_at
             })
-        })
-        .collect();
+        }).collect();
 
-    Ok(Json(json!({
-        "players": player_data
-    })))
-}
-
-#[debug_handler]
-pub async fn get_prompt(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-) -> Result<Json<PromptResponse>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-
-    // Try to get the current kanji first
-    let prompt = match lobby.get_current_prompt_text()? {
-        Some(prompt ) => prompt,
-        None => {
-            lobby.generate_random_prompt(true)?
-        }
-    };
-    Ok(Json(PromptResponse { prompt }))
-}
-
-#[debug_handler]
-pub async fn generate_new_prompt(
-    State(app_state): State<Arc<AppState>>,
-    Path(lobby_id): Path<String>,
-) -> Result<Json<PromptResponse>> {
-    let lobby = get_lobby(&app_state, &lobby_id)?;
-
-    // Always generate a new kanji
-    let prompt = lobby.generate_random_prompt(true)?;
-    Ok(Json(PromptResponse { prompt }))
-}
-
-pub async fn check_username(
-    State(app_state): State<Arc<AppState>>,
-    Path(username): Path<String>,
-) -> Result<Json<serde_json::Value>> {
-    let db_pool = app_state.db_pool.as_ref()
-        .ok_or(AppError::InternalError("Database not configured".to_string()))?;
-
-    let user = User::find_by_username(db_pool, &username).await?;
-
-    if let Some(user) = user {
-        Ok(Json(json!({
-            "available": false,
-            "is_guest": user.is_guest
-        })))
-    } else {
-        Ok(Json(json!({
-            "available": true,
-            "is_guest": false
-        })))
+        Ok(json!({ "players": player_data }))
     }
-}
 
+    async fn join_lobby(&self, lobby_id: String, request: JoinLobbyRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
 
-#[debug_handler]
-pub async fn authenticate(
-    State(app_state): State<Arc<AppState>>,
-    Json(payload): Json<AuthRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let db_pool = app_state.db_pool.as_ref()
-        .ok_or(AppError::InternalError("Database not configured".to_string()))?;
+        let player_id = generate_player_id();
+        let _ = lobby.add_player(player_id.clone(), request.player_name.clone())
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    let existing_user = User::find_by_username(db_pool, &payload.username).await?;
+        if let Some(game_id) = lobby.game_session_id {
+            if let Some(db_pool) = &self.db_pool {
+                let db = Arc::clone(db_pool);
+                let name = request.player_name.clone();
+                let pid = player_id.to_string();
 
-    if let Some(user) = existing_user {
-        // CASE: User exists via Login
-        if let Some(password) = payload.password {
-            // Verify password if user has one
-            if let Some(hash) = &user.password_hash {
-                let parsed_hash = PasswordHash::new(hash)
-                    .map_err(|_| AppError::InternalError("Invalid password hash".to_string()))?;
+                tokio::spawn(async move {
+                    let action_data = json!({
+                        "player_id": pid,
+                        "player_name": name
+                    });
 
-                if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok() {
-                    // Login success
-                    Ok(Json(json!({
-                        "message": "Login successful",
-                        "user": user,
-                        "token": "TODO_SESSION_TOKEN" // Sessions not yet implemented
-                    })))
+                    if let Err(e) = GameAction::create(&db, game_id, None, "player_joined", action_data).await {
+                        tracing::error!("Failed to log player join: {:?}", e);
+                    }
+                });
+            }
+        }
+
+        Ok(json!({
+            "message": "Joined lobby successfully!",
+            "lobby_id": lobby_id,
+            "player_id": player_id
+        }))
+    }
+
+    async fn get_prompt(&self, lobby_id: String) -> std::result::Result<PromptResponse, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+
+        let prompt = match lobby.get_current_prompt_text().map_err(|e| ServerFnError::new(e.to_string()))? {
+            Some(prompt) => prompt,
+            None => lobby.generate_random_prompt(true).map_err(|e| ServerFnError::new(e.to_string()))?
+        };
+        Ok(PromptResponse { prompt })
+    }
+
+    async fn generate_new_prompt(&self, lobby_id: String) -> std::result::Result<PromptResponse, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+
+        let prompt = lobby.generate_random_prompt(true).map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(PromptResponse { prompt })
+    }
+
+    async fn check_username(&self, username: String) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let db_pool = self.db_pool.as_ref()
+            .ok_or_else(|| ServerFnError::new("Database not configured"))?;
+
+        let user = User::find_by_username(db_pool, &username).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if let Some(user) = user {
+            Ok(json!({
+                "available": false,
+                "is_guest": user.is_guest
+            }))
+        } else {
+            Ok(json!({
+                "available": true,
+                "is_guest": false
+            }))
+        }
+    }
+
+    async fn authenticate(&self, request: shared::AuthRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let db_pool = self.db_pool.as_ref()
+            .ok_or_else(|| ServerFnError::new("Database not configured"))?;
+        let existing_user = User::find_by_username(db_pool, &request.username).await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if let Some(user) = existing_user {
+            if let Some(password) = request.password {
+                if let Some(hash) = &user.password_hash {
+                    let parsed_hash = PasswordHash::new(hash)
+                        .map_err(|_| ServerFnError::new("Invalid password hash"))?;
+                    if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok() {
+                        Ok(json!({
+                            "message": "Login successful",
+                            "user": user,
+                            "token": "TODO_SESSION_TOKEN"
+                        }))
+                    } else {
+                        Err(ServerFnError::new("Invalid password"))
+                    }
                 } else {
-                    Err(AppError::AuthError("Invalid password".to_string()))
+                    Err(ServerFnError::new("Account is a guest account. Cannot login with password."))
                 }
             } else {
-                // Guest accounts cannot log in with a password.
-                Err(AppError::AuthError("Account is a guest account. Cannot login with password.".to_string()))
+                Err(ServerFnError::new("Password required"))
             }
-        } else {
-            // No password provided for existing user
-            Err(AppError::AuthError("Password required".to_string()))
-        }
-    } else {
-        // CASE: new user (Register or Guest)
-        if payload.create_guest {
-            // Create guest
-            let user = User::create(db_pool, &payload.username, None, true).await?;
-
-            Ok(Json(json!({
+        } else if request.create_guest {
+            let user = User::create(db_pool, &request.username, None, true).await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Ok(json!({
                 "message": "Guest account created",
                 "user": user,
-                "token": "TODO_SESSION_TOKEN" // Sessions not yet implemented
-            })))
-        } else if let Some(password) = payload.password {
-            // Register real user
+                "token": "TODO_SESSION_TOKEN"
+            }))
+        } else if let Some(password) = request.password {
             let salt = SaltString::generate(&mut OsRng);
             let password_hash = Argon2::default()
                 .hash_password(password.as_bytes(), &salt)
-                .map_err(|e| AppError::InternalError(e.to_string()))?
-                .to_string();
-            let user = User::create(db_pool, &payload.username, Some(password_hash), false).await?;
-
-            Ok(Json(json!({
+                .map_err(|e| ServerFnError::new(e.to_string()))?.to_string();
+            let user = User::create(db_pool, &request.username, Some(password_hash), false).await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Ok(json!({
                 "message": "Account created",
                 "user": user,
-                "token": "TODO_SESSION_TOKEN" // Sessions not yet implemented
-            })))
+                "token": "TODO_SESSION_TOKEN"
+            }))
         } else {
-            Err(AppError::InvalidInput("Password required to register".to_string()))
+            Err(ServerFnError::new("Password required to register"))
         }
     }
 
+    async fn get_player_info(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<PlayerData, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+
+        let players = lobby.get_all_players().map_err(|e| ServerFnError::new(e.to_string()))?;
+        let player = players.into_iter().find(|p| p.id == player_id)
+            .ok_or_else(|| ServerFnError::new(format!("Player not found: {}", player_id)))?;
+
+        Ok(player)
+    }
+
+    async fn leave_lobby(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let lobby = self.lobbies.write(|lobbies| {
+            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
+        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+
+        lobby.remove_player(&player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let is_empty = lobby.players.read(|players| players.is_empty()).map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if is_empty {
+            self.lobbies.write(|lobbies| {
+                lobbies.remove(&lobby_id);
+            }).map_err(|e| ServerFnError::new(e.to_string()))?;
+
+            if let Some(game_id) = lobby.game_session_id {
+                if let Some(db_pool) = &self.db_pool {
+                    let pool = db_pool.clone();
+                    tokio::spawn(async move {
+                        let _ = GameSession::end_session(&pool, game_id).await;
+                    });
+                }
+            }
+        }
+
+        Ok(json!({ "message": "Left lobby" }))
+    }
+
+    async fn logout(&self, username: String) -> std::result::Result<serde_json::Value, ServerFnError> {
+        let db_pool = self.db_pool.as_ref()
+            .ok_or_else(|| ServerFnError::new("Database not configured"))?;
+            
+        User::delete_guest_by_username(db_pool, &username).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+            
+        Ok(json!({ "message": "Logged out" }))
+    }
 }
 
-
-#[debug_handler]
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(app_state): State<Arc<AppState>>,
@@ -413,15 +300,13 @@ pub async fn ws_handler(
 async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: String, player_id: PlayerId) {
     let (mut sender, mut receiver) = socket.split();
 
-    let lobby = match get_lobby(&app_state, &lobby_id) {
+    let lobby = match crate::get_lobby(&app_state, &lobby_id) {
         Ok(l) => l,
         Err(_) => return, // Lobby closed or not found
     };
 
     let mut rx = lobby.tx.subscribe();
 
-    // Send initial state directly to THIS client (not broadcast) so they
-    // don't miss state that was established before their subscription.
     {
         let players = lobby.get_all_players().unwrap_or_default();
         let init_msg = serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
@@ -440,18 +325,16 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
         let _ = sender.send(Message::Text(game_msg.into())).await;
     }
 
-    // Now relay broadcast messages to this client
     let mut send_task = tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(msg) => {
-                    if sender.send(axum::extract::ws::Message::Text(msg.into())).await.is_err() {
+                    if sender.send(Message::Text(msg.into())).await.is_err() {
                         break;
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!("WebSocket receiver lagged behind by {} messages", n);
-                    // Continue receiving the latest messages
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
@@ -459,8 +342,6 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
             }
         }
     });
-
-    let _db_pool = app_state.db_pool.clone();
 
     let lobby_ref = lobby.clone();
     let player_id_ref = player_id.clone();
@@ -486,11 +367,8 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
         }
     });
 
-    // If any one of these tasks exit, abort the other
     tokio::select! {
         _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort(),
     }
-
-    // let _ = lobby.remove_player(&player_id);
 }
