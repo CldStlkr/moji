@@ -14,10 +14,10 @@ pub struct UseSharedSocketConfig {
     // Central state that home manages
     pub set_lobby_info: WriteSignal<Option<LobbyInfo>>,
     
-    // Game specific states (kanji, word result, typing status) that could also conceptually live in Home, 
+    // Game specific states (prompt, word result, typing status) that could also conceptually live in Home,
     // but we can pass them down to Game via context or keep them isolated.
     // For now we will update global signals that Home passes to Game.
-    pub set_kanji: WriteSignal<String>,
+    pub set_prompt: WriteSignal<String>,
     pub set_result: WriteSignal<String>,
     pub set_typing_status: WriteSignal<HashMap<PlayerId, String>>,
 }
@@ -28,7 +28,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
     let lobby_id = config.lobby_id;
     let player_id = config.player_id;
     let set_lobby_info = config.set_lobby_info;
-    let set_kanji = config.set_kanji;
+    let set_prompt = config.set_prompt;
     let set_result = config.set_result;
     let set_typing_status = config.set_typing_status;
 
@@ -77,8 +77,8 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                             Some(Ok(Message::Text(text))) => {
                                 if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
                                     match server_msg {
-                                        ServerMessage::GameState { kanji: new_kanji, status, scores } => {
-                                            set_kanji.set(new_kanji);
+                                        ServerMessage::GameState { prompt: new_prompt, status, scores } => {
+                                            set_prompt.set(new_prompt);
                                             set_lobby_info.update(|info| {
                                                 if let Some(i) = info {
                                                     i.status = status;
@@ -105,13 +105,13 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                                     }
                                                 }
                                             });
-                                            if let Some(k) = res.kanji {
-                                                set_kanji.set(k);
+                                            if let Some(k) = res.prompt {
+                                                set_prompt.set(k);
                                             }
                                         },
-                                        ServerMessage::KanjiUpdate { new_kanji } => {
+                                        ServerMessage::PromptUpdate { new_prompt} => {
                                             set_result.set(String::new());
-                                            set_kanji.set(new_kanji);
+                                            set_prompt.set(new_prompt);
                                             set_typing_status.update(|m| m.clear());
                                         },
                                         ServerMessage::PlayerListUpdate { players: new_players } => {

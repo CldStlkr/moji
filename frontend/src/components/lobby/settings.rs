@@ -113,6 +113,55 @@ pub fn LobbySettingsPanel(
                 </div>
             </div>
 
+            // --- Content Mode Selection ---
+            <div>
+                <span class="text-sm text-gray-600 dark:text-gray-400 block mb-2">"Content Mode:"</span>
+                <div class="flex gap-2">
+                    <button
+                        on:click={
+                            move |_| {
+                                if !is_leader { return; }
+                                let mut new_settings = settings.get_value();
+                                new_settings.content_mode = shared::ContentMode::Kanji;
+                                on_update.run(new_settings);
+                            }
+                        }
+                        disabled=!is_leader
+                        class=move || format!(
+                            "flex-1 py-2 px-4 rounded text-sm font-medium transition-colors border {}",
+                            if settings.get_value().content_mode == shared::ContentMode::Kanji {
+                                "bg-indigo-600 text-white border-indigo-600"
+                            } else {
+                                "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            }
+                        )
+                    >
+                        "Kanji"
+                    </button>
+                    <button
+                        on:click={
+                            move |_| {
+                                if !is_leader { return; }
+                                let mut new_settings = settings.get_value();
+                                new_settings.content_mode = shared::ContentMode::Vocab;
+                                on_update.run(new_settings);
+                            }
+                        }
+                        disabled=!is_leader
+                        class=move || format!(
+                            "flex-1 py-2 px-4 rounded text-sm font-medium transition-colors border {}",
+                            if settings.get_value().content_mode == shared::ContentMode::Vocab {
+                                "bg-indigo-600 text-white border-indigo-600"
+                            } else {
+                                "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            }
+                        )
+                    >
+                        "Vocab"
+                    </button>
+                </div>
+            </div>
+
             // --- Mode Specific Settings ---
             <div class="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600">
                 <Show when=move || settings.get_value().mode == GameMode::Deathmatch>

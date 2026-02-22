@@ -187,7 +187,7 @@ async fn test_ws_typing_broadcast() {
 }
 
 /// Starting the game broadcasts a `GameState` with `status == "Playing"`.
-/// Shape: `{"type": "GameState", "payload": {"kanji": "...", "status": "Playing", "scores": [...]}}`
+/// Shape: `{"type": "GameState", "payload": {"prompt": "...", "status": "Playing", "scores": [...]}}`
 #[tokio::test]
 async fn test_ws_game_start_broadcast() {
     let (addr, _) = spawn_server().await;
@@ -215,7 +215,7 @@ async fn test_ws_game_start_broadcast() {
     let msg = next_msg_of_type(&mut alice_ws, "GameState").await;
     assert_eq!(msg["payload"]["status"].as_str().unwrap(), "Playing");
     assert!(
-        msg["payload"]["kanji"]
+        msg["payload"]["prompt"]
             .as_str()
             .is_some_and(|k| !k.is_empty())
     );
@@ -233,6 +233,7 @@ async fn test_ws_correct_submit_increments_score() {
 
     let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;
     next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
+    next_msg_of_type(&mut alice_ws, "GameState").await; // Drain initial GameState(Lobby)
 
     // Start game
     post_json(
@@ -242,24 +243,24 @@ async fn test_ws_correct_submit_increments_score() {
     )
     .await;
 
-    // Get current kanji from GameState
+    // Get current prompt from GameState
     let game_state = next_msg_of_type(&mut alice_ws, "GameState").await;
-    let kanji = game_state["payload"]["kanji"].as_str().unwrap().to_string();
+    let prompt = game_state["payload"]["prompt"].as_str().unwrap().to_string();
 
     // Try known words that contain common kanji
     let candidates = ["日本", "月曜日", "縁語", "炎", "渦紋"];
-    let Some(&word) = candidates.iter().find(|w| w.contains(kanji.as_str())) else {
+    let Some(&word) = candidates.iter().find(|w| w.contains(prompt.as_str())) else {
         // Random kanji didn't match any candidate — skip gracefully.
         // Correctness of guess logic is covered by unit tests.
         return;
     };
 
-    // Submit as ClientMessage: `{"type": "Submit", "payload": {"word": "...", "kanji": "..."}}`
+    // Submit as ClientMessage: `{"type": "Submit", "payload": {"input": "...", "prompt": "..."}}`
     alice_ws
         .send(Message::Text(
             json!({
                 "type": "Submit",
-                "payload": { "word": word, "kanji": kanji }
+                "payload": { "input": word, "prompt": prompt }
             })
             .to_string()
             .into(),

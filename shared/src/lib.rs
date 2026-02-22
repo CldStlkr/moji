@@ -21,7 +21,7 @@ pub enum ClientMessage {
     /// User types something in input box
     Typing { input: String },
     /// User submits a guess
-    Submit { word: String, kanji: String },
+    Submit { input: String, prompt: String },
 }
 
 
@@ -32,7 +32,7 @@ pub enum ClientMessage {
 pub enum ServerMessage {
     /// Sent upon connection and significant state changes
     GameState {
-        kanji: String,
+        prompt: String,
         status: GameStatus,
         scores: Vec<PlayerData>,
     },
@@ -50,10 +50,8 @@ pub enum ServerMessage {
     },
 
     /// Broadcast immediately when a correct word is found
-    KanjiUpdate { new_kanji: String },
-
+    PromptUpdate { new_prompt: String },
     PlayerListUpdate { players: Vec<PlayerData> },
-
     SettingsUpdate { settings: GameSettings },
     LeaderUpdate { leader_id: PlayerId },
 
@@ -61,17 +59,10 @@ pub enum ServerMessage {
 
 /// A prompt sent from the server to each client at the start of a round.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KanjiPrompt {
-    pub kanji: String,
+pub struct PromptResponse {
+    pub prompt: String,
 }
 
-/// The word a player submits to guess the prompt’s kanji.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UserInput {
-    pub word: String,
-    pub kanji: String,
-    pub player_id: PlayerId,
-}
 
 /// Wrapper-type so we don’t pass raw strings everywhere.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -155,6 +146,7 @@ pub struct GameSettings {
     pub max_players: u32,
     pub weighted: bool,
     pub mode: GameMode,
+    pub content_mode: ContentMode,
     pub target_score: Option<u32>,
     pub initial_lives: Option<u32>,
     pub duel_allow_kanji_reuse: bool,
@@ -182,6 +174,7 @@ impl Default for GameSettings {
             max_players: 4,
             weighted: false,
             mode: GameMode::Deathmatch,
+            content_mode: ContentMode::Kanji,
             target_score: Some(10), // Default target score for Deathmatch
             initial_lives: Some(3), // Default lives for Duel
             duel_allow_kanji_reuse: false,
@@ -219,5 +212,32 @@ pub struct CheckWordResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub kanji: Option<String>,
+    pub prompt: Option<String>,
 }
+
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContentMode {
+    #[default]
+    Kanji,
+    Vocab,
+}
+
+/// The current game's prompt - varies by content mode
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActivePrompt {
+    /// Player must sumbit a word containing this kanji character
+    Kanji { character: String },
+    /// Player must submit the correct hiragana reading of this word
+    Vocab { word: String, readings: Vec<String> },
+}
+
+impl ActivePrompt {
+    pub fn display_text(&self) -> &str {
+        match self {
+            Self::Kanji { character } => character,
+            Self::Vocab { word, .. } => word,
+        }
+    }
+}
+

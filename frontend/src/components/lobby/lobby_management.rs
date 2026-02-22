@@ -314,9 +314,12 @@ pub fn GameInstructions() -> impl IntoView {
             <h3 class="text-lg font-semibold text-gray-600 mb-3">"How to Play"</h3>
             <div class="space-y-2 text-gray-700">
                 <p>"Create a new game or join an existing one with a lobby ID."</p>
-                <p>"Once in a game, you'll be shown a kanji character."</p>
+                <p>"Once in a game, you'll be shown a kanji word or character
+                    depending on the mode you choose."
+                </p>
                 <p>
-                    "Type a Japanese word that contains that kanji and submit it to score points!"
+                    "Type a Japanese word that contains that kanji, or type a valid hiragana reading
+                    for that word, and submit it to score points!"
                 </p>
             </div>
         </div>

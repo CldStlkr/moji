@@ -6,10 +6,11 @@ pub mod models;
 pub mod types;
 
 use chrono::{DateTime, Utc};
-use data::{vectorize_joyo_kanji, load_dictionary, Kanji};
+use data::{vectorize_joyo_kanji, load_dictionary, load_jlpt_words, JlptWordData, KanjiData, DictData};
 use db::DbPool;
 use error::AppError;
 use rand::{RngExt, distr::{Alphanumeric, Distribution, weighted::WeightedIndex}};
+use shared::{ContentMode, ActivePrompt};
 use tokio::sync::broadcast;
 use std::{
     collections::{HashMap, HashSet},
@@ -18,12 +19,10 @@ use std::{
 };
 
 pub use shared::{
-    CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, KanjiPrompt, PlayerId, UserInput,
+    CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, PlayerId
 };
 pub use types::{Result, Shared, SharedState};
-pub type KanjiData = Arc<Vec<Vec<Kanji>>>;
-pub type WordData = Arc<HashSet<String>>;
-pub type JlptWordData = Arc<Vec<HashMap<String, Vec<String>>>>;
+
 
 #[derive(Clone, Debug)]
 pub struct PlayerData {
@@ -38,12 +37,13 @@ pub struct PlayerData {
 pub struct AppState {
     pub lobbies: Shared<HashMap<String, SharedState>>,
     pub db_pool: Option<Arc<DbPool>>,
-    pub kanji_data: KanjiData,
-    pub word_data: WordData
+    pub kanji_data: Arc<KanjiData>,
+    pub word_data: Arc<JlptWordData>,
+    pub dict_data: Arc<DictData>,
 }
 
 impl AppState {
-    fn load_data() -> Result<(KanjiData, WordData)> {
+    fn load_data() -> Result<(Arc<KanjiData>, Arc<JlptWordData>, Arc<DictData>)> {
         let is_production = matches!(
             env::var("PRODUCTION").as_deref(),
             Ok("1") | Ok("true") | Ok("yes")
@@ -56,7 +56,6 @@ impl AppState {
             "../data"
         };
 
-        let dictionary_path = format!("{}/kanji_words.csv", data_dir);
         let kanji_list_paths: Vec<String> = vec![
             format!("{}/N1_kanji.csv", data_dir),
             format!("{}/N2_kanji.csv", data_dir),
@@ -64,48 +63,60 @@ impl AppState {
             format!("{}/N4_kanji.csv", data_dir),
             format!("{}/N5_kanji.csv", data_dir),
         ];
+        let word_list_paths: Vec<String> = vec![
+            format!("{}/N1_words.csv", data_dir),
+            format!("{}/N2_words.csv", data_dir),
+            format!("{}/N3_words.csv", data_dir),
+            format!("{}/N4_words.csv", data_dir),
+            format!("{}/N5_words.csv", data_dir),
+        ];
+        let dictionary_path = format!("{}/kanji_words.csv", data_dir);
 
 
         let list_of_kanji = Arc::new(vectorize_joyo_kanji(&kanji_list_paths)
             .map_err(|e| AppError::DataLoadError(e.to_string()))?);
-
-        let list_of_words = Arc::new(load_dictionary(&dictionary_path)
+        let list_of_words = Arc::new(load_jlpt_words(&word_list_paths)
+            .map_err(|e| AppError::DataLoadError(e.to_string()))?);
+        let dictionary_list = Arc::new(load_dictionary(&dictionary_path)
             .map_err(|e| AppError::DataLoadError(e.to_string()))?);
 
-        Ok((list_of_kanji, list_of_words))
+        Ok((list_of_kanji, list_of_words, dictionary_list))
     }
-    pub fn create() -> Result<Self>{
-        let (kanji_data, word_data) = Self::load_data()?;
+
+    pub fn create() -> Result<Self> {
+        let (kanji_data, word_data, dict_data) = Self::load_data()?;
         Ok(Self {
             lobbies: Shared::new(HashMap::new()),
             db_pool: None,
             kanji_data,
-            word_data
-
+            word_data,
+            dict_data
         })
     }
 
     pub async fn new_with_db(db_pool: Arc<DbPool>) -> Result<Self> {
 
-        let (kanji_data, word_data) = Self::load_data()?;
+        let (kanji_data, word_data, dict_data) = Self::load_data()?;
         Ok(Self {
             lobbies: Shared::new(HashMap::new()),
             db_pool: Some(db_pool),
             kanji_data,
-            word_data
+            word_data,
+            dict_data
         })
     }
 }
 
 #[derive(Clone)]
 pub struct LobbyState {
-    pub kanji_list: KanjiData,
-    pub word_list: WordData,
+    pub kanji_list: Arc<KanjiData>,
+    pub word_list: Arc<JlptWordData>,
+    pub dict_list: Arc<DictData>,
     pub players: Shared<Vec<PlayerData>>,
     pub lobby_leader: Shared<PlayerId>,
     pub settings: Shared<GameSettings>,
     pub game_status: Shared<GameStatus>,
-    pub current_kanji: Shared<Option<String>>,
+    pub current_prompt: Shared<Option<ActivePrompt>>,
     pub tx: broadcast::Sender<String>,
     pub active_level_indices: Shared<Vec<usize>>,
     pub level_weights: Shared<HashMap<usize, WeightedIndex<f64>>>,
@@ -115,16 +126,17 @@ pub struct LobbyState {
 }
 
 impl LobbyState {
-    pub fn new(kanji_list: KanjiData, word_list: WordData,
-    game_session_id: Option<uuid::Uuid>) -> Self {
+        pub fn new(kanji_list: Arc<KanjiData>, word_list: Arc<JlptWordData>,
+        dict_list: Arc<DictData>, game_session_id: Option<uuid::Uuid>) -> Self {
         Self {
             kanji_list,
             word_list,
+            dict_list,
             players: Shared::new(Vec::new()),
             lobby_leader: Shared::new(PlayerId::default()),
             settings: Shared::new(GameSettings::default()),
             game_status: Shared::new(GameStatus::Lobby),
-            current_kanji: Shared::new(None),
+            current_prompt: Shared::new(None),
             tx: broadcast::channel(100).0, // .0 = Sender, .1 = Receiver
             active_level_indices: Shared::new(Vec::new()),
             level_weights: Shared::new(HashMap::new()),
@@ -271,10 +283,10 @@ impl LobbyState {
             })????;
         }
 
-        self.generate_random_kanji(false)?;
+        self.generate_random_prompt(false)?;
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
-            kanji: self.get_current_kanji()?.unwrap_or_default(),
+            prompt: self.get_current_prompt_text()?.unwrap_or_default(),
             status: GameStatus::Playing,
             scores: self.get_all_players()?,
         }).unwrap_or_default());
@@ -439,49 +451,68 @@ impl LobbyState {
         })?
     }
 
-    pub fn get_current_kanji(&self) -> Result<Option<String>> {
-        self.current_kanji.read(|kanji| kanji.clone())
+    pub fn get_current_prompt_text(&self) -> Result<Option<String>> {
+        self.current_prompt.read(|p| p.as_ref().map(|prompt| prompt.display_text().to_string()))
     }
 
     /// Generate a new random kanji and store it as current.
-    /// If `broadcast` is true, a `KanjiUpdate` WS message is sent to all clients.
+    /// If `broadcast` is true, a `PromptUpdate` WS message is sent to all clients.
     /// Pass `false` when the caller will send a more complete message (e.g. `GameState`).
-    pub fn generate_random_kanji(&self, broadcast: bool) -> Result<String> {
-        let (_level_idx, new_kanji_data) = {
-             let mut rng = rand::rng();
-             let indices = self.active_level_indices.read(|i| i.clone())?;
-             let weights_map = self.level_weights.read(|w| w.clone())?;
+    pub fn generate_random_prompt(&self, broadcast: bool) -> Result<String> {
+        let content_mode = self.settings.read(|s| s.content_mode.clone())?;
+        let mut rng = rand::rng();
+        let indices = self.active_level_indices.read(|i| i.clone())?;
 
-             if indices.is_empty() {
-                 return Err(AppError::InternalError("No active levels configured".to_string()));
-             }
+        if indices.is_empty() {
+            return Err(AppError::InternalError("No active levels configured".into()));
+        }
 
-             // Pick a Level Uniformly
-             let level_idx = indices[rng.random_range(0..indices.len())];
-             let kanji_list = &self.kanji_list[level_idx];
+        let level_idx = indices[rng.random_range(0..indices.len())];
 
-             let new_kanji = if let Some(dist) = weights_map.get(&level_idx) {
-                  let k_idx = dist.sample(&mut rng);
-                  kanji_list[k_idx].clone()
-             } else {
-                  let k_idx = rng.random_range(0..kanji_list.len());
-                  kanji_list[k_idx].clone()
-             };
-             (level_idx, new_kanji)
+        let display_text = match content_mode {
+            ContentMode::Kanji => {
+                let weights_map = self.level_weights.read(|w| w.clone())?;
+                let kanji_list = &self.kanji_list[level_idx];
+
+                let kanji = if let Some(dist) = weights_map.get(&level_idx) {
+                    kanji_list[dist.sample(&mut rng)].clone()
+                } else {
+                    kanji_list[rng.random_range(0..kanji_list.len())].clone()
+                };
+
+                let prompt = ActivePrompt::Kanji { character: kanji.kanji.clone() };
+                let text = kanji.kanji;
+                self.current_prompt.write(|p| *p = Some(prompt))?;
+
+                text
+
+            },
+            ContentMode::Vocab => {
+                let word_map = &self.word_list[level_idx];
+
+                // Pick random word from map
+                let keys = word_map.keys().collect::<Vec<&String>>();
+                let word_key = keys[rng.random_range(0..keys.len())];
+                let readings = word_map[word_key].clone();
+
+                let prompt = ActivePrompt::Vocab {
+                    word: word_key.clone(),
+                    readings,
+                };
+                let text = word_key.clone();
+                self.current_prompt.write(|p| *p = Some(prompt))?;
+
+                text
+            }
         };
 
-        // Update current kanji with the new one
-
-
-        self.current_kanji.write(|current| *current = Some(new_kanji_data.kanji.clone()))?;
-
         if broadcast {
-            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::KanjiUpdate {
-                new_kanji: new_kanji_data.kanji.clone(),
+            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PromptUpdate {
+                new_prompt: display_text.clone(),
             }).unwrap_or_default());
         }
 
-        Ok(new_kanji_data.kanji)
+        Ok(display_text)
     }
 
     pub fn reset_lobby(&self, player_id: &PlayerId) -> Result<()> {
@@ -494,7 +525,7 @@ impl LobbyState {
         self.game_status.write(|status| *status = GameStatus::Lobby)?;
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
-            kanji: "".to_string(),
+            prompt: "".to_string(),
             status: GameStatus::Lobby,
             scores: self.get_all_players()?,
         }).unwrap_or_default());
@@ -522,7 +553,7 @@ impl LobbyState {
         })?
     }
     
-    pub fn process_guess(&self, player_id: &PlayerId, word: &str, kanji: &str) -> Result<()> {
+    pub fn process_guess(&self, player_id: &PlayerId, input: &str) -> Result<()> {
         let (settings, status) = {
              let st = self.game_status.read(|s| *s)?;
              let s = self.settings.read(|s| s.clone())?;
@@ -540,16 +571,16 @@ impl LobbyState {
             }
         }
 
-        let input_word = word.trim();
-        let input_kanji = kanji.trim();
 
-        // Check guess against word_list and input_kanji
-        let good_kanji = input_word.contains(input_kanji);
-        let good_word = self.word_list.contains(input_word);
-        let is_correct = good_kanji && good_word;
+        let trimmed_input = input.trim();
+        let prompt = self.current_prompt.read(|p| p.clone())?
+            .ok_or(AppError::InternalError("No active prompt".into()))?;
+
+
+        let is_correct = check_prompt(&prompt, trimmed_input, &self.dict_list);
 
         let mut message = String::new();
-        let mut new_kanji_opt = None;
+        let mut new_prompt_opt = None;
         let mut game_over = false;
 
         if is_correct {
@@ -562,25 +593,31 @@ impl LobbyState {
                         message = "Winner!".to_string();
                     } else {
                         message = "Good guess!".to_string();
-                        let _ = self.generate_random_kanji(true);
-                        new_kanji_opt = self.get_current_kanji().ok().flatten();
+                        let _ = self.generate_random_prompt(true);
+                        new_prompt_opt = self.get_current_prompt_text().ok().flatten();
                     }
                 }
             } else if settings.mode == shared::GameMode::Duel {
                 message = "Good guess!".to_string();
-                let _ = self.generate_random_kanji(true);
-                new_kanji_opt = self.get_current_kanji().ok().flatten();
+                let _ = self.generate_random_prompt(true);
+                new_prompt_opt = self.get_current_prompt_text().ok().flatten();
                 let _ = self.advance_turn();
             }
         } else {
-             if good_kanji {
-                message = "Bad Guess: Correct kanji, but not valid word.".to_string();
-            } else if good_word {
-                message = "Bad Guess: Valid word, but does not contain the correct kanji.".to_string();
-            } else {
-                message = "Bad Guess: Incorrect kanji and not a valid word.".to_string();
+            match &prompt {
+                ActivePrompt::Kanji { character } => {
+                    let has_kanji = trimmed_input.contains(character.as_str());
+                    let valid_word = self.dict_list.contains(trimmed_input);
+                    if has_kanji {
+                        message = "Bad Guess: Correct kanji, but not a valid word".to_string();
+                    } else if valid_word {
+                        message = "Bad Guess: Valid word, but does not contain the correct kanji.".to_string();
+                    } else {
+                        message = "Bad Guess: Incorrect kanji and not a valid word".to_string();
+                    }
+                },
+                ActivePrompt::Vocab { word, .. } => { message = format!("Incorrect reading for {}", word); }
             }
-
             if settings.mode == shared::GameMode::Duel {
                 let eliminated = self.players.write(|players| {
                      let mut eliminated = false;
@@ -597,14 +634,13 @@ impl LobbyState {
                      }
                      eliminated
                 })?;
-                
                 if eliminated {
                      message = "Eliminated!".to_string();
                 }
 
                 if !settings.duel_allow_kanji_reuse {
-                    let _ = self.generate_random_kanji(true);
-                    new_kanji_opt = self.get_current_kanji().ok().flatten();
+                    let _ = self.generate_random_prompt(true);
+                    new_prompt_opt = self.get_current_prompt_text().ok().flatten();
                 }
 
                 if eliminated {
@@ -624,7 +660,6 @@ impl LobbyState {
                 } else {
                      let _ = self.advance_turn();
                 }
-                
                 let order_len = self.turn_order.read(|o| o.len())?;
                 if order_len <= 1 {
                     game_over = true;
@@ -646,14 +681,14 @@ impl LobbyState {
                 message,
                 score,
                 error: None,
-                kanji: new_kanji_opt,
+                prompt: new_prompt_opt,
             },
         }).unwrap_or_default());
 
         if game_over {
             self.game_status.write(|st| *st = GameStatus::Finished)?;
             let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
-                kanji: self.get_current_kanji()?.unwrap_or_default(),
+                prompt: self.get_current_prompt_text()?.unwrap_or_default(),
                 status: GameStatus::Finished,
                 scores: self.get_all_players()?,
             }).unwrap_or_default());
@@ -688,12 +723,25 @@ pub fn get_lobby(app_state: &Arc<AppState>, lobby_id: &str) -> Result<SharedStat
     })?
 }
 
+fn check_prompt(prompt: &shared::ActivePrompt, input: &str, dictionary: &HashSet<String>) -> bool {
+    match prompt {
+        ActivePrompt::Kanji { character } => {
+            input.contains(character.as_str()) && dictionary.contains(input)
+        },
+        ActivePrompt::Vocab { readings, .. } => {
+            readings.iter().any(|r| r == input)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+    use data::Kanji;
 
     fn create_test_lobby() -> LobbyState {
-        let test_kanji = Arc::new(vec![
+        let test_kanji_list = Arc::new(vec![
             vec![
                 Kanji { kanji: "日".to_string(), frequency: 0 },
                 Kanji { kanji: "月".to_string(), frequency: 0 },
@@ -707,7 +755,7 @@ mod tests {
                 Kanji { kanji: "木".to_string(), frequency: 0 },
             ],
         ]);
-        let test_words = Arc::new(HashSet::from([
+        let test_dict_list = Arc::new(HashSet::from([
             "日本".to_string(),
             "弄り回す".to_string(),
             "月曜日".to_string(),
@@ -719,8 +767,19 @@ mod tests {
             "炎".to_string(),
             "渦紋".to_string(),
         ]));
+        let test_words_list = Arc::new(vec![
+            {
+                let mut map = HashMap::new();
+                map.insert("日本".to_string(), vec!["にほん".to_string(), "にっぽん".to_string()]);
+                map.insert("月曜日".to_string(), vec!["げつようび".to_string()]);
+                map.insert("木曜日".to_string(), vec!["もくようび".to_string()]);
+                map.insert("日記".to_string(), vec!["にっき".to_string()]);
+                map.insert("理由".to_string(), vec!["りゆう".to_string()]);
+                map
+            },
+        ]);
 
-        LobbyState::new(test_kanji, test_words, None)
+        LobbyState::new(test_kanji_list, test_words_list, test_dict_list, None)
     }
 
     #[test]
@@ -748,25 +807,25 @@ mod tests {
     }
 
     #[test]
-    fn test_get_current_kanji() {
+    fn test_get_current_prompt_text() {
         let lobby_state = create_test_lobby();
 
         // Initially should be None
-        assert_eq!(lobby_state.get_current_kanji().unwrap(), None);
+        assert_eq!(lobby_state.get_current_prompt_text().unwrap(), None);
 
         // Generate a kanji and verify it's set
-        // NOTE: New generate_random_kanji requires start_game to populate active_indices or manually setting them
+        // NOTE: New generate_random_prompt requires start_game to populate active_indices or manually setting them
         // Manually set them for the test
         {
             lobby_state.active_level_indices.write(|indices| indices.push(0)).unwrap();
         }
 
-        let kanji = lobby_state.generate_random_kanji(false).unwrap();
-        assert_eq!(lobby_state.get_current_kanji().unwrap(), Some(kanji));
+        let kanji = lobby_state.generate_random_prompt(false).unwrap();
+        assert_eq!(lobby_state.get_current_prompt_text().unwrap(), Some(kanji));
     }
 
     #[test]
-    fn test_generate_random_kanji() {
+    fn test_generate_random_prompt() {
         let lobby_state = create_test_lobby();
 
         // Set active indices
@@ -775,7 +834,7 @@ mod tests {
         }
 
         // Generate a kanji and verify it's from one of the lists
-        let kanji = lobby_state.generate_random_kanji(false).unwrap();
+        let kanji = lobby_state.generate_random_prompt(false).unwrap();
         let kanji_exists = lobby_state.kanji_list
             .iter()
             .flatten()
@@ -783,8 +842,8 @@ mod tests {
         assert!(kanji_exists);
 
         // Generate another and ensure it's set as current
-        let kanji2 = lobby_state.generate_random_kanji(false).unwrap();
-        assert_eq!(lobby_state.get_current_kanji().unwrap(), Some(kanji2));
+        let kanji2 = lobby_state.generate_random_prompt(false).unwrap();
+        assert_eq!(lobby_state.get_current_prompt_text().unwrap(), Some(kanji2));
     }
 
     #[test]
@@ -890,7 +949,7 @@ mod tests {
         }
 
         // Generate kanji and check word
-        let _kanji = retrieved_lobby.generate_random_kanji(false).unwrap();
+        let _kanji = retrieved_lobby.generate_random_prompt(false).unwrap();
 
         // Verify players and scores
         let players = retrieved_lobby.get_all_players().unwrap();
@@ -1070,7 +1129,7 @@ mod tests {
         lobby.add_player(leader.clone(), "Leader".to_string()).unwrap();
         lobby.settings.write(|s| { s.target_score = Some(3); }).unwrap();
         lobby.active_level_indices.write(|i| i.push(0)).unwrap();
-        lobby.current_kanji.write(|k| *k = Some("日".to_string())).unwrap();
+        lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() })).unwrap();
         lobby.game_status.write(|s| *s = GameStatus::Playing).unwrap();
         (lobby, leader)
     }
@@ -1078,23 +1137,23 @@ mod tests {
     #[test]
     fn test_process_guess_correct_increments_score() {
         let (lobby, leader) = setup_deathmatch_playing();
-        lobby.process_guess(&leader, "日本", "日").unwrap();
+        lobby.process_guess(&leader, "日本").unwrap();
         assert_eq!(lobby.get_player_score(&leader).unwrap(), 1);
     }
 
     #[test]
     fn test_process_guess_wrong_word_no_score() {
         let (lobby, leader) = setup_deathmatch_playing();
-        // "日xyz" contains "日" but is NOT in the word list
-        lobby.process_guess(&leader, "日xyz", "日").unwrap();
+        // "日xyz" contains "日" but is NOT in the dictionary
+        lobby.process_guess(&leader, "日xyz").unwrap();
         assert_eq!(lobby.get_player_score(&leader).unwrap(), 0);
     }
 
     #[test]
     fn test_process_guess_wrong_kanji_no_score() {
         let (lobby, leader) = setup_deathmatch_playing();
-        // "日本" is valid but kanji hint is wrong
-        lobby.process_guess(&leader, "日本", "月").unwrap();
+        // "哀歌" is a valid dictionary word but does NOT contain the prompt kanji "日"
+        lobby.process_guess(&leader, "哀歌").unwrap();
         assert_eq!(lobby.get_player_score(&leader).unwrap(), 0);
     }
 
@@ -1104,7 +1163,7 @@ mod tests {
         let leader = PlayerId::from("leader");
         lobby.add_player(leader.clone(), "Leader".to_string()).unwrap();
         // Default status is Lobby — should be silently ignored
-        assert!(lobby.process_guess(&leader, "日本", "日").is_ok());
+        assert!(lobby.process_guess(&leader, "日本").is_ok());
         assert_eq!(lobby.get_player_score(&leader).unwrap(), 0);
     }
 
@@ -1112,10 +1171,10 @@ mod tests {
     fn test_deathmatch_target_score_ends_game() {
         let (lobby, leader) = setup_deathmatch_playing();
         for _ in 0..3 {
-            lobby.current_kanji.write(|k| *k = Some("日".to_string())).unwrap();
+            lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() })).unwrap();
             let empty = lobby.active_level_indices.read(|i| i.is_empty()).unwrap();
             if empty { lobby.active_level_indices.write(|i| i.push(0)).unwrap(); }
-            lobby.process_guess(&leader, "日本", "日").unwrap();
+            lobby.process_guess(&leader, "日本").unwrap();
         }
         assert_eq!(lobby.game_status.read(|s| *s).unwrap(), GameStatus::Finished);
     }
@@ -1130,11 +1189,11 @@ mod tests {
         lobby.settings.write(|s| { s.mode = shared::GameMode::Duel; s.initial_lives = Some(3); }).unwrap();
         lobby.game_status.write(|s| *s = GameStatus::Playing).unwrap();
         lobby.turn_order.write(|o| { o.push(p1.clone()); o.push(p2.clone()); }).unwrap();
-        lobby.current_kanji.write(|k| *k = Some("日".to_string())).unwrap();
+        lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() })).unwrap();
         lobby.active_level_indices.write(|i| i.push(0)).unwrap();
 
         // p2 submits on p1's turn — should be silently ignored
-        lobby.process_guess(&p2, "日本", "日").unwrap();
+        lobby.process_guess(&p2, "日本").unwrap();
         assert_eq!(lobby.get_player_score(&p2).unwrap(), 0);
     }
 }

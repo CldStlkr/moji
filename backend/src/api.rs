@@ -19,7 +19,7 @@ use argon2::{
     }
 };
 use shared::{
-    JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
+    JoinLobbyRequest, PromptResponse, LobbyInfo, PlayerData, PlayerId,
     StartGameRequest, UpdateSettingsRequest
 };
 use std::sync::Arc;
@@ -72,6 +72,7 @@ pub async fn create_lobby(
         Arc::new(LobbyState::new(
         Arc::clone(&app_state.kanji_data),
         Arc::clone(&app_state.word_data),
+        Arc::clone(&app_state.dict_data),
         game_session_id
     ));
 
@@ -280,32 +281,32 @@ pub async fn get_lobby_players(
 }
 
 #[debug_handler]
-pub async fn get_kanji(
+pub async fn get_prompt(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,
-) -> Result<Json<KanjiPrompt>> {
+) -> Result<Json<PromptResponse>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
 
     // Try to get the current kanji first
-    let kanji = match lobby.get_current_kanji()? {
-        Some(kanji) => kanji,
+    let prompt = match lobby.get_current_prompt_text()? {
+        Some(prompt ) => prompt,
         None => {
-            lobby.generate_random_kanji(true)?
+            lobby.generate_random_prompt(true)?
         }
     };
-    Ok(Json(KanjiPrompt { kanji }))
+    Ok(Json(PromptResponse { prompt }))
 }
 
 #[debug_handler]
-pub async fn generate_new_kanji(
+pub async fn generate_new_prompt(
     State(app_state): State<Arc<AppState>>,
     Path(lobby_id): Path<String>,
-) -> Result<Json<KanjiPrompt>> {
+) -> Result<Json<PromptResponse>> {
     let lobby = get_lobby(&app_state, &lobby_id)?;
 
     // Always generate a new kanji
-    let kanji = lobby.generate_random_kanji(true)?;
-    Ok(Json(KanjiPrompt { kanji }))
+    let prompt = lobby.generate_random_prompt(true)?;
+    Ok(Json(PromptResponse { prompt }))
 }
 
 pub async fn check_username(
@@ -429,10 +430,10 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
         let _ = sender.send(Message::Text(init_msg.into())).await;
 
         let status = lobby.game_status.read(|s| *s).unwrap_or(GameStatus::Lobby);
-        let kanji = lobby.get_current_kanji().unwrap_or_default().unwrap_or_default();
+        let prompt = lobby.get_current_prompt_text().unwrap_or_default().unwrap_or_default();
         let scores = lobby.get_all_players().unwrap_or_default();
         let game_msg = serde_json::to_string(&shared::ServerMessage::GameState {
-            kanji,
+            prompt,
             status,
             scores,
         }).unwrap_or_default();
@@ -474,8 +475,8 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: St
                                 input,
                             }).unwrap_or_default());
                          },
-                         shared::ClientMessage::Submit { word, kanji } => {
-                             if let Err(e) = lobby_ref.process_guess(&player_id_ref, &word, &kanji) {
+                         shared::ClientMessage::Submit { input, .. } => {
+                             if let Err(e) = lobby_ref.process_guess(&player_id_ref, &input) {
                                  tracing::error!("Error processing guess: {:?}", e);
                              }
                          }

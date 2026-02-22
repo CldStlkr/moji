@@ -1,10 +1,13 @@
 use leptos::prelude::*;
+use shared::ContentMode;
 
 #[component]
 pub fn GameFeedback(
+    content_mode: ContentMode,
     result: ReadSignal<String>,
     error_message: ReadSignal<String>,
 ) -> impl IntoView {
+
     let get_result_class = move || {
         let result_text = result.get();
         if result_text.is_empty() {
@@ -38,7 +41,15 @@ pub fn GameFeedback(
             </Show>
 
              <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
-                <p class="mb-2">"Type a Japanese word containing the displayed kanji."</p>
+
+
+                <p class="mb-2">{
+                        move || if content_mode == ContentMode::Vocab {
+                            "Enter the hiragana reading of the displayed word."
+                        } else {
+                            "Type a Japanese word containing the displayed kanji."
+                        }
+                }</p>
                 <p>"Click \"Submit\" to check your answer."</p>
             </div>
         </div>

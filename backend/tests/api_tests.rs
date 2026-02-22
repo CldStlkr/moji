@@ -13,7 +13,7 @@ use axum::{
 use axum_test::TestServer;
 use moji::{
     api::{
-        create_lobby, generate_new_kanji, get_kanji, get_lobby_info, get_lobby_players,
+        create_lobby, get_prompt, generate_new_prompt, get_lobby_info, get_lobby_players,
         get_player_info, join_lobby, leave_lobby, reset_lobby, start_game, update_lobby_settings,
     },
     AppState,
@@ -31,8 +31,8 @@ fn make_router() -> Router {
         .route("/player/{lobby_id}/{player_id}", get(get_player_info))
         .route("/lobby/players/{lobby_id}", get(get_lobby_players))
         .route("/lobby/{lobby_id}/leave", post(leave_lobby))
-        .route("/kanji/{lobby_id}", get(get_kanji))
-        .route("/new_kanji/{lobby_id}", post(generate_new_kanji))
+        .route("/prompt/{lobby_id}", get(get_prompt))
+        .route("/new_prompt/{lobby_id}", post(generate_new_prompt))
         .route("/lobby/{lobby_id}/info", get(get_lobby_info))
         .route("/lobby/{lobby_id}/settings", post(update_lobby_settings))
         .route("/lobby/{lobby_id}/start", post(start_game))
@@ -202,6 +202,7 @@ async fn test_update_settings_leader_succeeds() {
                 "max_players": 6,
                 "weighted": false,
                 "mode": "Deathmatch",
+                "content_mode": "Kanji",
                 "target_score": 5,
                 "time_limit_seconds": null,
                 "initial_lives": null,
@@ -233,6 +234,7 @@ async fn test_update_settings_non_leader_fails() {
                 "max_players": 4,
                 "weighted": false,
                 "mode": "Deathmatch",
+                "content_mode": "Kanji",
                 "target_score": 5,
                 "time_limit_seconds": null,
                 "initial_lives": null,
@@ -314,11 +316,11 @@ async fn test_get_kanji_after_game_start() {
         .json(&json!({ "player_id": player_id }))
         .await;
 
-    let res = server.get(&format!("/kanji/{lobby_id}")).await;
+    let res = server.get(&format!("/prompt/{lobby_id}")).await;
     res.assert_status_ok();
     let body: Value = res.json();
     assert!(
-        body["kanji"].as_str().is_some_and(|k| !k.is_empty()),
+        body["prompt"].as_str().is_some_and(|k| !k.is_empty()),
         "Expected a non-empty kanji string"
     );
 }

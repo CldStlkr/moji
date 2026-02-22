@@ -1,7 +1,9 @@
 use leptos::prelude::*;
+use shared::ContentMode;
 
 #[component]
 pub fn GameHeader<F>(
+    content_mode: ContentMode,
     player_name: impl Into<Signal<String>> + 'static,
     score: impl Into<Signal<u32>> + 'static,
     on_exit: F,
@@ -13,7 +15,13 @@ where
     let score = score.into();
     view! {
         <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
-            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">"Kanji Game"</h2>
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">{
+                move || if content_mode == ContentMode::Vocab {
+                    "Vocab"
+                } else {
+                    "Kanji"
+                }
+            }</h2>
             <div class="flex items-center gap-4 flex-wrap">
                 <div class="bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full text-sm text-blue-700 dark:text-blue-300 flex items-center whitespace-nowrap">
                     "Player: "

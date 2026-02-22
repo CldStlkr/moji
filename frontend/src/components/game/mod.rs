@@ -7,11 +7,11 @@ use shared::{PlayerId, ClientMessage};
 use wasm_bindgen_futures::spawn_local;
 
 mod header;
-mod kanji;
+mod prompt;
 mod input;
 mod feedback;
 use header::GameHeader;
-use kanji::KanjiDisplay;
+use prompt::PromptDisplay;
 use input::GameInput;
 use feedback::GameFeedback;
 use game_over::GameOver;
@@ -24,7 +24,7 @@ pub fn GameComponent<F, M>(
     player_id: ReadSignal<PlayerId>,
     on_exit_game: F,
     send_message: M,
-    kanji: ReadSignal<String>,
+    prompt: ReadSignal<String>,
     result: ReadSignal<String>,
     typing_status: RwSignal<std::collections::HashMap<PlayerId, String>>,
     lobby_info: ReadSignal<Option<shared::LobbyInfo>>,
@@ -44,13 +44,13 @@ where
 
     let perform_submit = move || {
         let current_word = word.get();
-        let current_kanji = kanji.get();
+        let current_prompt = prompt.get();
 
         if current_word.trim().is_empty() { return; }
 
         let msg = ClientMessage::Submit {
-            word: current_word,
-            kanji: current_kanji
+            input: current_word,
+            prompt: current_prompt
         };
         send_message(msg);
 
@@ -149,6 +149,7 @@ where
         <div class="max-w-6xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors">
 
             <GameHeader
+                content_mode=lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
                 player_name=player_name
                 score=score
                 on_exit=handle_exit_game
@@ -179,15 +180,16 @@ where
                 // Main Game Area
                 <div class="flex-1 space-y-8">
 
-                    <KanjiDisplay
-                        kanji=kanji
+                    <PromptDisplay
+                        prompt=prompt
                         is_loading=is_loading.read_only()
                     />
 
                     <GameInput
+                        content_mode=lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
                         input_ref=input_ref
                         word=word.read_only()
-                        kanji=kanji
+                        prompt=prompt
                         is_loading=is_loading.read_only()
                         on_input=handle_input
                         on_submit=submit_word
@@ -207,6 +209,7 @@ where
                     />
 
                     <GameFeedback 
+                        content_mode=lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
                         result=result
                         error_message=error_message.read_only()
                     />

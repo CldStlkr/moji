@@ -21,7 +21,7 @@ pub fn Home() -> impl IntoView {
     let lobby_info = RwSignal::new(None::<LobbyInfo>);
 
     // Global Game State
-    let kanji = RwSignal::new(String::new());
+    let prompt = RwSignal::new(String::new());
     let result = RwSignal::new(String::new());
     let typing_status = RwSignal::new(HashMap::<PlayerId, String>::new());
 
@@ -30,7 +30,7 @@ pub fn Home() -> impl IntoView {
         lobby_id: lobby_id.read_only(),
         player_id: player_id.read_only(),
         set_lobby_info: lobby_info.write_only(),
-        set_kanji: kanji.write_only(),
+        set_prompt: prompt.write_only(),
         set_result: result.write_only(),
         set_typing_status: typing_status.write_only(),
     });
@@ -121,7 +121,7 @@ pub fn Home() -> impl IntoView {
                                 player_id=player_id.read_only()
                                 on_exit_game=handle_leave_and_cleanup
                                 send_message=send_message
-                                kanji=kanji.read_only()
+                                prompt=prompt.read_only()
                                 result=result.read_only()
                                 typing_status=typing_status
                                 lobby_info=lobby_info.read_only()

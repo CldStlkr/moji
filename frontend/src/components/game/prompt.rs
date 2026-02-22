@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 
 #[component]
-pub fn KanjiDisplay(
-    kanji: ReadSignal<String>,
+pub fn PromptDisplay(
+    prompt: ReadSignal<String>,
     is_loading: ReadSignal<bool>,
 ) -> impl IntoView {
     view! {
@@ -15,7 +15,7 @@ pub fn KanjiDisplay(
                 fallback=move || {
                     view! {
                         <div class="text-9xl leading-none text-gray-800 dark:text-gray-100 kanji-font select-none">
-                            {move || kanji.get()}
+                            {move || prompt.get()}
                         </div>
                     }
                 }

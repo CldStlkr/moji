@@ -1,7 +1,7 @@
 use crate::error::{parse_error_response, ClientError};
 use gloo_net::http::Request;
 use shared::{
-    JoinLobbyRequest, KanjiPrompt, LobbyInfo, PlayerData, PlayerId,
+    JoinLobbyRequest, PromptResponse, LobbyInfo, PlayerData, PlayerId,
     StartGameRequest, UpdateSettingsRequest,
 };
 use serde::{Deserialize, Serialize};
@@ -86,12 +86,12 @@ pub async fn join_lobby(lobby_id: &str, request: JoinLobbyRequest) -> ApiResult<
     .await
 }
 
-pub async fn get_kanji(lobby_id: &str) -> ApiResult<KanjiPrompt> {
-    make_request::<(), _>("GET", format!("{}/kanji/{}", API_BASE, lobby_id), None).await
+pub async fn get_prompt(lobby_id: &str) -> ApiResult<PromptResponse> {
+    make_request::<(), _>("GET", format!("{}/prompt/{}", API_BASE, lobby_id), None).await
 }
 
-pub async fn generate_new_kanji(lobby_id: &str) -> ApiResult<KanjiPrompt> {
-    make_request::<(), _>("POST", format!("{}/new_kanji/{}", API_BASE, lobby_id), None).await
+pub async fn generate_new_prompt(lobby_id: &str) -> ApiResult<PromptResponse> {
+    make_request::<(), _>("POST", format!("{}/new_prompt/{}", API_BASE, lobby_id), None).await
 }
 
 pub async fn check_username(username: &str) -> ApiResult<CheckUsernameResponse> {

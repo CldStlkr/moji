@@ -2,10 +2,9 @@ use csv::{Reader, StringRecord};
 use std::{fs::{read_to_string, File}, error::Error, path::Path, collections::{HashMap, HashSet}};
 
 
-pub type LoadDictionaryResult = Result<HashSet<String>, Box<dyn Error>>;
-pub type VectorizeJoyoKanjiResult = Result<Vec<Vec<Kanji>>, Box<dyn Error>>;
-pub type LoadJLPTWordsResult = Result<Vec<HashMap<String, Vec<String>>>, Box<dyn Error>>;
-
+pub type KanjiData = Vec<Vec<Kanji>>;
+pub type DictData = HashSet<String>;
+pub type JlptWordData = Vec<HashMap<String, Vec<String>>>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Kanji{
@@ -13,7 +12,7 @@ pub struct Kanji{
     pub frequency: i32,
 }
 
-pub fn load_dictionary(path: &str) -> LoadDictionaryResult {
+pub fn load_dictionary(path: &str) -> Result<DictData, Box<dyn Error>>{
     let file: File = File::open(path)?;
     let mut rdr: Reader<File> = Reader::from_reader(file);
     let mut word_set = HashSet::new();
@@ -31,7 +30,7 @@ pub fn load_dictionary(path: &str) -> LoadDictionaryResult {
 /// Loads kanji from multiple CSV files, keeping each file's kanji separate.
 /// Returns a Vec where each inner Vec corresponds to one JLPT level.
 /// The order of inner Vecs matches the order of input paths.
-pub fn vectorize_joyo_kanji<I, P>(paths: I) -> VectorizeJoyoKanjiResult
+pub fn vectorize_joyo_kanji<I, P>(paths: I) -> Result<KanjiData, Box<dyn Error>>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
@@ -68,7 +67,7 @@ where
     Ok(kanji_list)
 }
 
-pub fn load_jlpt_words<I, P>(paths: I) -> LoadJLPTWordsResult
+pub fn load_jlpt_words<I, P>(paths: I) -> Result<JlptWordData, Box<dyn Error>>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
