@@ -1,5 +1,6 @@
+use crate::error::DataLoadError;
 use csv::{Reader, StringRecord};
-use std::{fs::{read_to_string, File}, error::Error, path::Path, collections::{HashMap, HashSet}};
+use std::{fs::{read_to_string, File}, path::Path, collections::{HashMap, HashSet}};
 
 
 pub type KanjiData = Vec<Vec<Kanji>>;
@@ -12,7 +13,7 @@ pub struct Kanji{
     pub frequency: i32,
 }
 
-pub fn load_dictionary(path: &str) -> Result<DictData, Box<dyn Error>>{
+pub fn load_dictionary(path: &str) -> Result<DictData, DataLoadError>{
     let file: File = File::open(path)?;
     let mut rdr: Reader<File> = Reader::from_reader(file);
     let mut word_set = HashSet::new();
@@ -30,7 +31,7 @@ pub fn load_dictionary(path: &str) -> Result<DictData, Box<dyn Error>>{
 /// Loads kanji from multiple CSV files, keeping each file's kanji separate.
 /// Returns a Vec where each inner Vec corresponds to one JLPT level.
 /// The order of inner Vecs matches the order of input paths.
-pub fn vectorize_joyo_kanji<I, P>(paths: I) -> Result<KanjiData, Box<dyn Error>>
+pub fn vectorize_joyo_kanji<I, P>(paths: I) -> Result<KanjiData, DataLoadError>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
@@ -39,6 +40,7 @@ where
     let mut kanji_list: Vec<Vec<Kanji>> = Vec::new();
 
     for path in paths {
+        let path = path.as_ref();
         let mut kanji_vec = Vec::new();
         let mut rdr: Reader<_> = Reader::from_path(path)?;
 
@@ -59,7 +61,7 @@ where
             }
         }
         if kanji_vec.is_empty() {
-            return Err("Empty kanji file".into());
+            return Err(DataLoadError::EmptyFile(path.to_path_buf()));
         }
         kanji_list.push(kanji_vec);
     }
@@ -67,13 +69,14 @@ where
     Ok(kanji_list)
 }
 
-pub fn load_jlpt_words<I, P>(paths: I) -> Result<JlptWordData, Box<dyn Error>>
+pub fn load_jlpt_words<I, P>(paths: I) -> Result<JlptWordData, DataLoadError>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
 {
     let mut word_levels: Vec<HashMap<String, Vec<String>>> = Vec::new();
     for path in paths {
+        let path = path.as_ref();
         let mut word_map: HashMap<String, Vec<String>> = HashMap::new();
         let content = read_to_string(path)?;
         for line in content.lines() {
@@ -84,7 +87,7 @@ where
                 if !readings.is_empty() { word_map.insert(word.to_string(), readings); }
             }
         }
-        if word_map.is_empty() { return Err("Empty word file".into()); }
+        if word_map.is_empty() { return Err(DataLoadError::EmptyFile(path.to_path_buf())); }
         word_levels.push(word_map);
     }
 

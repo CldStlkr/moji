@@ -44,6 +44,7 @@ pub struct AppState {
 }
 
 impl AppState {
+
     fn load_data() -> Result<(Arc<KanjiData>, Arc<JlptWordData>, Arc<DictData>)> {
         let is_production = matches!(
             env::var("PRODUCTION").as_deref(),
@@ -74,12 +75,9 @@ impl AppState {
         let dictionary_path = format!("{}/kanji_words.csv", data_dir);
 
 
-        let list_of_kanji = Arc::new(vectorize_joyo_kanji(&kanji_list_paths)
-            .map_err(|e| AppError::DataLoadError(e.to_string()))?);
-        let list_of_words = Arc::new(load_jlpt_words(&word_list_paths)
-            .map_err(|e| AppError::DataLoadError(e.to_string()))?);
-        let dictionary_list = Arc::new(load_dictionary(&dictionary_path)
-            .map_err(|e| AppError::DataLoadError(e.to_string()))?);
+        let list_of_kanji = Arc::new(vectorize_joyo_kanji(&kanji_list_paths)?);
+        let list_of_words = Arc::new(load_jlpt_words(&word_list_paths)?);
+        let dictionary_list = Arc::new(load_dictionary(&dictionary_path)?);
 
         Ok((list_of_kanji, list_of_words, dictionary_list))
     }
@@ -93,6 +91,14 @@ impl AppState {
             word_data,
             dict_data
         })
+    }
+
+
+    pub fn get_lobby(&self, lobby_id: &str) -> Result<SharedState> {
+        self.lobbies.write(|lobbies| {
+            lobbies.get(lobby_id).cloned()
+                .ok_or_else(|| AppError::LobbyNotFound(lobby_id.to_string()))
+        })?
     }
 
     pub async fn new_with_db(db_pool: Arc<DbPool>) -> Result<Self> {
@@ -715,14 +721,6 @@ pub fn generate_lobby_id() -> String {
     generate_random_id(6)
 }
 
-pub fn get_lobby(app_state: &Arc<AppState>, lobby_id: &str) -> Result<SharedState> {
-    app_state.lobbies.write(|lobbies| {
-        lobbies
-            .get(lobby_id)
-            .cloned()
-            .ok_or_else(|| AppError::LobbyNotFound(lobby_id.to_string()))
-    })?
-}
 
 fn check_prompt(prompt: &shared::ActivePrompt, input: &str, dictionary: &HashSet<String>) -> bool {
     match prompt {
@@ -909,7 +907,7 @@ mod tests {
     fn test_get_lobby_not_found() {
         let app_state = Arc::new(AppState::create().expect("Failed to create AppState"));
 
-        let result = get_lobby(&app_state, "nonexistent");
+        let result = app_state.get_lobby("nonexistent");
         assert!(result.is_err());
 
         // Verify error type
@@ -934,7 +932,7 @@ mod tests {
         }
 
         // Get the lobby and verify it exists
-        let retrieved_lobby = get_lobby(&app_state, &lobby_id).unwrap();
+        let retrieved_lobby = app_state.get_lobby(&lobby_id).unwrap();
 
         // Add players to lobby
         retrieved_lobby

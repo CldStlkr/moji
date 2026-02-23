@@ -7,6 +7,16 @@ use serde_json::json;
 use std::sync::PoisonError;
 use thiserror::Error;
 
+#[derive(Error, Debug)]
+pub enum DataLoadError {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("CSV parse error: {0}")]
+    Csv(#[from] csv::Error),
+    #[error("Empty data file")]
+    EmptyFile(std::path::PathBuf),
+}
+
 /// Application-specific error types
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -26,7 +36,7 @@ pub enum AppError {
     InvalidInput(String),
 
     #[error("Failed to load game data: {0}")]
-    DataLoadError(String),
+    DataLoadError(#[from] DataLoadError),
 
     #[error("Authentication error: {0}")]
     AuthError(String),

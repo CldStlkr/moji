@@ -32,8 +32,7 @@ impl ApiContext for AppState {
 
         let game_session_id = if let Some(db_pool) = &self.db_pool {
             let default_settings = shared::GameSettings::default();
-            let session = GameSession::create(db_pool, &lobby_id, 1, default_settings).await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            let session = GameSession::create(db_pool, &lobby_id, 1, default_settings).await?;
             Some(session.id)
         } else {
             None
@@ -46,12 +45,9 @@ impl ApiContext for AppState {
             game_session_id
         ));
 
-        let _ = lobby_state.add_player(player_id.clone(), request.player_name)
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
 
-        self.lobbies.write(|lobbies| {
-            lobbies.insert(lobby_id.clone(), lobby_state);
-        }).map_err(|e| ServerFnError::new(e.to_string()))?;
+        self.lobbies.write(|lobbies| { lobbies.insert(lobby_id.clone(), lobby_state); })?;
 
         Ok(json!({
             "message": "Lobby created successfully!",
@@ -61,46 +57,33 @@ impl ApiContext for AppState {
     }
 
     async fn get_lobby_info(&self, lobby_id: String) -> std::result::Result<LobbyInfo, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
-
-        lobby.get_lobby_info(&lobby_id).map_err(|e| ServerFnError::new(e.to_string()))
+        let lobby = self.get_lobby(&lobby_id)?;
+        Ok(lobby.get_lobby_info(&lobby_id)?)
     }
 
     async fn update_lobby_settings(&self, lobby_id: String, request: UpdateSettingsRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
-
-        lobby.update_settings(&request.player_id, request.settings).map_err(|e| ServerFnError::new(e.to_string()))?;
+        let lobby = self.get_lobby(&lobby_id)?;
+        lobby.update_settings(&request.player_id, request.settings)?;
         Ok(json!({ "message": "Settings updated successfully" }))
     }
 
     async fn start_game(&self, lobby_id: String, request: StartGameRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
-
-        lobby.start_game(&request.player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+        let lobby = self.get_lobby(&lobby_id)?;
+        lobby.start_game(&request.player_id)?;
         Ok(json!({ "message": "Game started successfully" }))
     }
 
     async fn reset_lobby(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<serde_json::Value, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        let lobby = self.get_lobby(&lobby_id)?;
 
-        lobby.reset_lobby(&player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+        lobby.reset_lobby(&player_id)?;
         Ok(json!({ "message": "Lobby reset successfully" }))
     }
 
     async fn get_lobby_players(&self, lobby_id: String) -> std::result::Result<serde_json::Value, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        let lobby = self.get_lobby(&lobby_id)?;
 
-        let players = lobby.get_all_players().map_err(|e| ServerFnError::new(e.to_string()))?;
+        let players = lobby.get_all_players()?;
 
         let player_data: Vec<_> = players.into_iter().map(|p| {
             json!({
@@ -115,13 +98,10 @@ impl ApiContext for AppState {
     }
 
     async fn join_lobby(&self, lobby_id: String, request: JoinLobbyRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        let lobby = self.get_lobby(&lobby_id)?;
 
         let player_id = generate_player_id();
-        let _ = lobby.add_player(player_id.clone(), request.player_name.clone())
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let _ = lobby.add_player(player_id.clone(), request.player_name.clone())?;
 
         if let Some(game_id) = lobby.game_session_id {
             if let Some(db_pool) = &self.db_pool {
@@ -150,23 +130,19 @@ impl ApiContext for AppState {
     }
 
     async fn get_prompt(&self, lobby_id: String) -> std::result::Result<PromptResponse, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        let lobby = self.get_lobby(&lobby_id)?;
 
-        let prompt = match lobby.get_current_prompt_text().map_err(|e| ServerFnError::new(e.to_string()))? {
+        let prompt = match lobby.get_current_prompt_text()? {
             Some(prompt) => prompt,
-            None => lobby.generate_random_prompt(true).map_err(|e| ServerFnError::new(e.to_string()))?
+            None => lobby.generate_random_prompt(true)?
         };
         Ok(PromptResponse { prompt })
     }
 
     async fn generate_new_prompt(&self, lobby_id: String) -> std::result::Result<PromptResponse, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        let lobby = self.get_lobby(&lobby_id)?;
 
-        let prompt = lobby.generate_random_prompt(true).map_err(|e| ServerFnError::new(e.to_string()))?;
+        let prompt = lobby.generate_random_prompt(true)?;
         Ok(PromptResponse { prompt })
     }
 
@@ -174,7 +150,7 @@ impl ApiContext for AppState {
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
 
-        let user = User::find_by_username(db_pool, &username).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        let user = User::find_by_username(db_pool, &username).await?;
 
         if let Some(user) = user {
             Ok(json!({
@@ -193,13 +169,13 @@ impl ApiContext for AppState {
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
         let existing_user = User::find_by_username(db_pool, &request.username).await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            ?;
 
         if let Some(user) = existing_user {
             if let Some(password) = request.password {
                 if let Some(hash) = &user.password_hash {
                     let parsed_hash = PasswordHash::new(hash)
-                        .map_err(|_| ServerFnError::new("Invalid password hash"))?;
+                        .map_err(|e| ServerFnError::new(e.to_string()))?;
                     if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok() {
                         Ok(json!({
                             "message": "Login successful",
@@ -216,8 +192,7 @@ impl ApiContext for AppState {
                 Err(ServerFnError::new("Password required"))
             }
         } else if request.create_guest {
-            let user = User::create(db_pool, &request.username, None, true).await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            let user = User::create(db_pool, &request.username, None, true).await?;
             Ok(json!({
                 "message": "Guest account created",
                 "user": user,
@@ -227,9 +202,9 @@ impl ApiContext for AppState {
             let salt = SaltString::generate(&mut OsRng);
             let password_hash = Argon2::default()
                 .hash_password(password.as_bytes(), &salt)
-                .map_err(|e| ServerFnError::new(e.to_string()))?.to_string();
-            let user = User::create(db_pool, &request.username, Some(password_hash), false).await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
+                .map_err(|e| ServerFnError::new(e.to_string()))?
+                .to_string();
+            let user = User::create(db_pool, &request.username, Some(password_hash), false).await?;
             Ok(json!({
                 "message": "Account created",
                 "user": user,
@@ -241,11 +216,9 @@ impl ApiContext for AppState {
     }
 
     async fn get_player_info(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<PlayerData, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        let lobby = self.get_lobby(&lobby_id)?;
 
-        let players = lobby.get_all_players().map_err(|e| ServerFnError::new(e.to_string()))?;
+        let players = lobby.get_all_players()?;
         let player = players.into_iter().find(|p| p.id == player_id)
             .ok_or_else(|| ServerFnError::new(format!("Player not found: {}", player_id)))?;
 
@@ -253,18 +226,14 @@ impl ApiContext for AppState {
     }
 
     async fn leave_lobby(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<serde_json::Value, ServerFnError> {
-        let lobby = self.lobbies.write(|lobbies| {
-            lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
-        }).map_err(|e| ServerFnError::new(e.to_string()))??;
+        let lobby = self.get_lobby(&lobby_id)?;
 
-        lobby.remove_player(&player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+        lobby.remove_player(&player_id)?;
 
-        let is_empty = lobby.players.read(|players| players.is_empty()).map_err(|e| ServerFnError::new(e.to_string()))?;
+        let is_empty = lobby.players.read(|players| players.is_empty())?;
 
         if is_empty {
-            self.lobbies.write(|lobbies| {
-                lobbies.remove(&lobby_id);
-            }).map_err(|e| ServerFnError::new(e.to_string()))?;
+            self.lobbies.write(|lobbies| { lobbies.remove(&lobby_id); })?;
 
             if let Some(game_id) = lobby.game_session_id {
                 if let Some(db_pool) = &self.db_pool {
@@ -283,7 +252,7 @@ impl ApiContext for AppState {
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
 
-        User::delete_guest_by_username(db_pool, &username).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        User::delete_guest_by_username(db_pool, &username).await?;
 
         Ok(json!({ "message": "Logged out" }))
     }
@@ -300,7 +269,7 @@ pub async fn ws_handler(
 async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: String, player_id: PlayerId) {
     let (mut sender, mut receiver) = socket.split();
 
-    let lobby = match crate::get_lobby(&app_state, &lobby_id) {
+    let lobby = match app_state.get_lobby(&lobby_id) {
         Ok(l) => l,
         Err(_) => return, // Lobby closed or not found
     };
