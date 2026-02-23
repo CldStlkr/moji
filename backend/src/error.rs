@@ -35,20 +35,6 @@ pub enum AppError {
     InternalError(String),
 }
 
-impl Clone for AppError {
-    fn clone(&self) -> Self {
-        match self {
-            AppError::Database(e) => AppError::InternalError(format!("Database error: {}", e)),
-            AppError::LobbyNotFound(id) => AppError::LobbyNotFound(id.clone()),
-            AppError::PlayerNotFound(player_id) => AppError::PlayerNotFound(player_id.clone()),
-            AppError::LockError(msg) => AppError::LockError(msg.clone()),
-            AppError::InvalidInput(msg) => AppError::InvalidInput(msg.clone()),
-            AppError::DataLoadError(msg) => AppError::DataLoadError(msg.clone()),
-            AppError::AuthError(msg) => AppError::AuthError(msg.clone()),
-            AppError::InternalError(msg) => AppError::InternalError(msg.clone()),
-        }
-    }
-}
 
 // Convert any LockError into our AppError
 impl<T> From<PoisonError<T>> for AppError {

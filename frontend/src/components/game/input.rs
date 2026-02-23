@@ -1,6 +1,7 @@
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
+use leptos_dom::helpers::window_event_listener;
 use shared::ContentMode;
 
 #[component]
@@ -22,6 +23,24 @@ where
 {
 
     let mode = StoredValue::new(content_mode);
+
+    window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
+        let key = e.key();
+        if e.meta_key() || e.ctrl_key() | e.alt_key()
+            || key == "Tab" || key == "Escape" || key.starts_with('F')
+            { return; }
+
+        if let Some(input) = input_ref.get() {
+            // Only intercept if the input isn't already focused
+            if !input.is_same_node(document()
+                .active_element().as_ref()
+                .map(|e| e.as_ref()))
+            {
+                e.prevent_default();
+                let _ = input.focus();
+            }
+        }
+    });
     view! {
         <div class="space-y-4">
             <input
