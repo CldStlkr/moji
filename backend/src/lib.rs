@@ -10,7 +10,7 @@ use data::{vectorize_joyo_kanji, load_dictionary, load_jlpt_words, JlptWordData,
 use db::DbPool;
 use error::AppError;
 use rand::{RngExt, distr::{Alphanumeric, Distribution, weighted::WeightedIndex}};
-use shared::{ContentMode, ActivePrompt};
+use shared::{ContentMode, ActivePrompt, LobbyId};
 use tokio::sync::broadcast;
 use std::{
     collections::{HashMap, HashSet},
@@ -36,7 +36,7 @@ pub struct PlayerData {
 }
 
 pub struct AppState {
-    pub lobbies: Shared<HashMap<String, SharedState>>,
+    pub lobbies: Shared<HashMap<LobbyId, SharedState>>,
     pub db_pool: Option<Arc<DbPool>>,
     pub kanji_data: Arc<KanjiData>,
     pub word_data: Arc<JlptWordData>,
@@ -94,8 +94,8 @@ impl AppState {
     }
 
 
-    pub fn get_lobby(&self, lobby_id: &str) -> Result<SharedState> {
-        self.lobbies.write(|lobbies| {
+    pub fn get_lobby(&self, lobby_id: &LobbyId) -> Result<SharedState> {
+        self.lobbies.read(|lobbies| {
             lobbies.get(lobby_id).cloned()
                 .ok_or_else(|| AppError::LobbyNotFound(lobby_id.to_string()))
         })?
@@ -177,7 +177,7 @@ impl LobbyState {
         Ok(())
     }
 
-    pub fn get_lobby_info(&self, lobby_id: &str) -> Result<shared::LobbyInfo> {
+    pub fn get_lobby_info(&self, lobby_id: &LobbyId) -> Result<shared::LobbyInfo> {
         let status = self.game_status.read(|s| *s)?;
         let settings = self.settings.read(|s| s.clone())?;
         let leader = self.lobby_leader.read(|l| l.clone())?;
@@ -201,7 +201,7 @@ impl LobbyState {
         })?;
 
         Ok(shared::LobbyInfo {
-            lobby_id: lobby_id.to_string(),
+            lobby_id: lobby_id.clone(),
             leader_id: leader,
             players: api_players,
             settings,
@@ -717,8 +717,8 @@ pub fn generate_player_id() -> PlayerId {
     PlayerId::from(generate_random_id(10))
 }
 
-pub fn generate_lobby_id() -> String {
-    generate_random_id(6)
+pub fn generate_lobby_id() -> LobbyId {
+    LobbyId::from(generate_random_id(6))
 }
 
 
@@ -907,7 +907,7 @@ mod tests {
     fn test_get_lobby_not_found() {
         let app_state = Arc::new(AppState::create().expect("Failed to create AppState"));
 
-        let result = app_state.get_lobby("nonexistent");
+        let result = app_state.get_lobby(&LobbyId(String::from("nonexistent")));
         assert!(result.is_err());
 
         // Verify error type
@@ -1111,8 +1111,8 @@ mod tests {
         lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
         lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
 
-        let info = lobby.get_lobby_info("test-lobby").unwrap();
-        assert_eq!(info.lobby_id, "test-lobby");
+        let info = lobby.get_lobby_info(&LobbyId::from("test-lobby")).unwrap();
+        assert_eq!(info.lobby_id, LobbyId(String::from("test-lobby")));
         assert_eq!(info.status, GameStatus::Lobby);
         assert_eq!(info.leader_id, PlayerId::from("p1"));
         assert_eq!(info.players.len(), 2);

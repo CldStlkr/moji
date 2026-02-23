@@ -17,8 +17,8 @@ use argon2::{
     }
 };
 use shared::{
-    JoinLobbyRequest, PromptResponse, LobbyInfo, PlayerData, PlayerId,
-    StartGameRequest, UpdateSettingsRequest, ApiContext
+    JoinLobbyRequest, PromptResponse, LobbyInfo, LobbyId,
+    PlayerData, PlayerId, StartGameRequest, UpdateSettingsRequest, ApiContext
 };
 use std::sync::Arc;
 use async_trait::async_trait;
@@ -26,8 +26,8 @@ use leptos::server_fn::error::ServerFnError;
 
 #[async_trait]
 impl ApiContext for AppState {
-    async fn create_lobby(&self, request: JoinLobbyRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
-        let lobby_id: String = generate_lobby_id();
+    async fn create_lobby(&self, request: JoinLobbyRequest) -> Result<serde_json::Value, ServerFnError> {
+        let lobby_id: LobbyId = generate_lobby_id();
         let player_id: PlayerId = generate_player_id();
 
         let game_session_id = if let Some(db_pool) = &self.db_pool {
@@ -56,31 +56,31 @@ impl ApiContext for AppState {
         }))
     }
 
-    async fn get_lobby_info(&self, lobby_id: String) -> std::result::Result<LobbyInfo, ServerFnError> {
+    async fn get_lobby_info(&self, lobby_id: LobbyId) -> Result<LobbyInfo, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
         Ok(lobby.get_lobby_info(&lobby_id)?)
     }
 
-    async fn update_lobby_settings(&self, lobby_id: String, request: UpdateSettingsRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn update_lobby_settings(&self, lobby_id: LobbyId, request: UpdateSettingsRequest) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
         lobby.update_settings(&request.player_id, request.settings)?;
         Ok(json!({ "message": "Settings updated successfully" }))
     }
 
-    async fn start_game(&self, lobby_id: String, request: StartGameRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn start_game(&self, lobby_id: LobbyId, request: StartGameRequest) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
         lobby.start_game(&request.player_id)?;
         Ok(json!({ "message": "Game started successfully" }))
     }
 
-    async fn reset_lobby(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn reset_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
         lobby.reset_lobby(&player_id)?;
         Ok(json!({ "message": "Lobby reset successfully" }))
     }
 
-    async fn get_lobby_players(&self, lobby_id: String) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn get_lobby_players(&self, lobby_id: LobbyId) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
         let players = lobby.get_all_players()?;
@@ -97,7 +97,7 @@ impl ApiContext for AppState {
         Ok(json!({ "players": player_data }))
     }
 
-    async fn join_lobby(&self, lobby_id: String, request: JoinLobbyRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn join_lobby(&self, lobby_id: LobbyId, request: JoinLobbyRequest) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
         let player_id = generate_player_id();
@@ -129,7 +129,7 @@ impl ApiContext for AppState {
         }))
     }
 
-    async fn get_prompt(&self, lobby_id: String) -> std::result::Result<PromptResponse, ServerFnError> {
+    async fn get_prompt(&self, lobby_id: LobbyId) -> Result<PromptResponse, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
         let prompt = match lobby.get_current_prompt_text()? {
@@ -139,14 +139,14 @@ impl ApiContext for AppState {
         Ok(PromptResponse { prompt })
     }
 
-    async fn generate_new_prompt(&self, lobby_id: String) -> std::result::Result<PromptResponse, ServerFnError> {
+    async fn generate_new_prompt(&self, lobby_id: LobbyId) -> Result<PromptResponse, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
         let prompt = lobby.generate_random_prompt(true)?;
         Ok(PromptResponse { prompt })
     }
 
-    async fn check_username(&self, username: String) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn check_username(&self, username: String) -> Result<serde_json::Value, ServerFnError> {
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
 
@@ -165,7 +165,7 @@ impl ApiContext for AppState {
         }
     }
 
-    async fn authenticate(&self, request: shared::AuthRequest) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn authenticate(&self, request: shared::AuthRequest) -> Result<serde_json::Value, ServerFnError> {
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
         let existing_user = User::find_by_username(db_pool, &request.username).await
@@ -215,7 +215,7 @@ impl ApiContext for AppState {
         }
     }
 
-    async fn get_player_info(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<PlayerData, ServerFnError> {
+    async fn get_player_info(&self, lobby_id: LobbyId, player_id: PlayerId) -> Result<PlayerData, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
         let players = lobby.get_all_players()?;
@@ -225,7 +225,7 @@ impl ApiContext for AppState {
         Ok(player)
     }
 
-    async fn leave_lobby(&self, lobby_id: String, player_id: PlayerId) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn leave_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
         lobby.remove_player(&player_id)?;
@@ -248,7 +248,7 @@ impl ApiContext for AppState {
         Ok(json!({ "message": "Left lobby" }))
     }
 
-    async fn logout(&self, username: String) -> std::result::Result<serde_json::Value, ServerFnError> {
+    async fn logout(&self, username: String) -> Result<serde_json::Value, ServerFnError> {
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
 
@@ -261,12 +261,12 @@ impl ApiContext for AppState {
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(app_state): State<Arc<AppState>>,
-    Path((lobby_id, player_id)): Path<(String, PlayerId)>,
+    Path((lobby_id, player_id)): Path<(LobbyId, PlayerId)>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, app_state, lobby_id, player_id))
 }
 
-async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: String, player_id: PlayerId) {
+async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: LobbyId, player_id: PlayerId) {
     let (mut sender, mut receiver) = socket.split();
 
     let lobby = match app_state.get_lobby(&lobby_id) {

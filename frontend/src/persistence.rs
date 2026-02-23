@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use shared::PlayerId;
+use shared::{LobbyId, PlayerId};
 use web_sys::Storage;
 
 const STORAGE_KEY_LOBBY_ID: &str = "moji_lobby_id";
@@ -18,7 +18,7 @@ pub struct AuthData {
 
 #[derive(Clone, Debug)]
 pub struct SessionData {
-    pub lobby_id: String,
+    pub lobby_id: LobbyId,
     pub player_id: PlayerId,
     pub player_name: String,
     pub is_in_game: bool,
@@ -59,7 +59,7 @@ pub fn load_session() -> Option<SessionData> {
         .unwrap_or(false);
 
     let session = SessionData {
-        lobby_id,
+        lobby_id: LobbyId(lobby_id),
         player_id: PlayerId(player_id),
         player_name,
         is_in_game,
@@ -105,7 +105,7 @@ pub fn clear_auth() {
 
 // Hook to handle session persistence
 pub fn use_session_persistence(
-    lobby_id: impl Into<Signal<String>> + 'static,
+    lobby_id: impl Into<Signal<LobbyId>> + 'static,
     player_id: impl Into<Signal<PlayerId>> + 'static,
     player_name: impl Into<Signal<String>> + 'static,
     is_in_game: impl Into<Signal<bool>> + 'static,

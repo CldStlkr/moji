@@ -1,6 +1,6 @@
 // lobby/mod.rs - Main lobby component
 use leptos::prelude::*;
-use shared::{LobbyInfo, PlayerId};
+use shared::{LobbyInfo, LobbyId, PlayerId};
 
 mod lobby_join;
 mod lobby_management;
@@ -15,13 +15,13 @@ pub use lobby_management::{GameInstructions, StatusMessage};
 #[component]
 pub fn LobbyComponent<F>(
     on_lobby_joined: F,
-    initial_lobby_id: Option<String>,
+    initial_lobby_id: Option<LobbyId>,
     initial_player_id: Option<PlayerId>,
     #[prop(optional)] on_left: Option<Callback<()>>,
     lobby_info: ReadSignal<Option<LobbyInfo>>,
 ) -> impl IntoView
 where
-    F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
+    F: Fn(LobbyId, PlayerId) + 'static + Copy + Send + Sync,
 {
     let (status, set_status) = signal(String::new());
     let (is_loading, set_is_loading) = signal(false);
@@ -41,7 +41,7 @@ where
         }
     });
 
-    let handle_lobby_joined = move |lobby_id: String, player_id: PlayerId| {
+    let handle_lobby_joined = move |lobby_id: LobbyId, player_id: PlayerId| {
         let lobby_id_clone = lobby_id.clone();
         set_current_lobby_id.set(lobby_id.clone());
         set_current_player_id.set(player_id.clone());

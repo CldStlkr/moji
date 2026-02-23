@@ -6,7 +6,7 @@ use crate::{
 };
 use leptos::ev;
 use leptos::prelude::*;
-use shared::{JoinLobbyRequest, PlayerId, create_lobby, join_lobby};
+use shared::{JoinLobbyRequest, LobbyId, PlayerId, create_lobby, join_lobby};
 use wasm_bindgen_futures::spawn_local;
 
 use super::{GameInstructions, StatusMessage};
@@ -20,7 +20,7 @@ pub fn LobbyJoinComponent<F>(
     on_lobby_joined: F,
 ) -> impl IntoView
 where
-    F: Fn(String, PlayerId) + 'static + Copy + Send + Sync,
+    F: Fn(LobbyId, PlayerId) + 'static + Copy + Send + Sync,
 {
     let input_lobby_id = RwSignal::new(String::new());
     let auth_context = use_context::<AuthContext>().expect("AuthContext missing");
@@ -44,11 +44,13 @@ where
 
             match create_lobby(request).await {
                 Ok(response) => {
-                    let lobby_id = response
+                    let lobby_id = LobbyId::from(
+                        response
                         .get("lobby_id")
                         .and_then(|id| id.as_str())
                         .unwrap_or("")
-                        .to_string();
+                        .to_string()
+                    );
                     let player_id = PlayerId::from(
                         response
                             .get("player_id")
@@ -56,7 +58,7 @@ where
                             .unwrap_or(""),
                     );
 
-                    if lobby_id.is_empty() || player_id.0.is_empty() {
+                    if lobby_id.is_empty() || player_id.is_empty() {
                         set_status.set("Invalid response from server".to_string());
                     } else {
                         let session = SessionData {
@@ -81,7 +83,7 @@ where
     };
 
     let join_lobby_action = move |_: ev::MouseEvent| {
-        let lobby_id = input_lobby_id.get();
+        let lobby_id = LobbyId::from(input_lobby_id.get());
 
         if lobby_id.trim().is_empty() {
             set_status.set("Please enter a lobby ID".to_string());

@@ -3,7 +3,7 @@ use crate::components::player_scores::CompactPlayerScoresComponent;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use shared::{PlayerId, ClientMessage, reset_lobby};
+use shared::{LobbyId, PlayerId, ClientMessage, reset_lobby};
 use wasm_bindgen_futures::spawn_local;
 
 mod header;
@@ -20,7 +20,7 @@ mod game_over;
 
 #[component]
 pub fn GameComponent<F, M>(
-    lobby_id: ReadSignal<String>,
+    lobby_id: ReadSignal<LobbyId>,
     player_id: ReadSignal<PlayerId>,
     on_exit_game: F,
     send_message: M,
@@ -158,7 +158,7 @@ where
             // Lobby Info
             <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm relative transition-colors">
                 <span class="text-gray-700 dark:text-gray-300">"Lobby ID:"</span>
-                <span class="font-bold tracking-wider text-blue-600 dark:text-blue-400">{lobby_id}</span>
+                <span class="font-bold tracking-wider text-blue-600 dark:text-blue-400">{lobby_id.get().0}</span>
                 <button
                     on:click=copy_lobby_id
                     class="ml-2 px-1 py-0.5 text-xs font-medium bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded transition-all duration-200 hover:bg-blue-50 dark:hover:bg-gray-500 hover:border-blue-400 hover:shadow-sm active:scale-95 active:bg-blue-100 dark:text-gray-200"

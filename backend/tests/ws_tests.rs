@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use shared::{ApiContext, JoinLobbyRequest, StartGameRequest, PlayerId};
+use shared::{ApiContext, JoinLobbyRequest, StartGameRequest, PlayerId, LobbyId};
 
 type WsStream =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -79,7 +79,7 @@ async fn test_ws_connect_receives_player_list() {
 async fn test_ws_second_player_join_broadcast() {
     let (addr, state) = spawn_server().await;
     let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
-    let lobby_id = create["lobby_id"].as_str().unwrap().to_string();
+    let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
     let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;
@@ -96,7 +96,7 @@ async fn test_ws_second_player_join_broadcast() {
 async fn test_ws_typing_broadcast() {
     let (addr, state) = spawn_server().await;
     let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
-    let lobby_id = create["lobby_id"].as_str().unwrap().to_string();
+    let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
     let join = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
@@ -123,7 +123,7 @@ async fn test_ws_typing_broadcast() {
 async fn test_ws_game_start_broadcast() {
     let (addr, state) = spawn_server().await;
     let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
-    let lobby_id = create["lobby_id"].as_str().unwrap().to_string();
+    let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
     let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;
@@ -146,7 +146,7 @@ async fn test_ws_game_start_broadcast() {
 async fn test_ws_correct_submit_increments_score() {
     let (addr, state) = spawn_server().await;
     let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
-    let lobby_id = create["lobby_id"].as_str().unwrap().to_string();
+    let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
     let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;

@@ -5,13 +5,13 @@ use crate::{
 };
 use leptos::ev;
 use leptos::prelude::*;
-use shared::{LobbyInfo, PlayerData, PlayerId, StartGameRequest, start_game};
+use shared::{LobbyInfo, LobbyId, PlayerData, PlayerId, StartGameRequest, start_game};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
 pub fn LobbyManagementComponent<F>(
     lobby_info: ReadSignal<Option<LobbyInfo>>,
-    current_lobby_id: ReadSignal<String>,
+    current_lobby_id: ReadSignal<LobbyId>,
     current_player_id: ReadSignal<PlayerId>,
     _is_loading: ReadSignal<bool>,
     set_is_loading: WriteSignal<bool>,
@@ -110,7 +110,7 @@ where
 
 #[component]
 fn LobbyHeader<F>(
-    lobby_id: ReadSignal<String>,
+    lobby_id: ReadSignal<LobbyId>,
     on_copy_id: F,
     is_copied: ReadSignal<bool>,
 ) -> impl IntoView
@@ -122,7 +122,7 @@ where
             <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
                 "Lobby: "
                 <span class="font-mono font-bold tracking-wider text-blue-600 dark:text-blue-400">
-                    {lobby_id.get()}
+                    {move || lobby_id.get().to_string()}
                 </span>
             </h2>
             <button

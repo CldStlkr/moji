@@ -2,7 +2,7 @@
 
 use moji_frontend::error::{get_user_friendly_message, ClientError};
 use moji_frontend::persistence::{clear_session, load_session, save_session, SessionData};
-use shared::{GameStatus, PlayerId};
+use shared::{GameStatus, LobbyId, PlayerId};
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -15,7 +15,7 @@ fn test_session_persistence_basic() {
 
     // Create test session data (using the main branch structure)
     let session = SessionData {
-        lobby_id: "TEST123".to_string(),
+        lobby_id: LobbyId("TEST123".to_string()),
         player_id: PlayerId("player1".to_string()),
         player_name: "Test Player".to_string(),
         is_in_game: true,
@@ -75,7 +75,7 @@ fn test_session_edge_cases() {
 
     // Test with empty values
     let empty_session = SessionData {
-        lobby_id: "".to_string(),
+        lobby_id: LobbyId::default(),
         player_id: PlayerId::default(),
         player_name: "".to_string(),
         is_in_game: false,

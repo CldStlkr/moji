@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use shared::PlayerId;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
@@ -7,12 +6,12 @@ use crate::{
     components::{game::GameComponent, lobby::LobbyComponent, shared_socket::{use_shared_socket, UseSharedSocketConfig}},
     persistence::{clear_session, load_session, use_session_persistence},
 };
-use shared::{LobbyInfo, get_player_info, get_lobby_info, leave_lobby};
+use shared::{LobbyInfo, LobbyId, PlayerId, get_player_info, get_lobby_info, leave_lobby};
 use std::collections::HashMap;
 
 #[component]
 pub fn Home() -> impl IntoView {
-    let lobby_id = RwSignal::new(String::new());
+    let lobby_id = RwSignal::new(LobbyId::default());
     let player_id = RwSignal::new(PlayerId::default());
     let player_name = RwSignal::new(String::new());
     let is_restoring = RwSignal::new(true);
@@ -37,7 +36,7 @@ pub fn Home() -> impl IntoView {
 
     let is_in_game = Signal::derive(move || {
         lobby_info.get().map(|info| 
-            info.status == shared::GameStatus::Playing || 
+            info.status == shared::GameStatus::Playing ||
             info.status == shared::GameStatus::Finished
         ).unwrap_or(false)
     });
@@ -83,7 +82,7 @@ pub fn Home() -> impl IntoView {
         }
     });
 
-    let handle_lobby_joined = move |new_lobby_id: String, new_player_id: PlayerId| {
+    let handle_lobby_joined = move |new_lobby_id: LobbyId, new_player_id: PlayerId| {
         lobby_id.set(new_lobby_id.clone());
         player_id.set(new_player_id);
         // We no longer set is_in_game=true here manually; it happens when server sends GameState
@@ -97,7 +96,7 @@ pub fn Home() -> impl IntoView {
         spawn_local(async move {
             let _ = leave_lobby(current_lobby_id, current_player_id).await;
 
-            lobby_id.set(String::new());
+            lobby_id.set(LobbyId::default());
             player_id.set(PlayerId::default());
             player_name.set(String::new());
             lobby_info.set(None);

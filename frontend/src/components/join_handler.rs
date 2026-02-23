@@ -6,7 +6,7 @@ use crate::{
     persistence::SessionData,
     components::home::Home,
 };
-use shared::{JoinLobbyRequest, PlayerId, join_lobby};
+use shared::{JoinLobbyRequest, LobbyId, PlayerId, join_lobby};
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
@@ -26,7 +26,7 @@ pub fn JoinHandler() -> impl IntoView {
         let id = lobby_id();
         if !id.is_empty() {
             if let Some(session) = crate::persistence::load_session() {
-                if session.lobby_id == id {
+                if session.lobby_id == LobbyId::from(id.clone()) {
                     set_view_game.set(true);
                 }
             }
@@ -55,7 +55,9 @@ pub fn JoinHandler() -> impl IntoView {
                     player_name: user.username.clone(),
                 };
 
-                match join_lobby(id.clone(), request).await {
+                let lobby_id = LobbyId::from(id.clone());
+
+                match join_lobby(lobby_id.clone(), request).await {
                     Ok(response) => {
                          let player_id = PlayerId::from(
                             response
@@ -70,7 +72,7 @@ pub fn JoinHandler() -> impl IntoView {
                         } else {
                              // Save session
                             let session = SessionData {
-                                lobby_id: id.clone(),
+                                lobby_id,
                                 player_id: player_id.clone(),
                                 player_name: user.username.clone(),
                                 is_in_game: false,

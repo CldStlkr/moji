@@ -1,11 +1,11 @@
 
 use leptos::prelude::*;
-use shared::{GameSettings, PlayerId, UpdateSettingsRequest, GameMode, update_lobby_settings};
+use shared::{GameSettings, LobbyId, PlayerId, UpdateSettingsRequest, GameMode, update_lobby_settings};
 use wasm_bindgen_futures::spawn_local;
 
 /// Hook to handle updating lobby settings
 pub fn use_lobby_settings(
-    lobby_id: String,
+    lobby_id: LobbyId,
     player_id: PlayerId,
 ) -> Callback<GameSettings> {
     Callback::new(move |new_settings: GameSettings| {

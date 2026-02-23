@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use shared::{LobbyInfo, PlayerId, ClientMessage, ServerMessage};
+use shared::{LobbyInfo, LobbyId, PlayerId, ClientMessage, ServerMessage};
 use wasm_bindgen_futures::spawn_local;
 use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
@@ -8,7 +8,7 @@ use futures::future::{select, Either};
 
 #[derive(Clone)]
 pub struct UseSharedSocketConfig {
-    pub lobby_id: ReadSignal<String>,
+    pub lobby_id: ReadSignal<LobbyId>,
     pub player_id: ReadSignal<PlayerId>,
 
     // Central state that home manages
