@@ -64,7 +64,7 @@ impl ApiContext for AppState {
         let lobby = self.lobbies.write(|lobbies| {
             lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
         }).map_err(|e| ServerFnError::new(e.to_string()))??;
-        
+
         lobby.get_lobby_info(&lobby_id).map_err(|e| ServerFnError::new(e.to_string()))
     }
 
@@ -72,7 +72,7 @@ impl ApiContext for AppState {
         let lobby = self.lobbies.write(|lobbies| {
             lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
         }).map_err(|e| ServerFnError::new(e.to_string()))??;
-        
+
         lobby.update_settings(&request.player_id, request.settings).map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(json!({ "message": "Settings updated successfully" }))
     }
@@ -81,7 +81,7 @@ impl ApiContext for AppState {
         let lobby = self.lobbies.write(|lobbies| {
             lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
         }).map_err(|e| ServerFnError::new(e.to_string()))??;
-        
+
         lobby.start_game(&request.player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(json!({ "message": "Game started successfully" }))
     }
@@ -90,7 +90,7 @@ impl ApiContext for AppState {
         let lobby = self.lobbies.write(|lobbies| {
             lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
         }).map_err(|e| ServerFnError::new(e.to_string()))??;
-        
+
         lobby.reset_lobby(&player_id).map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(json!({ "message": "Lobby reset successfully" }))
     }
@@ -99,9 +99,9 @@ impl ApiContext for AppState {
         let lobby = self.lobbies.write(|lobbies| {
             lobbies.get(&lobby_id).cloned().ok_or_else(|| ServerFnError::new(format!("Lobby not found: {}", lobby_id)))
         }).map_err(|e| ServerFnError::new(e.to_string()))??;
-        
+
         let players = lobby.get_all_players().map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+
         let player_data: Vec<_> = players.into_iter().map(|p| {
             json!({
                 "id": p.id,
@@ -282,9 +282,9 @@ impl ApiContext for AppState {
     async fn logout(&self, username: String) -> std::result::Result<serde_json::Value, ServerFnError> {
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
-            
+
         User::delete_guest_by_username(db_pool, &username).await.map_err(|e| ServerFnError::new(e.to_string()))?;
-            
+
         Ok(json!({ "message": "Logged out" }))
     }
 }

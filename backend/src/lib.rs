@@ -219,7 +219,7 @@ impl LobbyState {
         })??;
 
         let settings = self.settings.read(|s| s.clone())?;
-        
+
         {
             let levels = &settings.difficulty_levels;
             let weighted = settings.weighted;
@@ -308,12 +308,12 @@ impl LobbyState {
             }
 
             let normalized_name = trimmed_name.split_whitespace().collect::<Vec<&str>>().join(" ");
-            
-            
+
+
             // Allow duplicate names? Original didn't check. 
             // We'll proceed with adding the player.
 
-            
+
             players.push(PlayerData {
                 id: player_id.clone(),
                 name: normalized_name,
@@ -421,7 +421,7 @@ impl LobbyState {
     pub fn get_all_players(&self) -> Result<Vec<shared::PlayerData>> {
         let status = self.game_status.read(|s| *s)?;
         let settings = self.settings.read(|s| s.clone())?;
-        
+
         // Lock players and potentially turn_order/current_turn_index
         self.players.read(|players| {
              let mut shared_players: Vec<shared::PlayerData> = players.iter().map(|p| shared::PlayerData {
@@ -553,7 +553,7 @@ impl LobbyState {
              })
         })?
     }
-    
+
     pub fn process_guess(&self, player_id: &PlayerId, input: &str) -> Result<()> {
         let (settings, status) = {
              let st = self.game_status.read(|s| *s)?;

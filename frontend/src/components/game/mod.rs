@@ -208,7 +208,7 @@ where
                         })
                     />
 
-                    <GameFeedback 
+                    <GameFeedback
                         content_mode=lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
                         result=result
                         error_message=error_message.read_only()

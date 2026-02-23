@@ -10,10 +10,10 @@ use futures::future::{select, Either};
 pub struct UseSharedSocketConfig {
     pub lobby_id: ReadSignal<String>,
     pub player_id: ReadSignal<PlayerId>,
-    
+
     // Central state that home manages
     pub set_lobby_info: WriteSignal<Option<LobbyInfo>>,
-    
+
     // Game specific states (prompt, word result, typing status) that could also conceptually live in Home,
     // but we can pass them down to Game via context or keep them isolated.
     // For now we will update global signals that Home passes to Game.

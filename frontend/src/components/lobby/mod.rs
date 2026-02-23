@@ -46,9 +46,9 @@ where
         set_current_lobby_id.set(lobby_id.clone());
         set_current_player_id.set(player_id.clone());
         set_in_lobby.set(true);
-        
+
         navigate_path.set(Some(format!("/join/{}", lobby_id_clone)));
-        
+
         on_lobby_joined(lobby_id, player_id);
     };
 

@@ -46,7 +46,7 @@ pub fn GameOver(
     view! {
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 animate-fade-in backdrop-blur-sm">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 transform transition-all scale-100 animate-scale-in text-center border-2 border-gray-100 dark:border-gray-700">
-                
+
                 <div class="mb-6">
                     <span class="text-6xl mb-4 block">
                         {if is_winner { "🏆" } else { "💀" }}
@@ -63,7 +63,7 @@ pub fn GameOver(
                             GameMode::Duel => "Last player standing!",
                         }}
                     </p>
-                    
+
                     <div class="py-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                         <p class="text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold mb-1">
                             "Winner"
