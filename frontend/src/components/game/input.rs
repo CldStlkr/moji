@@ -32,8 +32,8 @@ where
     F2: Fn(ev::MouseEvent) + 'static + Copy,
     F3: Fn(ev::KeyboardEvent) + 'static + Copy,
 {
-
     let mode = StoredValue::new(content_mode);
+
 
     window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
         let key = e.key();

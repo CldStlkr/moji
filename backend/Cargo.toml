@@ -33,6 +33,7 @@ argon2 = "0.5.3"
 leptos = { version = "0.8.16", features = ["ssr"] }
 leptos_axum = { version = "0.8.8" }
 async-trait = { version = "0.1.89" }
+parking_lot = { version = "0.12.5" }
 
 [dev-dependencies]
 axum-test = "18.7"

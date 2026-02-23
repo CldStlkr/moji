@@ -122,8 +122,12 @@ where
                 Ok(_) => {
                     is_copied.set(true);
 
-                    gloo_timers::future::TimeoutFuture::new(1000).await;
-                    is_copied.set(false);
+                    set_timeout(
+                        move || {
+                            is_copied.set(false);
+                        },
+                        std::time::Duration::from_millis(1000),
+                    );
                 }
                 Err(_) => {
                     leptos::logging::log!("Failed to copy to clipboard")

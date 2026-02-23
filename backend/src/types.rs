@@ -1,17 +1,16 @@
 use crate::{error::AppError, LobbyState};
 use sqlx::{Pool, Postgres};
-use std::{
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
+use parking_lot::RwLock;
 
 // Newtype wrapper for Arc<Mutex<T>>
 #[derive(Clone)]
-pub struct Shared<T>(Arc<Mutex<T>>);
+pub struct Shared<T>(Arc<RwLock<T>>);
 
 impl<T> Shared<T> {
     /// Create a new shared value
     pub fn new(value: T) -> Self {
-        Self(Arc::new(Mutex::new(value)))
+        Self(Arc::new(RwLock::new(value)))
     }
 
     /// Execute a closure with mutable access to the shared value
@@ -20,10 +19,7 @@ impl<T> Shared<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        let mut guard = self
-            .0
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))?;
+        let mut guard = self.0.write();
         Ok(f(&mut *guard))
     }
 
@@ -33,10 +29,7 @@ impl<T> Shared<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        let guard = self
-            .0
-            .lock()
-            .map_err(|e| AppError::LockError(e.to_string()))?;
+        let guard = self.0.read();
         Ok(f(&*guard))
     }
 

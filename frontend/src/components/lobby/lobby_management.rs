@@ -76,8 +76,12 @@ where
                 Ok(_) => {
                     is_copied.set(true);
 
-                    gloo_timers::future::TimeoutFuture::new(1000).await;
-                    is_copied.set(false);
+                    set_timeout(
+                        move || {
+                            is_copied.set(false);
+                        },
+                        std::time::Duration::from_millis(1000),
+                    );
                 }
                 Err(_) => {
                     leptos::logging::log!("Failed to copy to clipboard")
@@ -97,31 +101,13 @@ where
     view! {
         <div class=lobby_container()>
             <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
-
-            <Show
-                when=move || lobby_info.get().is_some()
-                fallback=|| {
-                    view! {
-                        <div class=loading_text()>"Loading lobby info..."</div>
-                    }
-                }
-            >
-                {move || {
-                    lobby_info
-                        .get()
-                        .map(|info| {
-                            view! {
-                                <LobbyDetails
-                                    lobby_info=info
-                                    current_player_id=current_player_id
-                                    is_leader=is_leader
-                                    on_start_game=start_game_action
-                                    on_leave_lobby=on_leave_lobby
-                                />
-                            }
-                        })
-                }}
-            </Show>
+            <LobbyDetails
+                lobby_info=lobby_info
+                current_player_id=current_player_id
+                is_leader=is_leader
+                on_start_game=start_game_action
+                on_leave_lobby=on_leave_lobby
+            />
         </div>
     }
 }
@@ -179,7 +165,7 @@ pub fn StatusMessage(status: ReadSignal<String>) -> impl IntoView {
 
 #[component]
 fn LobbyDetails<F1, F2>(
-    lobby_info: LobbyInfo,
+    lobby_info: ReadSignal<Option<LobbyInfo>>,
     current_player_id: ReadSignal<PlayerId>,
     is_leader: impl Fn() -> bool + 'static + Copy + Send + Sync,
     on_start_game: F1,
@@ -189,41 +175,57 @@ where
     F1: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
     F2: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
-    let player_count = lobby_info.players.len();
-    let max_players = lobby_info.settings.max_players;
-    let leader_id = lobby_info.leader_id.clone();
-    let _status = lobby_info.status;
+    let settings = Signal::derive(move || {
+        lobby_info.get()
+            .map(|i| i.settings)
+            .unwrap_or_default()
+    });
 
-    let settings = lobby_info.settings.clone();
-    let lobby_id = lobby_info.lobby_id.clone();
-    let player_id = current_player_id.get();
+    let player_id = current_player_id.get_untracked();
+    let lobby_id_for_settings = Signal::derive(move || {
+        lobby_info.get()
+            .map(|i| i.lobby_id)
+            .unwrap_or_default()
+    });
 
-    let update_settings = use_lobby_settings(lobby_id, player_id);
-
+    let on_update = use_lobby_settings(lobby_id_for_settings.get_untracked(), player_id);
 
     view! {
-        <div class="space-y-6">
-            <PlayersList
-                players=lobby_info.players
-                current_player_id=current_player_id
-                leader_id=leader_id
-                player_count=player_count
-                max_players=max_players
-            />
+        <Show
+            when=move || lobby_info.get().is_some()
+            fallback=|| view! { <div class=loading_text()>"Loading lobby info..."</div> }
+        >
+            {move || lobby_info.get().map(|info| {
+                let player_count = info.players.len();
+                let max_players = info.settings.max_players;
+                let leader_id = info.leader_id.clone();
 
-            <LobbySettingsPanel 
-                settings=settings 
-                is_leader=is_leader() 
-                on_update=update_settings
-            />
+                view! {
+                    <div class="space-y-6">
+                        <PlayersList
+                            players=info.players
+                            current_player_id=current_player_id
+                            leader_id=leader_id
+                            player_count=player_count
+                            max_players=max_players
+                        />
 
-            <LobbyActions
-                is_leader=is_leader
-                player_count=player_count
-                on_start_game=on_start_game
-                on_leave_lobby=on_leave_lobby
-            />
-        </div>
+                        <LobbySettingsPanel
+                            settings=settings
+                            is_leader=is_leader()
+                            on_update=on_update
+                        />
+
+                        <LobbyActions
+                            is_leader=is_leader
+                            player_count=player_count
+                            on_start_game=on_start_game
+                            on_leave_lobby=on_leave_lobby
+                        />
+                    </div>
+                }
+            })}
+        </Show>
     }
 }
 

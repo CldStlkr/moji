@@ -23,7 +23,6 @@ web-sys = { version = "0.3.86", features = [
   "Storage",
 ] }
 gloo-net = "0.6.0"
-gloo-timers = { version = "0.3.0", features = ["futures"] }
 console_error_panic_hook = "0.1.7"
 futures = "0.3.32"
 async-trait = "0.1.86"

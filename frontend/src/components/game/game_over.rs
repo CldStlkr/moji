@@ -11,10 +11,7 @@ pub fn GameOver(
     #[prop(into)] on_exit: Callback<()>,
 ) -> impl IntoView
 {
-    Effect::new(move |_| {
-        // Just triggering reactivity
-        let _ = is_leader.get();
-    });
+    Effect::new(move |_| { let _ = is_leader.get(); });
 
     // Determine winner(s)
     let winner = match mode {
