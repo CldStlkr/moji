@@ -2,11 +2,29 @@
 use crate::{
     error::{get_user_friendly_message, log_error},
     components::lobby::settings::{LobbySettingsPanel, use_lobby_settings},
+    styled_view,
 };
 use leptos::ev;
 use leptos::prelude::*;
 use shared::{LobbyInfo, LobbyId, PlayerData, PlayerId, StartGameRequest, start_game};
 use wasm_bindgen_futures::spawn_local;
+
+styled_view!(lobby_container, "max-w-2xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors");
+styled_view!(loading_text, "text-lg text-gray-500 text-center");
+styled_view!(header_container, "flex justify-between items-center mb-6 relative");
+styled_view!(header_title, "text-2xl font-bold text-gray-800 dark:text-gray-100");
+styled_view!(lobby_id_span, "font-mono font-bold tracking-wider text-blue-600 dark:text-blue-400");
+styled_view!(copy_button, "px-2 py-1 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-gray-800 dark:text-gray-200");
+styled_view!(copied_toast, "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none");
+
+styled_view!(player_list_title, "text-xl font-semibold text-blue-600 dark:text-blue-400 border-b border-gray-200 dark:border-gray-700 pb-2");
+styled_view!(player_item, is_current: bool, 
+    "flex justify-between items-center p-3 rounded border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200", 
+    if is_current { "bg-blue-50 dark:bg-blue-900/30 font-semibold" } else { "" }
+);
+
+styled_view!(btn_start_game, "bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded transition-colors");
+styled_view!(btn_leave_lobby, "bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-400 dark:border-gray-500 font-medium py-2 px-4 rounded transition-colors");
 
 #[component]
 pub fn LobbyManagementComponent<F>(
@@ -77,14 +95,14 @@ where
     };
 
     view! {
-        <div class="max-w-2xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors">
+        <div class=lobby_container()>
             <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
 
             <Show
                 when=move || lobby_info.get().is_some()
                 fallback=|| {
                     view! {
-                        <div class="text-lg text-gray-500 text-center">"Loading lobby info..."</div>
+                        <div class=loading_text()>"Loading lobby info..."</div>
                     }
                 }
             >
@@ -118,16 +136,16 @@ where
     F: Fn(ev::MouseEvent) + 'static + Copy,
 {
     view! {
-        <div class="flex justify-between items-center mb-6 relative">
-            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
+        <div class=header_container()>
+            <h2 class=header_title()>
                 "Lobby: "
-                <span class="font-mono font-bold tracking-wider text-blue-600 dark:text-blue-400">
+                <span class=lobby_id_span()>
                     {move || lobby_id.get().to_string()}
                 </span>
             </h2>
             <button
                 on:click=on_copy_id
-                class="px-2 py-1 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-gray-800 dark:text-gray-200"
+                class=copy_button()
                 title="Copy Lobby ID"
             >
                 "Copy"
@@ -136,7 +154,7 @@ where
 
         // Floating "Copied!" text using Show
         <Show when=move || is_copied.get()>
-            <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none">
+            <div class=copied_toast()>
                 "Copied!"
             </div>
         </Show>
@@ -199,8 +217,6 @@ where
                 on_update=update_settings
             />
 
-
-
             <LobbyActions
                 is_leader=is_leader
                 player_count=player_count
@@ -221,7 +237,7 @@ fn PlayersList(
 ) -> impl IntoView {
     view! {
         <div class="space-y-4">
-            <h3 class="text-xl font-semibold text-blue-600 dark:text-blue-400 border-b border-gray-200 dark:border-gray-700 pb-2">
+            <h3 class=player_list_title()>
                 "Players (" {player_count} "/" {max_players} ")"
             </h3>
             <ul class="space-y-2">
@@ -231,10 +247,7 @@ fn PlayersList(
                         let is_current = player.id == current_player_id.get();
                         let is_leader = player.id == leader_id;
                         view! {
-                            <li class=format!(
-                                "flex justify-between items-center p-3 rounded border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 {}",
-                                if is_current { "bg-blue-50 dark:bg-blue-900/30 font-semibold" } else { "" },
-                            )>
+                            <li class=move || player_item(is_current)>
                                 <span class="font-medium">{player.name}</span>
                                 <div class="flex items-center gap-2">
                                     <Show when=move || is_leader>
@@ -283,7 +296,7 @@ where
                 <button
                     on:click=on_start_game
                     disabled=move || player_count < 1
-                    class="bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded transition-colors"
+                    class=btn_start_game()
                 >
                     "Start Game"
                 </button>
@@ -296,7 +309,7 @@ where
 
             <button
                 on:click=on_leave_lobby
-                class="bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-400 dark:border-gray-500 font-medium py-2 px-4 rounded transition-colors"
+                class=btn_leave_lobby()
             >
                 "Leave Lobby"
             </button>

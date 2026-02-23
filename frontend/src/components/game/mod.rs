@@ -1,5 +1,6 @@
-
 use crate::components::player_scores::CompactPlayerScoresComponent;
+use crate::styled_view;
+use crate::error::get_user_friendly_message;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
@@ -17,6 +18,13 @@ use feedback::GameFeedback;
 use game_over::GameOver;
 
 mod game_over;
+
+styled_view!(game_container, "max-w-6xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors");
+styled_view!(lobby_info_bar, "flex items-center gap-2 mb-6 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm relative transition-colors");
+styled_view!(lobby_id_label, "text-gray-700 dark:text-gray-300");
+styled_view!(lobby_id_value, "font-bold tracking-wider text-blue-600 dark:text-blue-400");
+styled_view!(copy_btn, "ml-2 px-1 py-0.5 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded transition-all duration-200 hover:bg-blue-50 dark:hover:bg-gray-500 hover:border-blue-400 hover:shadow-sm active:scale-95 active:bg-blue-100 dark:text-gray-200");
+styled_view!(copied_msg, "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none");
 
 #[component]
 pub fn GameComponent<F, M>(
@@ -105,12 +113,12 @@ where
     };
 
     let copy_lobby_id = move |_: ev::MouseEvent| {
-        let lobby_id = lobby_id.get();
+        let id_str = lobby_id.get().to_string();
         spawn_local(async move {
             let window = web_sys::window().expect("global window");
             let navigator = window.navigator();
             let clipboard = navigator.clipboard();
-            match wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await {
+            match wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&id_str)).await {
                 Ok(_) => {
                     is_copied.set(true);
 
@@ -125,17 +133,21 @@ where
     };
 
     let handle_return_to_lobby = move || {
-        let lobby_id = lobby_id.get_untracked();
-        let player_id = player_id.get_untracked();
+        let lid = lobby_id.get();
+        let pid = player_id.get();
 
-        spawn_local(async move { let _ = reset_lobby(lobby_id, player_id).await; });
+        spawn_local(async move {
+            if let Err(e) = reset_lobby(lid, pid).await {
+                error_message.set(get_user_friendly_message(e));
+            }
+        });
     };
 
     let player_name = Signal::derive(move || {
         lobby_info.get()
             .and_then(|info| info.players.into_iter().find(|p| p.id == player_id.get()))
             .map(|p| p.name)
-            .unwrap_or_default()
+            .unwrap_or_else(|| "Unknown".to_string())
     });
 
     let score = Signal::derive(move || {
@@ -146,7 +158,7 @@ where
     });
 
     view! {
-        <div class="max-w-6xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors">
+        <div class=game_container()>
 
             <GameHeader
                 content_mode=lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
@@ -156,12 +168,12 @@ where
             />
 
             // Lobby Info
-            <div class="flex items-center gap-2 mb-6 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm relative transition-colors">
-                <span class="text-gray-700 dark:text-gray-300">"Lobby ID:"</span>
-                <span class="font-bold tracking-wider text-blue-600 dark:text-blue-400">{lobby_id.get().0}</span>
+            <div class=lobby_info_bar()>
+                <span class=lobby_id_label()>"Lobby ID:"</span>
+                <span class=lobby_id_value()>{move || lobby_id.get().to_string()}</span>
                 <button
                     on:click=copy_lobby_id
-                    class="ml-2 px-1 py-0.5 text-xs font-medium bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded transition-all duration-200 hover:bg-blue-50 dark:hover:bg-gray-500 hover:border-blue-400 hover:shadow-sm active:scale-95 active:bg-blue-100 dark:text-gray-200"
+                    class=copy_btn()
                     title="Copy Lobby ID"
                 >
                     "Copy"
@@ -169,7 +181,7 @@ where
 
                 // Floating "Copied!" text using Show
                 <Show when=move || is_copied.get()>
-                    <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none">
+                    <div class=copied_msg()>
                         "Copied!"
                     </div>
                 </Show>

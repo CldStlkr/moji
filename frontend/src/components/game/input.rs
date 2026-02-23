@@ -1,8 +1,19 @@
+use crate::styled_view;
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
 use leptos_dom::helpers::window_event_listener;
 use shared::ContentMode;
+
+styled_view!(game_input_field, "w-full p-3 text-lg border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed");
+styled_view!(game_submit_button, disabled: bool,
+    "w-full text-white font-semibold py-3 px-5 rounded transition-all duration-200",
+    if disabled {
+        "bg-gray-400 dark:bg-gray-600 cursor-not-allowed transform-none"
+    } else {
+        "bg-blue-500 hover:bg-blue-600 hover:-translate-y-0.5 active:translate-y-0.5"
+    }
+);
 
 #[component]
 pub fn GameInput<F1, F2, F3>(
@@ -41,6 +52,12 @@ where
             }
         }
     });
+
+    let is_btn_disabled = move || {
+        is_loading.get() || word.get().trim().is_empty()
+            || prompt.get().is_empty() || disabled.get()
+    };
+
     view! {
         <div class="space-y-4">
             <input
@@ -58,16 +75,13 @@ where
                     }
                 }
                 disabled=move || is_loading.get() || disabled.get()
-                class="w-full p-3 text-lg border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                class=game_input_field()
             />
 
             <button
                 on:click=on_submit
-                disabled=move || {
-                    is_loading.get() || word.get().trim().is_empty()
-                        || prompt.get().is_empty() || disabled.get()
-                }
-                class="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-5 rounded transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0.5 disabled:transform-none"
+                disabled=is_btn_disabled
+                class=move || game_submit_button(is_btn_disabled())
             >
                 "Submit"
             </button>

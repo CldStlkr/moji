@@ -3,6 +3,7 @@ use crate::{
     error::{get_user_friendly_message, log_error},
     persistence::SessionData,
     context::AuthContext,
+    styled_view,
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -10,6 +11,12 @@ use shared::{JoinLobbyRequest, LobbyId, PlayerId, create_lobby, join_lobby};
 use wasm_bindgen_futures::spawn_local;
 
 use super::{GameInstructions, StatusMessage};
+
+styled_view!(card_container, "card max-w-2xl mx-auto my-8 bg-white dark:bg-gray-800 shadow-lg p-8 rounded-lg transition-colors");
+styled_view!(card_title, "text-3xl font-bold text-gray-800 dark:text-gray-100 mb-8 text-center");
+styled_view!(btn_primary, "w-full text-lg bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-semibold py-3 px-5 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all");
+styled_view!(input_field, "flex-1 p-3 border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded-md text-base transition-colors focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none");
+styled_view!(btn_secondary, "btn-secondary whitespace-nowrap bg-orange-300 hover:bg-orange-400 dark:bg-orange-600 dark:hover:bg-orange-700 text-gray-800 dark:text-gray-100 font-semibold py-3 px-4 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all");
 
 #[component]
 pub fn LobbyJoinComponent<F>(
@@ -146,8 +153,8 @@ where
     };
 
     view! {
-        <div class="card max-w-2xl mx-auto my-8 bg-white dark:bg-gray-800 shadow-lg p-8 rounded-lg transition-colors">
-            <h2 class="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-8 text-center">
+        <div class=card_container()>
+            <h2 class=card_title()>
                 "Join or Create a Game"
             </h2>
             <div class="space-y-6">
@@ -156,7 +163,7 @@ where
                 <button
                     on:click=create_lobby_action
                     disabled=move || is_loading.get()
-                    class="btn-primary w-full text-lg bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-semibold py-3 px-5 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                    class=btn_primary()
                 >
                     "Create New Game"
                 </button>
@@ -169,14 +176,14 @@ where
                         on:keydown=handle_key_press
                         placeholder="Enter Lobby ID"
                         disabled=move || is_loading.get()
-                        class="input-field flex-1 p-3 border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded-md text-base transition-colors focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none"
+                        class=input_field()
                     />
                     <button
                         on:click=join_lobby_action
                         disabled=move || {
                             is_loading.get() || input_lobby_id.get().trim().is_empty()
                         }
-                        class="btn-secondary whitespace-nowrap bg-orange-300 hover:bg-orange-400 dark:bg-orange-600 dark:hover:bg-orange-700 text-gray-800 dark:text-gray-100 font-semibold py-3 px-4 rounded disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                        class=btn_secondary()
                     >
                         "Join Game"
                     </button>
