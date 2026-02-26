@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, username, created_at, last_login, total_games_played, password_hash, is_guest\n            FROM users \n            WHERE username = $1\n            ",
+  "query": "\n            SELECT id, username, created_at, last_login, total_games_played, password_hash,\n                is_guest as \"is_guest!: bool\"\n            FROM users \n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -35,13 +35,13 @@
       },
       {
         "ordinal": 6,
-        "name": "is_guest",
+        "name": "is_guest!: bool",
         "type_info": "Bool"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -54,5 +54,5 @@
       false
     ]
   },
-  "hash": "3e84f60b7a0145cec9f1aee8ae27ce46c602b969a5bdb2821f75bf5e3e818b2c"
+  "hash": "aa605b8b0308fa58c8feb94c0289f1a38ae34f09bb067a3d5ab8529efe1af63d"
 }
