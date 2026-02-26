@@ -46,3 +46,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "moji-server"
 path = "src/main.rs"
+
+[env]
+SQLX_OFFLINE = "true"

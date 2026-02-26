@@ -35,7 +35,8 @@ impl User {
             r#"
             INSERT INTO users (username, password_hash, is_guest) 
             VALUES ($1, $2, $3) 
-            RETURNING id, username, created_at, last_login, total_games_played, password_hash, is_guest
+            RETURNING id, username, created_at, last_login, total_games_played, password_hash,
+                is_guest as "is_guest!: bool"
             "#,
             username,
             password_hash,
@@ -62,7 +63,8 @@ impl User {
         sqlx::query_as!(
             User,
             r#"
-            SELECT id, username, created_at, last_login, total_games_played, password_hash, is_guest
+            SELECT id, username, created_at, last_login, total_games_played, password_hash,
+                is_guest as "is_guest!: bool"
             FROM users 
             WHERE id = $1
             "#,
@@ -80,7 +82,8 @@ impl User {
         sqlx::query_as!(
             User,
             r#"
-            SELECT id, username, created_at, last_login, total_games_played, password_hash, is_guest
+            SELECT id, username, created_at, last_login, total_games_played, password_hash,
+                is_guest as "is_guest!: bool"
             FROM users 
             WHERE username = $1
             "#,
@@ -128,8 +131,9 @@ impl User {
         sqlx::query_as!(
             User,
             r#"
-            SELECT id, username, created_at, last_login, total_games_played, password_hash, is_guest
-            FROM users 
+            SELECT id, username, created_at, last_login, total_games_played, password_hash,
+                is_guest as "is_guest!: bool"
+            FROM users
             ORDER BY total_games_played DESC
             LIMIT $1
             "#,

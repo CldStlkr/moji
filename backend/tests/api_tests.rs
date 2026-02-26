@@ -1,4 +1,4 @@
-use moji::AppState;
+use moji::state::AppState;
 use shared::{ApiContext, JoinLobbyRequest, StartGameRequest, UpdateSettingsRequest, LobbyId};
 use std::sync::Arc;
 

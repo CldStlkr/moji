@@ -3,7 +3,7 @@ use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use parking_lot::RwLock;
 
-// Newtype wrapper for Arc<Mutex<T>>
+// Newtype wrapper for Arc<RwLock<T>>
 #[derive(Clone)]
 pub struct Shared<T>(Arc<RwLock<T>>);
 

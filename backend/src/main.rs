@@ -5,7 +5,7 @@ use axum::{
 use moji::{
     api::ws_handler,
     db::init_db_pool,
-    AppState,
+    state::AppState,
 };
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tower::ServiceBuilder;

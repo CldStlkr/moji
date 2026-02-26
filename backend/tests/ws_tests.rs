@@ -5,7 +5,7 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use moji::{
     api::ws_handler,
-    AppState,
+    state::AppState,
 };
 use serde_json::{json, Value};
 use std::{net::SocketAddr, sync::Arc, time::Duration};

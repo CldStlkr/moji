@@ -1,9 +1,11 @@
 use crate::{
-    generate_lobby_id, generate_player_id, AppState,
-    GameStatus, LobbyState, models::{
+    generate_lobby_id, generate_player_id,
+    GameStatus, models::{
         user::User,
         game::{GameAction, GameSession},
     },
+    state::AppState,
+    lobby::LobbyState,
 };
 use axum::{
     extract::{Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
