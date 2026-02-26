@@ -32,9 +32,6 @@ where
     F2: Fn(ev::MouseEvent) + 'static + Copy,
     F3: Fn(ev::KeyboardEvent) + 'static + Copy,
 {
-    let mode = StoredValue::new(content_mode);
-
-
     window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
         let key = e.key();
         if e.meta_key() || e.ctrl_key() | e.alt_key()
@@ -68,7 +65,7 @@ where
                 on:keydown=on_keydown
 
                 placeholder=move || {
-                    if mode.get_value() == ContentMode::Vocab {
+                    if content_mode == ContentMode::Vocab {
                         "Enter the reading in hiragana"
                     } else {
                         "Enter a Japanese word with this kanji"

@@ -89,7 +89,7 @@ pub fn CompactPlayerScoresComponent(
                     .into_iter()
                     .map(|player| {
                         let is_current = player.id == current_player_id.get();
-                        let pid = StoredValue::new(player.id.clone());
+                        let pid = player.id.clone();
                         let is_turn = player.is_turn;
                         let is_eliminated = player.is_eliminated;
                         let lives = player.lives;
@@ -146,15 +146,17 @@ pub fn CompactPlayerScoresComponent(
                                     </div>
                                 </div>
 
-                                <Show when=move || {
-                                    typing_status.with(|map| {
-                                        pid.with_value(|id| map.get(id).is_some_and(|s| !s.is_empty()))
-                                    })
+                                <Show when={
+                                    let pid_show = pid.clone();
+                                    move || typing_status.with(|map| map.get(&pid_show).is_some_and(|s| !s.is_empty()))
                                 }>
                                     <div class="mt-2 text-sm text-gray-600 dark:text-gray-300 italic flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 px-2 py-1 rounded">
                                         <span class="animate-bounce">"✎"</span>
                                         <span class="truncate">
-                                            {move || pid.with_value(|id| typing_status.get().get(id).cloned().unwrap_or_default())}
+                                            {
+                                                let pid_text = pid.clone();
+                                                move || typing_status.with(|map| map.get(&pid_text).cloned().unwrap_or_default())
+                                            }
                                         </span>
                                     </div>
                                 </Show>
