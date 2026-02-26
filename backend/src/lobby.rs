@@ -440,9 +440,7 @@ impl LobbyState {
     pub fn advance_turn(&self) -> Result<PlayerId> {
         self.turn_order.write(|order| {
              self.current_turn_index.write(|idx| {
-                 if order.is_empty() {
-                     return Err(AppError::InternalError("No players in turn order".to_string()));
-                 }
+                 if order.is_empty() { return Err(AppError::InternalError("No players in turn order".to_string())); }
                  *idx = (*idx + 1) % order.len();
                  Ok(order[*idx].clone())
              })

@@ -4,7 +4,6 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use std::sync::PoisonError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -29,9 +28,6 @@ pub enum AppError {
     #[error("Player with ID {0} not found in lobby")]
     PlayerNotFound(String),
 
-    #[error("Failed to access shared state: {0}")]
-    LockError(String),
-
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
@@ -46,13 +42,6 @@ pub enum AppError {
 }
 
 
-// Convert any LockError into our AppError
-impl<T> From<PoisonError<T>> for AppError {
-    fn from(err: PoisonError<T>) -> Self {
-        AppError::LockError(err.to_string())
-    }
-}
-
 // Make our errors compatible with axum's response system
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
@@ -61,7 +50,6 @@ impl IntoResponse for AppError {
             AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
             AppError::AuthError(_) => StatusCode::UNAUTHORIZED,
             AppError::Database(_)
-            | AppError::LockError(_)
             | AppError::DataLoadError(_)
             | AppError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
