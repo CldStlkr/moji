@@ -5,5 +5,5 @@ pub mod game;
 pub mod lobby;
 pub mod user_menu;
 pub mod player_scores;
-pub mod join_handler;
+pub mod lobby_page;
 pub mod home;

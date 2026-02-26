@@ -34,7 +34,6 @@ impl<T> Shared<T> {
 }
 
 
-
 /// Shared lobby state reference
 pub type SharedState = Arc<LobbyState>;
 

@@ -1,16 +1,18 @@
 use leptos::prelude::*;
 use leptos_router::{
-    components::{Route, Router, Routes},
+    components::{Route, Router, Routes, A},
     path,
 };
 use wasm_bindgen::prelude::*;
 
 use moji_frontend::components;
 
-use components::auth_modal::AuthModal;
-use components::user_menu::UserMenu;
-use components::join_handler::JoinHandler;
-use components::home::Home;
+use components::{
+    auth_modal::AuthModal,
+    user_menu::UserMenu,
+    home::Home,
+    lobby_page::LobbyPage,
+};
 use moji_frontend::context::{AuthContext, User};
 use moji_frontend::persistence::load_auth;
 
@@ -64,43 +66,43 @@ fn App() -> impl IntoView {
     });
 
     view! {
-        <div class="max-w-4xl mx-auto p-5 dark:text-gray-100 min-h-screen flex flex-col">
-            <header class="flex justify-between items-center mb-8">
-                <h1 class="text-4xl font-bold text-blue-500">
-                    <a href="/" class="hover:text-blue-600 transition-colors">"文字"</a>
-                </h1>
-                <div class="flex items-center space-x-4">
-                     <UserMenu />
-                     <button
-                        on:click=move |_| is_dark_mode.update(|d| *d = !*d)
-                        class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                        title="Toggle Dark Mode"
-                    >
-                        {move || if is_dark_mode.get() { "🌙" } else { "☀️" }}
-                    </button>
-                </div>
-            </header>
+        <Router>
+            <div class="max-w-4xl mx-auto p-5 dark:text-gray-100 min-h-screen flex flex-col">
+                <header class="flex justify-between items-center mb-8">
+                    <h1 class="text-4xl font-bold text-blue-500">
+                        <A href="/" attr:class="hover:text-blue-600 transition-colors">"文字"</A>
+                    </h1>
+                    <div class="flex items-center space-x-4">
+                         <UserMenu />
+                         <button
+                            on:click=move |_| is_dark_mode.update(|d| *d = !*d)
+                            class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            title="Toggle Dark Mode"
+                        >
+                            {move || if is_dark_mode.get() { "🌙" } else { "☀️" }}
+                        </button>
+                    </div>
+                </header>
 
-            <main class="flex-grow">
-                <Show when=move || show_auth_modal.get()>
-                    <AuthModal
-                        on_close=Callback::from(move || set_show_auth_modal.set(false)) 
-                        on_success=Callback::from(move || set_show_auth_modal.set(false))
-                    />
-                </Show>
+                <main class="flex-grow">
+                    <Show when=move || show_auth_modal.get()>
+                        <AuthModal
+                            on_close=Callback::from(move || set_show_auth_modal.set(false))
+                            on_success=Callback::from(move || set_show_auth_modal.set(false))
+                        />
+                    </Show>
 
-                <Router>
                     <Routes fallback=|| "Not Found.">
                         <Route path=path!("/") view=Home />
-                        <Route path=path!("/join/:id") view=JoinHandler />
+                        <Route path=path!("/lobby/:id") view=LobbyPage/>
                     </Routes>
-                </Router>
-            </main>
+                </main>
 
-            <footer class="text-center mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
-                <p>"Learn Japanese Kanji through word recognition"</p>
-            </footer>
-        </div>
+                <footer class="text-center mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm">
+                    <p>"Learn Japanese Kanji through word recognition"</p>
+                </footer>
+            </div>
+        </Router>
     }
 }
 

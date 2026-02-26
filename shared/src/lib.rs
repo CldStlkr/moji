@@ -3,6 +3,7 @@ pub use api_fns::*;
 
 use serde::{Deserialize, Serialize};
 
+
 macro_rules! new_type_id {
     ($name:ident) => {
         #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
