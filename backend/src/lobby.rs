@@ -57,14 +57,14 @@ impl LobbyState {
         }
     }
 
-    pub fn is_leader(&self, player_id: &PlayerId) -> Result<bool> {
+    pub fn is_leader(&self, player_id: &PlayerId) -> bool {
         self.lobby_leader.read(|leader| {
             leader.to_string() == player_id.to_string()
         })
     }
 
     pub fn update_settings(&self, player_id: &PlayerId, new_settings: GameSettings) -> Result<()> {
-        if !self.is_leader(player_id)? {
+        if !self.is_leader(player_id) {
             return Err(AppError::AuthError(
                 "Only lobby leader can change settings".to_string(),
             ));
@@ -72,7 +72,7 @@ impl LobbyState {
 
         self.settings.write(|settings| {
             *settings = new_settings.clone();
-        })?;
+        });
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::SettingsUpdate {
             settings: new_settings
@@ -82,13 +82,13 @@ impl LobbyState {
     }
 
     pub fn get_lobby_info(&self, lobby_id: &LobbyId) -> Result<shared::LobbyInfo> {
-        let status = self.game_status.read(|s| *s)?;
-        let settings = self.settings.read(|s| s.clone())?;
-        let leader = self.lobby_leader.read(|l| l.clone())?;
+        let status = self.game_status.read(|s| *s);
+        let settings = self.settings.read(|s| s.clone());
+        let leader = self.lobby_leader.read(|l| l.clone());
 
         let current_turn = self.turn_order.read(|order| {
              self.current_turn_index.read(|idx| order.get(*idx).cloned())
-        })??;
+        });
 
         let api_players = self.players.read(|players| {
              players.iter()
@@ -102,7 +102,7 @@ impl LobbyState {
                 is_turn: current_turn.as_ref() == Some(&p.id) && status == GameStatus::Playing && settings.mode == shared::GameMode::Duel,
             })
             .collect::<Vec<_>>()
-        })?;
+        });
 
         Ok(shared::LobbyInfo {
             lobby_id: lobby_id.clone(),
@@ -114,7 +114,7 @@ impl LobbyState {
     }
 
     pub fn start_game(&self, player_id: &PlayerId) -> Result<()> {
-        if !self.is_leader(player_id)? {
+        if !self.is_leader(player_id) {
             return Err(AppError::AuthError(
                 "Only lobby leader can start the game".to_string(),
             ))?;
@@ -126,9 +126,9 @@ impl LobbyState {
             }
             *status = GameStatus::Playing;
             Ok::<(), AppError>(())
-        })??;
+        })?;
 
-        let settings = self.settings.read(|s| s.clone())?;
+        let settings = self.settings.read(|s| s.clone());
 
         {
             let levels = &settings.difficulty_levels;
@@ -163,8 +163,8 @@ impl LobbyState {
                 }
             }
 
-            self.active_level_indices.write(|ai| *ai = indices)?;
-            self.level_weights.write(|lw| *lw = w_map)?;
+            self.active_level_indices.write(|ai| *ai = indices);
+            self.level_weights.write(|lw| *lw = w_map);
 
             self.players.write(|players| {
                 self.turn_order.write(|turn_order| {
@@ -182,22 +182,20 @@ impl LobbyState {
                                 p.lives = None;
                             }
                         }
-
                         if settings.mode == shared::GameMode::Duel {
                             use rand::seq::SliceRandom;
                             let mut rng = rand::rng();
                             turn_order.shuffle(&mut rng);
                         }
-                        Ok::<(), AppError>(())
                      })
                 })
-            })????;
+            });
         }
 
         self.generate_random_prompt(false)?;
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
-            prompt: self.get_current_prompt_text()?.unwrap_or_default(),
+            prompt: self.get_current_prompt_text().unwrap_or_default(),
             status: GameStatus::Playing,
             scores: self.get_all_players()?,
         }).unwrap_or_default());
@@ -209,7 +207,7 @@ impl LobbyState {
         let is_leader_result = self.players.write(|players| {
             let is_leader = players.is_empty();
             if is_leader {
-                 self.lobby_leader.write(|leader| *leader = player_id.clone())?;
+                 self.lobby_leader.write(|leader| *leader = player_id.clone());
             }
 
             let trimmed_name = player_name.trim();
@@ -233,7 +231,7 @@ impl LobbyState {
                 is_eliminated: false,
             });
             Ok(is_leader)
-        })??;
+        })?;
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
             players: self.get_all_players()?,
@@ -255,12 +253,9 @@ impl LobbyState {
                              if *idx >= turn_order.len() && !turn_order.is_empty() {
                                  *idx = 0;
                              }
-                             Ok::<(), AppError>(())
-                         })?
-                    } else {
-                        Ok::<(), AppError>(())
-                    }
-                })??;
+                         })
+                    } 
+                });
 
                 self.lobby_leader.write(|leader| {
                     if leader.to_string() == player_id.to_string() {
@@ -273,8 +268,7 @@ impl LobbyState {
                             *leader = PlayerId::default(); 
                         }
                     }
-                    Ok::<(), AppError>(())
-                })??;
+                });
 
                 let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
                     players: players.iter().map(|p| shared::PlayerData {
@@ -292,7 +286,7 @@ impl LobbyState {
             } else {
                 Ok(false)
             }
-        })?
+        })
     }
 
     pub fn get_player_score(&self, player_id: &PlayerId) -> Result<u32> {
@@ -302,7 +296,7 @@ impl LobbyState {
                 .find(|p| &p.id == player_id)
                 .map(|p| p.score)
                 .ok_or_else(|| AppError::PlayerNotFound(player_id.0.clone()))
-        })?
+        })
     }
 
     pub fn get_player_name(&self, player_id: &PlayerId) -> Result<String> {
@@ -312,7 +306,7 @@ impl LobbyState {
                 .find(|p| &p.id == player_id)
                 .map(|p| p.name.clone())
                 .ok_or_else(|| AppError::PlayerNotFound(player_id.0.clone()))
-        })?
+        })
     }
 
     pub fn increment_player_score(&self, player_id: &PlayerId) -> Result<u32> {
@@ -324,13 +318,13 @@ impl LobbyState {
 
             player.score += 1;
             Ok(player.score)
-        })?
+        })
     }
 
     // Get all players and scores (for a leaderboard)
     pub fn get_all_players(&self) -> Result<Vec<shared::PlayerData>> {
-        let status = self.game_status.read(|s| *s)?;
-        let settings = self.settings.read(|s| s.clone())?;
+        let status = self.game_status.read(|s| *s);
+        let settings = self.settings.read(|s| s.clone());
 
         // Lock players and potentially turn_order/current_turn_index
         self.players.read(|players| {
@@ -354,15 +348,14 @@ impl LobbyState {
                                  }
                              }
                          }
-                         Ok::<(), AppError>(())
                     })
-                })???;
+                });
             }
             Ok(shared_players)
-        })?
+        })
     }
 
-    pub fn get_current_prompt_text(&self) -> Result<Option<String>> {
+    pub fn get_current_prompt_text(&self) -> Option<String> {
         self.current_prompt.read(|p| p.as_ref().map(|prompt| prompt.display_text().to_string()))
     }
 
@@ -370,9 +363,9 @@ impl LobbyState {
     /// If `broadcast` is true, a `PromptUpdate` WS message is sent to all clients.
     /// Pass `false` when the caller will send a more complete message (e.g. `GameState`).
     pub fn generate_random_prompt(&self, broadcast: bool) -> Result<String> {
-        let content_mode = self.settings.read(|s| s.content_mode.clone())?;
+        let content_mode = self.settings.read(|s| s.content_mode.clone());
         let mut rng = rand::rng();
-        let indices = self.active_level_indices.read(|i| i.clone())?;
+        let indices = self.active_level_indices.read(|i| i.clone());
 
         if indices.is_empty() {
             return Err(AppError::InternalError("No active levels configured".into()));
@@ -382,7 +375,7 @@ impl LobbyState {
 
         let display_text = match content_mode {
             ContentMode::Kanji => {
-                let weights_map = self.level_weights.read(|w| w.clone())?;
+                let weights_map = self.level_weights.read(|w| w.clone());
                 let kanji_list = &self.kanji_list[level_idx];
 
                 let kanji = if let Some(dist) = weights_map.get(&level_idx) {
@@ -393,7 +386,7 @@ impl LobbyState {
 
                 let prompt = ActivePrompt::Kanji { character: kanji.kanji.clone() };
                 let text = kanji.kanji;
-                self.current_prompt.write(|p| *p = Some(prompt))?;
+                self.current_prompt.write(|p| *p = Some(prompt));
 
                 text
 
@@ -411,7 +404,7 @@ impl LobbyState {
                     readings,
                 };
                 let text = word_key.clone();
-                self.current_prompt.write(|p| *p = Some(prompt))?;
+                self.current_prompt.write(|p| *p = Some(prompt));
 
                 text
             }
@@ -427,13 +420,13 @@ impl LobbyState {
     }
 
     pub fn reset_lobby(&self, player_id: &PlayerId) -> Result<()> {
-        if !self.is_leader(player_id)? {
+        if !self.is_leader(player_id) {
             return Err(AppError::AuthError(
                 "Only lobby leader can reset the lobby".to_string(),
             ));
         }
 
-        self.game_status.write(|status| *status = GameStatus::Lobby)?;
+        self.game_status.write(|status| *status = GameStatus::Lobby);
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
             prompt: "".to_string(),
@@ -453,21 +446,21 @@ impl LobbyState {
                  *idx = (*idx + 1) % order.len();
                  Ok(order[*idx].clone())
              })
-        })??
+        })
     }
 
-    pub fn get_current_turn_player(&self) -> Result<Option<PlayerId>> {
+    pub fn get_current_turn_player(&self) -> Option<PlayerId> {
         self.turn_order.read(|order| {
              self.current_turn_index.read(|idx| {
                  order.get(*idx).cloned()
              })
-        })?
+        })
     }
 
     pub fn process_guess(&self, player_id: &PlayerId, input: &str) -> Result<()> {
         let (settings, status) = {
-             let st = self.game_status.read(|s| *s)?;
-             let s = self.settings.read(|s| s.clone())?;
+             let st = self.game_status.read(|s| *s);
+             let s = self.settings.read(|s| s.clone());
              (s, st)
         };
 
@@ -476,7 +469,7 @@ impl LobbyState {
         }
 
         if settings.mode == shared::GameMode::Duel {
-            let current_turn = self.get_current_turn_player()?;
+            let current_turn = self.get_current_turn_player();
             if current_turn.as_ref() != Some(player_id) {
                 return Ok(()); // Not your turn
             }
@@ -484,7 +477,7 @@ impl LobbyState {
 
 
         let trimmed_input = input.trim();
-        let prompt = self.current_prompt.read(|p| p.clone())?
+        let prompt = self.current_prompt.read(|p| p.clone())
             .ok_or(AppError::InternalError("No active prompt".into()))?;
 
 
@@ -505,13 +498,13 @@ impl LobbyState {
                     } else {
                         message = "Good guess!".to_string();
                         let _ = self.generate_random_prompt(true);
-                        new_prompt_opt = self.get_current_prompt_text().ok().flatten();
+                        new_prompt_opt = self.get_current_prompt_text();
                     }
                 }
             } else if settings.mode == shared::GameMode::Duel {
                 message = "Good guess!".to_string();
                 let _ = self.generate_random_prompt(true);
-                new_prompt_opt = self.get_current_prompt_text().ok().flatten();
+                new_prompt_opt = self.get_current_prompt_text();
                 let _ = self.advance_turn();
             }
         } else {
@@ -544,14 +537,14 @@ impl LobbyState {
                          }
                      }
                      eliminated
-                })?;
+                });
                 if eliminated {
                      message = "Eliminated!".to_string();
                 }
 
                 if !settings.duel_allow_kanji_reuse {
                     let _ = self.generate_random_prompt(true);
-                    new_prompt_opt = self.get_current_prompt_text().ok().flatten();
+                    new_prompt_opt = self.get_current_prompt_text();
                 }
 
                 if eliminated {
@@ -562,16 +555,13 @@ impl LobbyState {
                                  if *idx >= order.len() && !order.is_empty() {
                                      *idx = 0;
                                  }
-                                 Ok::<(), AppError>(())
-                             })?
-                         } else {
-                             Ok::<(), AppError>(())
+                             })
                          }
-                     })??;
+                    });
                 } else {
                      let _ = self.advance_turn();
                 }
-                let order_len = self.turn_order.read(|o| o.len())?;
+                let order_len = self.turn_order.read(|o| o.len());
                 if order_len <= 1 {
                     game_over = true;
                     if !eliminated {
@@ -597,9 +587,9 @@ impl LobbyState {
         }).unwrap_or_default());
 
         if game_over {
-            self.game_status.write(|st| *st = GameStatus::Finished)?;
+            self.game_status.write(|st| *st = GameStatus::Finished);
             let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
-                prompt: self.get_current_prompt_text()?.unwrap_or_default(),
+                prompt: self.get_current_prompt_text().unwrap_or_default(),
                 status: GameStatus::Finished,
                 scores: self.get_all_players()?,
             }).unwrap_or_default());

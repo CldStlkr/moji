@@ -78,7 +78,7 @@ impl AppState {
         self.lobbies.read(|lobbies| {
             lobbies.get(lobby_id).cloned()
                 .ok_or_else(|| AppError::LobbyNotFound(lobby_id.to_string()))
-        })?
+        })
     }
 
     pub async fn new_with_db(db_pool: Arc<DbPool>) -> Result<Self> {

@@ -138,17 +138,17 @@ mod tests {
         let lobby_state = create_test_lobby();
 
         // Initially should be None
-        assert_eq!(lobby_state.get_current_prompt_text().unwrap(), None);
+        assert_eq!(lobby_state.get_current_prompt_text(), None);
 
         // Generate a kanji and verify it's set
         // NOTE: New generate_random_prompt requires start_game to populate active_indices or manually setting them
         // Manually set them for the test
         {
-            lobby_state.active_level_indices.write(|indices| indices.push(0)).unwrap();
+            lobby_state.active_level_indices.write(|indices| indices.push(0));
         }
 
         let kanji = lobby_state.generate_random_prompt(false).unwrap();
-        assert_eq!(lobby_state.get_current_prompt_text().unwrap(), Some(kanji));
+        assert_eq!(lobby_state.get_current_prompt_text(), Some(kanji));
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod tests {
 
         // Set active indices
         {
-             lobby_state.active_level_indices.write(|indices| indices.push(0)).unwrap();
+             lobby_state.active_level_indices.write(|indices| indices.push(0));
         }
 
         // Generate a kanji and verify it's from one of the lists
@@ -170,7 +170,7 @@ mod tests {
 
         // Generate another and ensure it's set as current
         let kanji2 = lobby_state.generate_random_prompt(false).unwrap();
-        assert_eq!(lobby_state.get_current_prompt_text().unwrap(), Some(kanji2));
+        assert_eq!(lobby_state.get_current_prompt_text(), Some(kanji2));
     }
 
     #[test]
@@ -256,7 +256,7 @@ mod tests {
         {
              app_state.lobbies.write(|lobbies| {
                  lobbies.insert(lobby_id.clone(), lobby_state.clone());
-             }).unwrap();
+             });
         }
 
         // Get the lobby and verify it exists
@@ -272,7 +272,7 @@ mod tests {
 
         // Manually start game or set indices to allow generation
         {
-             retrieved_lobby.active_level_indices.write(|indices| indices.push(0)).unwrap();
+             retrieved_lobby.active_level_indices.write(|indices| indices.push(0));
         }
 
         // Generate kanji and check word
@@ -292,14 +292,14 @@ mod tests {
             .add_player(PlayerId::from("player1"), "Alice".to_string())
             .unwrap();
         assert!(is_leader1);
-        assert!(lobby_state.is_leader(&PlayerId::from("player1")).unwrap());
+        assert!(lobby_state.is_leader(&PlayerId::from("player1")));
 
         // Second player is not leader
         let is_leader2 = lobby_state
             .add_player(PlayerId::from("player2"), "Bob".to_string())
             .unwrap();
         assert!(!is_leader2);
-        assert!(!lobby_state.is_leader(&PlayerId::from("player2")).unwrap());
+        assert!(!lobby_state.is_leader(&PlayerId::from("player2")));
     }
 
     #[test]
@@ -347,7 +347,7 @@ mod tests {
         assert!(lobby_state.start_game(&PlayerId::from("leader")).is_ok());
 
         // Game status should change to Playing
-        let status = lobby_state.game_status.read(|s| *s).unwrap();
+        let status = lobby_state.game_status.read(|s| *s);
         assert_eq!(status, GameStatus::Playing);
     }
 
@@ -391,7 +391,7 @@ mod tests {
         lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
 
         lobby.remove_player(&PlayerId::from("leader")).unwrap();
-        assert!(lobby.is_leader(&PlayerId::from("p2")).unwrap());
+        assert!(lobby.is_leader(&PlayerId::from("p2")));
     }
 
     // ── Game flow ───────────────────────────────────────────────────────────
@@ -419,7 +419,7 @@ mod tests {
         lobby.start_game(&PlayerId::from("leader")).unwrap();
 
         lobby.reset_lobby(&PlayerId::from("leader")).unwrap();
-        assert_eq!(lobby.game_status.read(|s| *s).unwrap(), GameStatus::Lobby);
+        assert_eq!(lobby.game_status.read(|s| *s), GameStatus::Lobby);
     }
 
     #[test]
@@ -427,7 +427,7 @@ mod tests {
         let lobby = create_test_lobby();
         lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
         lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
-        lobby.turn_order.write(|o| { o.push(PlayerId::from("p1")); o.push(PlayerId::from("p2")); }).unwrap();
+        lobby.turn_order.write(|o| { o.push(PlayerId::from("p1")); o.push(PlayerId::from("p2")); });
 
         assert_eq!(lobby.advance_turn().unwrap(), PlayerId::from("p2"));
         assert_eq!(lobby.advance_turn().unwrap(), PlayerId::from("p1")); // wraps
@@ -454,10 +454,10 @@ mod tests {
         let lobby = create_test_lobby();
         let leader = PlayerId::from("leader");
         lobby.add_player(leader.clone(), "Leader".to_string()).unwrap();
-        lobby.settings.write(|s| { s.target_score = Some(3); }).unwrap();
-        lobby.active_level_indices.write(|i| i.push(0)).unwrap();
-        lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() })).unwrap();
-        lobby.game_status.write(|s| *s = GameStatus::Playing).unwrap();
+        lobby.settings.write(|s| { s.target_score = Some(3); });
+        lobby.active_level_indices.write(|i| i.push(0));
+        lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() }));
+        lobby.game_status.write(|s| *s = GameStatus::Playing);
         (lobby, leader)
     }
 
@@ -498,12 +498,12 @@ mod tests {
     fn test_deathmatch_target_score_ends_game() {
         let (lobby, leader) = setup_deathmatch_playing();
         for _ in 0..3 {
-            lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() })).unwrap();
-            let empty = lobby.active_level_indices.read(|i| i.is_empty()).unwrap();
-            if empty { lobby.active_level_indices.write(|i| i.push(0)).unwrap(); }
+            lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() }));
+            let empty = lobby.active_level_indices.read(|i| i.is_empty());
+            if empty { lobby.active_level_indices.write(|i| i.push(0)); }
             lobby.process_guess(&leader, "日本").unwrap();
         }
-        assert_eq!(lobby.game_status.read(|s| *s).unwrap(), GameStatus::Finished);
+        assert_eq!(lobby.game_status.read(|s| *s), GameStatus::Finished);
     }
 
     #[test]
@@ -513,11 +513,11 @@ mod tests {
         let p2 = PlayerId::from("p2");
         lobby.add_player(p1.clone(), "Alice".to_string()).unwrap();
         lobby.add_player(p2.clone(), "Bob".to_string()).unwrap();
-        lobby.settings.write(|s| { s.mode = shared::GameMode::Duel; s.initial_lives = Some(3); }).unwrap();
-        lobby.game_status.write(|s| *s = GameStatus::Playing).unwrap();
-        lobby.turn_order.write(|o| { o.push(p1.clone()); o.push(p2.clone()); }).unwrap();
-        lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() })).unwrap();
-        lobby.active_level_indices.write(|i| i.push(0)).unwrap();
+        lobby.settings.write(|s| { s.mode = shared::GameMode::Duel; s.initial_lives = Some(3); });
+        lobby.game_status.write(|s| *s = GameStatus::Playing);
+        lobby.turn_order.write(|o| { o.push(p1.clone()); o.push(p2.clone()); });
+        lobby.current_prompt.write(|k| *k = Some(ActivePrompt::Kanji { character: "日".to_string() }));
+        lobby.active_level_indices.write(|i| i.push(0));
 
         // p2 submits on p1's turn — should be silently ignored
         lobby.process_guess(&p2, "日本").unwrap();

@@ -14,23 +14,21 @@ impl<T> Shared<T> {
     }
 
     /// Execute a closure with mutable access to the shared value
-    /// Automatically converts poison errors to AppError
-    pub fn write<F, R>(&self, f: F) -> crate::types::Result<R>
+    pub fn write<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R,
     {
         let mut guard = self.0.write();
-        Ok(f(&mut *guard))
+        f(&mut *guard)
     }
 
     /// Execute a closure with read-only access to the shared value
-    /// Automatically converts poison errors to AppError
-    pub fn read<F, R>(&self, f: F) -> crate::types::Result<R>
+    pub fn read<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&T) -> R,
     {
         let guard = self.0.read();
-        Ok(f(&*guard))
+        f(&*guard)
     }
 
 }

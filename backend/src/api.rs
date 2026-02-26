@@ -1,6 +1,6 @@
 use crate::{
     generate_lobby_id, generate_player_id,
-    GameStatus, models::{
+    models::{
         user::User,
         game::{GameAction, GameSession},
     },
@@ -49,7 +49,7 @@ impl ApiContext for AppState {
 
         let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
 
-        self.lobbies.write(|lobbies| { lobbies.insert(lobby_id.clone(), lobby_state); })?;
+        self.lobbies.write(|lobbies| { lobbies.insert(lobby_id.clone(), lobby_state); });
 
         Ok(json!({
             "message": "Lobby created successfully!",
@@ -134,7 +134,7 @@ impl ApiContext for AppState {
     async fn get_prompt(&self, lobby_id: LobbyId) -> Result<PromptResponse, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
-        let prompt = match lobby.get_current_prompt_text()? {
+        let prompt = match lobby.get_current_prompt_text() {
             Some(prompt) => prompt,
             None => lobby.generate_random_prompt(true)?
         };
@@ -232,10 +232,10 @@ impl ApiContext for AppState {
 
         lobby.remove_player(&player_id)?;
 
-        let is_empty = lobby.players.read(|players| players.is_empty())?;
+        let is_empty = lobby.players.read(|players| players.is_empty());
 
         if is_empty {
-            self.lobbies.write(|lobbies| { lobbies.remove(&lobby_id); })?;
+            self.lobbies.write(|lobbies| { lobbies.remove(&lobby_id); });
 
             if let Some(game_id) = lobby.game_session_id {
                 if let Some(db_pool) = &self.db_pool {
@@ -285,8 +285,8 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
         }).unwrap_or_default();
         let _ = sender.send(Message::Text(init_msg.into())).await;
 
-        let status = lobby.game_status.read(|s| *s).unwrap_or(GameStatus::Lobby);
-        let prompt = lobby.get_current_prompt_text().unwrap_or_default().unwrap_or_default();
+        let status = lobby.game_status.read(|s| *s);
+        let prompt = lobby.get_current_prompt_text().unwrap_or_default();
         let scores = lobby.get_all_players().unwrap_or_default();
         let game_msg = serde_json::to_string(&shared::ServerMessage::GameState {
             prompt,
