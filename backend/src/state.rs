@@ -8,7 +8,8 @@ use crate::{
     data::{vectorize_joyo_kanji, load_dictionary, load_jlpt_words, JlptWordData, KanjiData, DictData},
     db::DbPool,
     error::AppError,
-    types::{Result, Shared, SharedState},
+    types::{Result, Shared},
+    lobby::LobbyState,
 };
 pub use shared::{
     CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, PlayerId, ApiContext,
@@ -16,7 +17,7 @@ pub use shared::{
 
 
 pub struct AppState {
-    pub lobbies: Shared<HashMap<LobbyId, SharedState>>,
+    pub lobbies: Shared<HashMap<LobbyId, Arc<LobbyState>>>,
     pub db_pool: Option<Arc<DbPool>>,
     pub kanji_data: Arc<KanjiData>,
     pub word_data: Arc<JlptWordData>,
@@ -74,7 +75,7 @@ impl AppState {
     }
 
 
-    pub fn get_lobby(&self, lobby_id: &LobbyId) -> Result<SharedState> {
+    pub fn get_lobby(&self, lobby_id: &LobbyId) -> Result<Arc<LobbyState>> {
         self.lobbies.read(|lobbies| {
             lobbies.get(lobby_id).cloned()
                 .ok_or_else(|| AppError::LobbyNotFound(lobby_id.to_string()))

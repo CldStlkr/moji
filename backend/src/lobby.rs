@@ -1,9 +1,5 @@
 use chrono::Utc;
-use crate::data::{JlptWordData, KanjiData, DictData};
-use crate::error::AppError;
-use crate::{PlayerData, check_prompt};
 use rand::{RngExt, distr::{Distribution, weighted::WeightedIndex}};
-use shared::{ContentMode, ActivePrompt, LobbyId};
 use tokio::sync::broadcast;
 use std::{
     collections::HashMap,
@@ -12,8 +8,14 @@ use std::{
 
 pub use shared::{
     CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, PlayerId, ApiContext,
+    ContentMode, ActivePrompt, LobbyId, LobbyInfo
 };
-pub use crate::types::{Result, Shared, SharedState};
+pub use crate::{
+    utils::check_prompt,
+    types::{Result, Shared, PlayerData},
+    data::{JlptWordData, KanjiData, DictData},
+    error::AppError,
+};
 
 
 
@@ -81,7 +83,7 @@ impl LobbyState {
         Ok(())
     }
 
-    pub fn get_lobby_info(&self, lobby_id: &LobbyId) -> Result<shared::LobbyInfo> {
+    pub fn get_lobby_info(&self, lobby_id: &LobbyId) -> LobbyInfo {
         let status = self.game_status.read(|s| *s);
         let settings = self.settings.read(|s| s.clone());
         let leader = self.lobby_leader.read(|l| l.clone());
@@ -104,13 +106,13 @@ impl LobbyState {
             .collect::<Vec<_>>()
         });
 
-        Ok(shared::LobbyInfo {
+        shared::LobbyInfo {
             lobby_id: lobby_id.clone(),
             leader_id: leader,
             players: api_players,
             settings,
             status,
-        })
+        }
     }
 
     pub fn start_game(&self, player_id: &PlayerId) -> Result<()> {
@@ -197,7 +199,7 @@ impl LobbyState {
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
             prompt: self.get_current_prompt_text().unwrap_or_default(),
             status: GameStatus::Playing,
-            scores: self.get_all_players()?,
+            scores: self.get_all_players(),
         }).unwrap_or_default());
 
         Ok(())
@@ -234,13 +236,13 @@ impl LobbyState {
         })?;
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
-            players: self.get_all_players()?,
+            players: self.get_all_players(),
         }).unwrap_or_default());
 
         Ok(is_leader_result)
     }
 
-    pub fn remove_player(&self, player_id: &PlayerId) -> Result<bool> {
+    pub fn remove_player(&self, player_id: &PlayerId) -> bool {
         self.players.write(|players| {
             if let Some(pos) = players.iter().position(|p| &p.id == player_id) {
                 let p_id = players[pos].id.clone();
@@ -282,9 +284,9 @@ impl LobbyState {
                     }).collect()
                 }).unwrap_or_default());
 
-                Ok(true)
+                true
             } else {
-                Ok(false)
+                false
             }
         })
     }
@@ -322,7 +324,7 @@ impl LobbyState {
     }
 
     // Get all players and scores (for a leaderboard)
-    pub fn get_all_players(&self) -> Result<Vec<shared::PlayerData>> {
+    pub fn get_all_players(&self) -> Vec<shared::PlayerData> {
         let status = self.game_status.read(|s| *s);
         let settings = self.settings.read(|s| s.clone());
 
@@ -351,7 +353,7 @@ impl LobbyState {
                     })
                 });
             }
-            Ok(shared_players)
+            shared_players
         })
     }
 
@@ -431,7 +433,7 @@ impl LobbyState {
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
             prompt: "".to_string(),
             status: GameStatus::Lobby,
-            scores: self.get_all_players()?,
+            scores: self.get_all_players(),
         }).unwrap_or_default());
 
         Ok(())
@@ -570,7 +572,7 @@ impl LobbyState {
         }
 
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
-            players: self.get_all_players().unwrap_or_default()
+            players: self.get_all_players()
         }).unwrap_or_default());
 
         let score = self.get_player_score(player_id).unwrap_or(0);
@@ -589,7 +591,7 @@ impl LobbyState {
             let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
                 prompt: self.get_current_prompt_text().unwrap_or_default(),
                 status: GameStatus::Finished,
-                scores: self.get_all_players()?,
+                scores: self.get_all_players(),
             }).unwrap_or_default());
         }
 

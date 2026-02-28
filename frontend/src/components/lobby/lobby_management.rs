@@ -283,6 +283,7 @@ where
     F1: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
     F2: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
+    let not_enough_players = player_count < 1;
     view! {
         <div class="flex flex-col gap-4 my-6">
             <Show
@@ -297,12 +298,12 @@ where
             >
                 <button
                     on:click=on_start_game
-                    disabled=move || player_count < 1
+                    disabled=move || not_enough_players
                     class=btn_start_game()
                 >
                     "Start Game"
                 </button>
-                <Show when=move || player_count < 1>
+                <Show when=move || not_enough_players>
                     <p class="text-orange-600 dark:text-orange-400 text-center font-medium">
                         "Need at least 2 players to start"
                     </p>

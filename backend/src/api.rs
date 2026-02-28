@@ -1,5 +1,5 @@
 use crate::{
-    generate_lobby_id, generate_player_id,
+    utils::{generate_lobby_id, generate_player_id},
     models::{
         user::User,
         game::{GameAction, GameSession},
@@ -60,7 +60,7 @@ impl ApiContext for AppState {
 
     async fn get_lobby_info(&self, lobby_id: LobbyId) -> Result<LobbyInfo, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
-        Ok(lobby.get_lobby_info(&lobby_id)?)
+        Ok(lobby.get_lobby_info(&lobby_id))
     }
 
     async fn update_lobby_settings(&self, lobby_id: LobbyId, request: UpdateSettingsRequest) -> Result<serde_json::Value, ServerFnError> {
@@ -85,7 +85,7 @@ impl ApiContext for AppState {
     async fn get_lobby_players(&self, lobby_id: LobbyId) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
-        let players = lobby.get_all_players()?;
+        let players = lobby.get_all_players();
 
         let player_data: Vec<_> = players.into_iter().map(|p| {
             json!({
@@ -220,7 +220,7 @@ impl ApiContext for AppState {
     async fn get_player_info(&self, lobby_id: LobbyId, player_id: PlayerId) -> Result<PlayerData, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
-        let players = lobby.get_all_players()?;
+        let players = lobby.get_all_players();
         let player = players.into_iter().find(|p| p.id == player_id)
             .ok_or_else(|| ServerFnError::new(format!("Player not found: {}", player_id)))?;
 
@@ -230,7 +230,7 @@ impl ApiContext for AppState {
     async fn leave_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> Result<serde_json::Value, ServerFnError> {
         let lobby = self.get_lobby(&lobby_id)?;
 
-        lobby.remove_player(&player_id)?;
+        lobby.remove_player(&player_id);
 
         let is_empty = lobby.players.read(|players| players.is_empty());
 
@@ -279,7 +279,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
     let mut rx = lobby.tx.subscribe();
 
     {
-        let players = lobby.get_all_players().unwrap_or_default();
+        let players = lobby.get_all_players();
         let init_msg = serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
             players,
         }).unwrap_or_default();
@@ -287,7 +287,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
 
         let status = lobby.game_status.read(|s| *s);
         let prompt = lobby.get_current_prompt_text().unwrap_or_default();
-        let scores = lobby.get_all_players().unwrap_or_default();
+        let scores = lobby.get_all_players();
         let game_msg = serde_json::to_string(&shared::ServerMessage::GameState {
             prompt,
             status,

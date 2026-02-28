@@ -178,7 +178,7 @@ impl Default for GameSettings {
             weighted: false,
             mode: GameMode::Deathmatch,
             content_mode: ContentMode::Kanji,
-            target_score: Some(10), // Default target score for Deathmatch
+            target_score: Some(5), // Default target score for Deathmatch
             initial_lives: Some(3), // Default lives for Duel
             duel_allow_kanji_reuse: false,
         }

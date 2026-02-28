@@ -6,57 +6,7 @@ pub mod models;
 pub mod types;
 pub mod lobby;
 pub mod state;
-
-use chrono::{DateTime, Utc};
-use rand::{RngExt, distr::Alphanumeric};
-use shared::{ActivePrompt, LobbyId};
-use std::collections::HashSet;
-use lobby::LobbyState;
-pub use shared::{
-    CheckWordResponse, GameSettings, GameStatus, JoinLobbyRequest, PlayerId, ApiContext,
-};
-pub use types::{Result, Shared, SharedState};
-
-
-#[derive(Clone, Debug)]
-pub struct PlayerData {
-    pub id: PlayerId,
-    pub name: String,
-    pub score: u32,
-    pub joined_at: DateTime<Utc>,
-    pub lives: Option<u32>,
-    pub is_eliminated: bool,
-}
-
-
-
-pub fn generate_random_id(length: usize) -> String {
-    rand::rng()
-        .sample_iter(&Alphanumeric)
-        .take(length)
-        .map(char::from)
-        .collect()
-}
-
-pub fn generate_player_id() -> PlayerId {
-    PlayerId::from(generate_random_id(10))
-}
-
-pub fn generate_lobby_id() -> LobbyId {
-    LobbyId::from(generate_random_id(6))
-}
-
-
-fn check_prompt(prompt: &shared::ActivePrompt, input: &str, dictionary: &HashSet<String>) -> bool {
-    match prompt {
-        ActivePrompt::Kanji { character } => {
-            input.contains(character.as_str()) && dictionary.contains(input)
-        },
-        ActivePrompt::Vocab { readings, .. } => {
-            readings.iter().any(|r| r == input)
-        }
-    }
-}
+pub mod utils;
 
 #[cfg(test)]
 mod tests {
@@ -66,6 +16,8 @@ mod tests {
     use std::sync::Arc;
     use error::AppError;
     use crate::{lobby::LobbyState, state::AppState};
+    use shared::{ActivePrompt, LobbyId, PlayerId, GameStatus, GameSettings};
+    use utils::generate_lobby_id;
 
     fn create_test_lobby() -> LobbyState {
         let test_kanji_list = Arc::new(vec![
@@ -178,7 +130,7 @@ mod tests {
         let lobby_state = create_test_lobby();
 
         // Initially empty
-        assert!(lobby_state.get_all_players().unwrap().is_empty());
+        assert!(lobby_state.get_all_players().is_empty());
 
         // Add players and verify they're returned
         lobby_state
@@ -188,7 +140,7 @@ mod tests {
             .add_player(PlayerId::from("player2"), "Bob".to_string())
             .unwrap();
 
-        let players = lobby_state.get_all_players().unwrap();
+        let players = lobby_state.get_all_players();
         assert_eq!(players.len(), 2);
 
         // Option 1: Simple verification - check names exist
@@ -279,7 +231,7 @@ mod tests {
         let _kanji = retrieved_lobby.generate_random_prompt(false).unwrap();
 
         // Verify players and scores
-        let players = retrieved_lobby.get_all_players().unwrap();
+        let players = retrieved_lobby.get_all_players();
         assert_eq!(players.len(), 2);
     }
 
@@ -371,8 +323,8 @@ mod tests {
         lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
         lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
 
-        assert!(lobby.remove_player(&PlayerId::from("p2")).unwrap());
-        let players = lobby.get_all_players().unwrap();
+        assert!(lobby.remove_player(&PlayerId::from("p2")));
+        let players = lobby.get_all_players();
         assert_eq!(players.len(), 1);
         assert_eq!(players[0].name, "Alice");
     }
@@ -381,7 +333,7 @@ mod tests {
     fn test_remove_nonexistent_player_returns_false() {
         let lobby = create_test_lobby();
         lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
-        assert!(!lobby.remove_player(&PlayerId::from("ghost")).unwrap());
+        assert!(!lobby.remove_player(&PlayerId::from("ghost")));
     }
 
     #[test]
@@ -390,7 +342,7 @@ mod tests {
         lobby.add_player(PlayerId::from("leader"), "Leader".to_string()).unwrap();
         lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
 
-        lobby.remove_player(&PlayerId::from("leader")).unwrap();
+        lobby.remove_player(&PlayerId::from("leader"));
         assert!(lobby.is_leader(&PlayerId::from("p2")));
     }
 
@@ -439,7 +391,7 @@ mod tests {
         lobby.add_player(PlayerId::from("p1"), "Alice".to_string()).unwrap();
         lobby.add_player(PlayerId::from("p2"), "Bob".to_string()).unwrap();
 
-        let info = lobby.get_lobby_info(&LobbyId::from("test-lobby")).unwrap();
+        let info = lobby.get_lobby_info(&LobbyId::from("test-lobby"));
         assert_eq!(info.lobby_id, LobbyId(String::from("test-lobby")));
         assert_eq!(info.status, GameStatus::Lobby);
         assert_eq!(info.leader_id, PlayerId::from("p1"));

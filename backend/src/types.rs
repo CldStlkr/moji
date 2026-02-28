@@ -1,7 +1,9 @@
-use crate::{error::AppError, LobbyState};
+use crate::{error::AppError};
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use parking_lot::RwLock;
+use shared::PlayerId;
+use chrono::{DateTime, Utc};
 
 // Newtype wrapper for Arc<RwLock<T>>
 #[derive(Clone)]
@@ -34,8 +36,16 @@ impl<T> Shared<T> {
 }
 
 
-/// Shared lobby state reference
-pub type SharedState = Arc<LobbyState>;
+#[derive(Clone, Debug)]
+pub struct PlayerData {
+    pub id: PlayerId,
+    pub name: String,
+    pub score: u32,
+    pub joined_at: DateTime<Utc>,
+    pub lives: Option<u32>,
+    pub is_eliminated: bool,
+}
+
 
 /// PostgreSQL connection pool
 pub type DbPool = Pool<Postgres>;
