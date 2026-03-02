@@ -82,7 +82,7 @@ impl AppState {
         })
     }
 
-    pub async fn new_with_db(db_pool: Arc<DbPool>) -> Result<Self> {
+    pub async fn create_with_db(db_pool: Arc<DbPool>) -> Result<Self> {
 
         let (kanji_data, word_data, dict_data) = Self::load_data()?;
         Ok(Self {

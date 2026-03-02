@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     wait_for_db(&database_url).await?;
     let db_pool = init_db_pool(&database_url).await?;
 
-    let app_state = Arc::new(AppState::new_with_db(db_pool).await?);
+    let app_state = Arc::new(AppState::create_with_db(db_pool).await?);
 
     let cors = CorsLayer::new()
         .allow_origin(Any)

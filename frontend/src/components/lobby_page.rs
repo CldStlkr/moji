@@ -21,12 +21,12 @@ pub fn LobbyPage() -> impl IntoView {
     let url_lobby_id = move || params.get().get("id").unwrap_or_default();
 
     let auth_context = use_context::<AuthContext>().expect("AuthContext missing");
-    
+
     // Core state
     let lobby_id = RwSignal::new(LobbyId::default());
     let player_id = RwSignal::new(PlayerId::default());
     let player_name = RwSignal::new(String::new());
-    
+
     // Game/Lobby State
     let lobby_info = RwSignal::new(None::<LobbyInfo>);
     let prompt = RwSignal::new(String::new());
@@ -41,7 +41,7 @@ pub fn LobbyPage() -> impl IntoView {
     let navigate = use_navigate();
     let navigate_path = RwSignal::new(None::<String>);
     let navigate_replace_path = RwSignal::new(None::<String>);
-    
+
     let navigate_effect = navigate.clone();
     Effect::new(move |_| {
          if let Some(path) = navigate_path.get() {
@@ -103,7 +103,7 @@ pub fn LobbyPage() -> impl IntoView {
                             if let Ok(info) = get_lobby_info(session_data.lobby_id.clone()).await {
                                  lobby_info.set(Some(info));
                             }
-                            
+
                             is_restoring.set(false);
                             return;
                         }
@@ -113,8 +113,8 @@ pub fn LobbyPage() -> impl IntoView {
                         }
                     }
                 }
-            } 
-            
+            }
+
             // No session or wrong session, show join UI
             is_restoring.set(false);
         });
@@ -161,7 +161,7 @@ pub fn LobbyPage() -> impl IntoView {
                             if let Ok(info) = get_lobby_info(join_lobby_id.clone()).await {
                                 lobby_info.set(Some(info));
                             }
-                            
+
                             set_is_joining.set(false);
                         }
                     }
