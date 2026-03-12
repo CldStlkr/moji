@@ -13,7 +13,7 @@ use crate::{
     error::{get_user_friendly_message, log_error},
     persistence::{clear_session, load_session, save_session, use_session_persistence, SessionData},
 };
-use shared::{get_lobby_info, get_player_info, join_lobby, leave_lobby, JoinLobbyRequest, LobbyId, LobbyInfo, PlayerId};
+use shared::{get_lobby_info, get_player_info, join_lobby, JoinLobbyRequest, LobbyId, LobbyInfo, PlayerId};
 
 #[component]
 pub fn LobbyPage() -> impl IntoView {
@@ -34,7 +34,7 @@ pub fn LobbyPage() -> impl IntoView {
     let typing_status = RwSignal::new(HashMap::<PlayerId, String>::new());
 
     // UI State
-    let is_restoring = RwSignal::new(true);
+    let is_leaving = RwSignal::new(false);
     let (join_status, set_join_status) = signal(String::new());
     let (is_joining, set_is_joining) = signal(false);
 
@@ -62,7 +62,7 @@ pub fn LobbyPage() -> impl IntoView {
     let send_message = use_shared_socket(UseSharedSocketConfig {
         lobby_id: lobby_id.read_only(),
         player_id: player_id.read_only(),
-        set_lobby_info: lobby_info.write_only(),
+        lobby_info,
         set_prompt: prompt.write_only(),
         set_result: result.write_only(),
         set_typing_status: typing_status.write_only(),
@@ -82,49 +82,63 @@ pub fn LobbyPage() -> impl IntoView {
         is_in_game,
     );
 
-    // Initial load and session check
-    Effect::new(move |_| {
-        spawn_local(async move {
-            let id = url_lobby_id();
+    // Data Resource for initial Page Hydration
+    let lobby_data_resource = Resource::new(
+        url_lobby_id,
+        move |id| async move {
             if id.is_empty() {
-                navigate_replace_path.set(Some("/".to_string()));
-                return;
+                return None;
             }
 
-            if let Some(session_data) = load_session() {
-                if session_data.lobby_id.to_string() == id {
-                    // Valid session for this lobby. Load user info.
-                    match get_player_info(session_data.lobby_id.clone(), session_data.player_id.clone()).await {
-                        Ok(player_info) => {
-                            lobby_id.set(session_data.lobby_id.clone());
-                            player_id.set(session_data.player_id.clone());
-                            player_name.set(player_info.name);
+            let l_id = LobbyId::from(id.clone());
+            let session = load_session().filter(|s| s.lobby_id == l_id);
 
-                            if let Ok(info) = get_lobby_info(session_data.lobby_id.clone()).await {
-                                 lobby_info.set(Some(info));
-                            }
+            let mut info = None;
+            let mut p_info = None;
 
-                            is_restoring.set(false);
-                            return;
-                        }
-                        Err(_) => {
-                            clear_session();
-                            // Fall through to show Join UI
-                        }
-                    }
+            if let Ok(l_info) = get_lobby_info(l_id.clone()).await {
+                info = Some(l_info);
+            }
+
+            if let Some(s) = &session {
+                if let Ok(pi) = get_player_info(s.lobby_id.clone(), s.player_id.clone()).await {
+                    p_info = Some(pi);
                 }
             }
 
-            // No session or wrong session, show join UI
-            is_restoring.set(false);
-        });
+            Some((info, p_info, session))
+        }
+    );
+
+    // Sync Resource to Signals
+    Effect::new(move |_| {
+        if let Some(Some((info, p_info, session))) = lobby_data_resource.get() {
+            if let Some(i) = info {
+                lobby_info.set(Some(i));
+            }
+            if let Some(pi) = p_info {
+                player_name.set(pi.name);
+                if let Some(s) = session {
+                    lobby_id.set(s.lobby_id);
+                    player_id.set(s.player_id);
+                }
+            } else {
+                // No session or invalid session
+                clear_session();
+            }
+        }
     });
 
     // Auto-join effect when user logs in via Auth modal while sitting on the Join UI
     Effect::new(move |_| {
         let id = url_lobby_id();
-        if id.is_empty() || is_restoring.get() || !lobby_id.get().is_empty() { 
-            return; // Only run if we don't have a valid sitting session and haven't loaded yet
+        if id.is_empty() || is_leaving.get() || !lobby_id.get().is_empty() { 
+            return; 
+        }
+
+        // Only run if the resource has finished loading
+        if lobby_data_resource.get().is_none() {
+            return;
         }
 
         if let Some(user) = auth_context.user.get() {
@@ -132,7 +146,10 @@ pub fn LobbyPage() -> impl IntoView {
                 set_is_joining.set(true);
                 set_join_status.set(format!("Joining lobby {} as {}...", id, user.username));
 
-                let request = JoinLobbyRequest { player_name: user.username.clone() };
+                let request = JoinLobbyRequest {
+                    player_name: user.username.clone(),
+                    player_id: load_session().map(|s| s.player_id),
+                };
                 let join_lobby_id = LobbyId::from(id.clone());
 
                 match join_lobby(join_lobby_id.clone(), request).await {
@@ -185,11 +202,16 @@ pub fn LobbyPage() -> impl IntoView {
             let guest_name = format!("Guest{}", random_suffix);
 
             match crate::context::create_guest_account(guest_name.clone()).await {
-                Ok(final_username) => {
+                Ok((final_username, token)) => {
                     auth_context.set_user.set(Some(crate::context::User {
-                        username: final_username,
+                        username: final_username.clone(),
                         is_guest: true,
                     }));
+                    crate::persistence::save_auth(&crate::persistence::AuthData {
+                        username: final_username,
+                        is_guest: true,
+                        token,
+                    });
                 }
                 Err(e) => {
                     set_join_status.set(format!("Failed to create guest: {}", e));
@@ -200,29 +222,37 @@ pub fn LobbyPage() -> impl IntoView {
     };
 
     let handle_leave_and_cleanup = move || {
-        let current_lobby_id = lobby_id.get_untracked();
-        let current_player_id = player_id.get_untracked();
 
-        spawn_local(async move {
-            let _ = leave_lobby(current_lobby_id, current_player_id).await;
+        // Prevent auto-join Effect from re-joining before navigation completes
+        is_leaving.set(true);
 
-            lobby_id.set(LobbyId::default());
-            player_id.set(PlayerId::default());
-            player_name.set(String::new());
-            lobby_info.set(None);
+        // Clear session immediately so no restore can happen
+        clear_session();
 
-            clear_session();
-            navigate_replace_path.set(Some("/".to_string()));
-        });
+        // Navigate away FIRST - this will unmount the component and dispose
+        // all Effects (including auto-join) before lobby_id changes can trigger them
+        navigate_replace_path.set(Some("/".to_string()));
+
+        // Clear signals after setting navigate (they fire in same microtask batch)
+        lobby_id.set(LobbyId::default());
+        player_id.set(PlayerId::default());
+        player_name.set(String::new());
+        lobby_info.set(None);
     };
 
     let (mgmt_is_loading, mgmt_set_is_loading) = signal(false);
     let (mgmt_status, mgmt_set_status) = signal(String::new());
 
     view! {
-        <Show
-            when=move || is_restoring.get()
-            fallback=move || {
+        <Transition
+            fallback=move || view! {
+                <div class="text-center p-8 mt-20">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <div class="text-lg text-gray-600 dark:text-gray-300">"Loading..."</div>
+                </div>
+            }
+        >
+            {move || lobby_data_resource.get().map(|_| {
                 view! {
                     <Show
                         when=move || !lobby_id.get().is_empty()
@@ -290,38 +320,37 @@ pub fn LobbyPage() -> impl IntoView {
                             when=move || !is_in_game.get()
                             fallback=move || {
                                 view! {
-                                    <GameComponent
-                                        lobby_id=lobby_id.read_only()
-                                        player_id=player_id.read_only()
-                                        on_exit_game=handle_leave_and_cleanup
-                                        send_message=send_message
-                                        prompt=prompt.read_only()
-                                        result=result.read_only()
-                                        typing_status=typing_status
-                                        lobby_info=lobby_info.read_only()
-                                    />
+                                    <div class="space-y-6 animate-page-entry">
+                                        <GameComponent
+                                            lobby_id=lobby_id.read_only()
+                                            player_id=player_id.read_only()
+                                            on_exit_game=handle_leave_and_cleanup
+                                            send_message=send_message
+                                            prompt=prompt.read_only()
+                                            result=result.read_only()
+                                            typing_status=typing_status
+                                            lobby_info=lobby_info.read_only()
+                                        />
+                                    </div>
                                 }
                             }
                         >
-                            <LobbyManagementComponent 
-                                lobby_info=lobby_info.read_only()
-                                current_lobby_id=lobby_id.read_only()
-                                current_player_id=player_id.read_only()
-                                _is_loading=mgmt_is_loading
-                                set_is_loading=mgmt_set_is_loading
-                                _status=mgmt_status
-                                set_status=mgmt_set_status
-                                on_leave_lobby=move |_| handle_leave_and_cleanup()
-                            />
+                            <div class="animate-page-entry">
+                                <LobbyManagementComponent 
+                                    lobby_info=lobby_info.read_only()
+                                    current_lobby_id=lobby_id.read_only()
+                                    current_player_id=player_id.read_only()
+                                    _is_loading=mgmt_is_loading
+                                    set_is_loading=mgmt_set_is_loading
+                                    _status=mgmt_status
+                                    set_status=mgmt_set_status
+                                    on_leave_lobby=move |_| handle_leave_and_cleanup()
+                                />
+                            </div>
                         </Show>
                     </Show>
                 }
-            }
-        >
-            <div class="text-center p-8 mt-20">
-                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                <div class="text-lg text-gray-600 dark:text-gray-300">"Loading..."</div>
-            </div>
-        </Show>
+            })}
+        </Transition>
     }
 }

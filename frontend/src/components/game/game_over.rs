@@ -22,12 +22,8 @@ pub fn GameOver(
             p.first().cloned()
         },
         GameMode::Duel => {
-            // Last one standing (not eliminated)
-            // Or if multiple not eliminated (unlikely if logic is correct), highest score
             let mut active: Vec<_> = players.iter().filter(|p| !p.is_eliminated).collect();
             if active.is_empty() {
-                 // Everyone died? (Shouldn't happen with correct logic, but maybe last two died same turn?)
-                 // Fallback to highest score
                  let mut p = players.clone();
                  p.sort_by(|a, b| b.score.cmp(&a.score));
                  p.first().cloned()
@@ -35,7 +31,8 @@ pub fn GameOver(
                 active.sort_by(|a, b| b.score.cmp(&a.score));
                 active.first().map(|p| (*p).clone())
             }
-        }
+        },
+        GameMode::Zen => None,
     };
 
     let is_winner = winner.as_ref().map(|w| w.id == current_player_id).unwrap_or(false);
@@ -58,6 +55,7 @@ pub fn GameOver(
                         {match mode {
                             GameMode::Deathmatch => "Target score reached!",
                             GameMode::Duel => "Last player standing!",
+                            GameMode::Zen => "Session Ended!",
                         }}
                     </p>
 

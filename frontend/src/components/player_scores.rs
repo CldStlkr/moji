@@ -13,19 +13,20 @@ pub fn PlayerScoresComponent(
     let mut sorted_players = players;
     sorted_players.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
 
+    let ranked_players: Vec<(usize, PlayerData)> = sorted_players.into_iter().enumerate().map(|(i, p)| (i + 1, p)).collect();
+
     view! {
         <div class="mt-6 p-4 bg-gray-50 rounded-lg">
             <h3 class="text-xl font-semibold text-blue-600 mb-4 border-b border-gray-200 pb-2">
                 "Player Scores"
             </h3>
             <div class="space-y-2">
-                {sorted_players
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, player)| {
+                <For
+                    each=move || ranked_players.clone()
+                    key=|(_rank, player)| player.id.clone()
+                    children=move |(rank, player)| {
                         let is_current = player.id == current_player_id.get();
                         let is_leader = show_leader_badge && player.id == leader_id;
-                        let rank = index + 1;
                         view! {
                             <div class=format!(
                                 "flex items-center gap-4 p-3 rounded-lg border-b border-gray-200 last:border-b-0 {}",
@@ -37,7 +38,7 @@ pub fn PlayerScoresComponent(
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <span class="font-medium text-gray-900 truncate">
-                                            {player.name}
+                                            {player.name.clone()}
                                         </span>
                                         <div class="flex items-center gap-1">
                                             <Show when=move || is_leader>
@@ -58,8 +59,8 @@ pub fn PlayerScoresComponent(
                                 </div>
                             </div>
                         }
-                    })
-                    .collect_view()}
+                    }
+                />
             </div>
         </div>
     }
@@ -71,6 +72,7 @@ pub fn CompactPlayerScoresComponent(
     current_player_id: ReadSignal<PlayerId>,
     typing_status: ReadSignal<std::collections::HashMap<PlayerId, String>>,
     #[prop(into)] game_mode: Signal<GameMode>,
+    #[prop(into)] initial_lives: Signal<u32>,
 ) -> impl IntoView {
     // Sort players by score (highest first)
     let mut sorted_players = players;
@@ -85,9 +87,10 @@ pub fn CompactPlayerScoresComponent(
                 </Show>
             </h4>
             <div class="space-y-1">
-                {sorted_players
-                    .into_iter()
-                    .map(|player| {
+                <For
+                    each=move || sorted_players.clone()
+                    key=|player| player.id.clone()
+                    children=move |player| {
                         let is_current = player.id == current_player_id.get();
                         let pid = player.id.clone();
                         let is_turn = player.is_turn;
@@ -120,7 +123,7 @@ pub fn CompactPlayerScoresComponent(
                                                 "font-medium text-lg {}",
                                                 if is_current { "text-blue-700 dark:text-blue-300" }
                                                 else { "text-gray-900 dark:text-gray-200" }
-                                            )>{player.name}</span>
+                                            )>{player.name.clone()}</span>
 
                                             <Show when=move || is_eliminated>
                                                 <span class="text-[10px] uppercase tracking-wider font-bold text-red-500">"Eliminated"</span>
@@ -130,10 +133,30 @@ pub fn CompactPlayerScoresComponent(
 
                                     <div class="flex items-center gap-6">
                                          <Show when=move || mode == GameMode::Duel && !is_eliminated>
-                                            <div class="flex items-center gap-1" title={format!("{} Lives Remaining", lives.unwrap_or(0))}>
-                                                {(0..lives.unwrap_or(0)).map(|_| view! {
-                                                    <span class="text-xl leading-none transform hover:scale-125 transition-transform cursor-help filter drop-shadow-sm">"❤️"</span>
-                                                }).collect_view()}
+                                            <div class="flex items-center gap-1">
+                                                {move || {
+                                                    let current_lives = lives.unwrap_or(0);
+                                                    let initial_lives_val = initial_lives.get();
+                                                    
+                                                    (0..initial_lives_val).map(|i| {
+                                                        let is_lost = i >= current_lives;
+                                                        let is_last = !is_lost && current_lives == 1;
+                                                        
+                                                        let heart_class = if is_last {
+                                                            "text-xl leading-none animate-vibrate inline-block"
+                                                        } else if is_lost {
+                                                            "text-xl leading-none opacity-40 grayscale-[0.5] inline-block"
+                                                        } else {
+                                                            "text-xl leading-none inline-block transform hover:scale-125 transition-transform"
+                                                        };
+
+                                                        view! {
+                                                            <span class=heart_class title=if is_lost { "Lost life" } else { "Life" }>
+                                                                {if is_lost { "💔" } else { "❤️" }}
+                                                            </span>
+                                                        }
+                                                    }).collect_view()
+                                                }}
                                             </div>
                                          </Show>
 
@@ -162,8 +185,8 @@ pub fn CompactPlayerScoresComponent(
                                 </Show>
                             </div>
                         }
-                    })
-                    .collect_view()}
+                    }
+                />
             </div>
         </div>
     }

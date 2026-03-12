@@ -7,3 +7,4 @@ pub mod user_menu;
 pub mod player_scores;
 pub mod lobby_page;
 pub mod home;
+pub mod toast;

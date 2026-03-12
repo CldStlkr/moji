@@ -34,6 +34,9 @@ leptos = { version = "0.8.16", features = ["ssr"] }
 leptos_axum = { version = "0.8.8" }
 async-trait = { version = "0.1.89" }
 parking_lot = { version = "0.12.5" }
+tower_governor = { version = "0.8.0", features = ["axum"] }
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+rustrict = { version = "0.7.38" }
 
 [dev-dependencies]
 axum-test = "18.7"
@@ -46,6 +49,9 @@ path = "src/lib.rs"
 [[bin]]
 name = "moji-server"
 path = "src/main.rs"
+
+[features]
+ssr = []
 
 [env]
 SQLX_OFFLINE = "true"

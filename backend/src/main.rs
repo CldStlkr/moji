@@ -15,6 +15,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,12 +30,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     wait_for_db(&database_url).await?;
     let db_pool = init_db_pool(&database_url).await?;
 
+    let governor_conf = GovernorConfigBuilder::default()
+        .per_millisecond(50)
+        .burst_size(20)
+        .key_extractor(SmartIpKeyExtractor)
+        .finish()
+        .unwrap();
+
     let app_state = Arc::new(AppState::create_with_db(db_pool).await?);
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let is_prod = env::var("PRODUCTION").is_ok();
+    let cors = if is_prod {
+        let frontend_url = env::var("FRONTEND_URL").unwrap_or_else(|_| "https://moji.fly.dev".to_string());
+        CorsLayer::new()
+            .allow_origin(frontend_url.parse::<axum::http::HeaderValue>().unwrap())
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    };
 
     let frontend_dir = if env::var("PRODUCTION").is_ok() {
         // In production (Docker), the frontend is in /usr/local/dist
@@ -72,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         }))
         .with_state(app_state)
+        .route_layer(tower_governor::GovernorLayer::new(governor_conf))
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
@@ -103,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Server running on {}", addr);
     tracing::info!("Frontend available at http://{}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())
 }

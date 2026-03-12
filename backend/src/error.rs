@@ -67,11 +67,23 @@ impl IntoResponse for AppError {
             }
         }
 
+        let error_message = match &self {
+            AppError::Database(_) | AppError::DataLoadError(_) | AppError::InternalError(_) => {
+                if std::env::var("PRODUCTION").is_ok() {
+                    "An internal server error occurred.".to_string()
+                } else {
+                    self.to_string()
+                }
+            }
+            _ => self.to_string(),
+        };
+
         // Return user-friendly error to client
         let body = Json(json!({
-            "error": self.to_string()
+            "error": error_message
         }));
 
         (status, body).into_response()
     }
 }
+

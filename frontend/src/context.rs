@@ -21,7 +21,7 @@ impl AuthContext {
     }
 }
 
-pub async fn create_guest_account(username: String) -> Result<String, leptos::server_fn::error::ServerFnError> {
+pub async fn create_guest_account(username: String) -> Result<(String, Option<String>), leptos::server_fn::error::ServerFnError> {
     let req = shared::AuthRequest {
         username: username.clone(),
         password: None,
@@ -35,6 +35,11 @@ pub async fn create_guest_account(username: String) -> Result<String, leptos::se
         .and_then(|u| u.as_str())
         .unwrap_or(&username)
         .to_string();
+        
+    let token = response
+        .get("token")
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string());
 
-    Ok(final_username)
+    Ok((final_username, token))
 }

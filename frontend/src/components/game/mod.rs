@@ -11,13 +11,15 @@ mod header;
 mod prompt;
 mod input;
 mod feedback;
+mod timer;
+mod game_over;
+
 use header::GameHeader;
 use prompt::PromptDisplay;
 use input::GameInput;
 use feedback::GameFeedback;
 use game_over::GameOver;
-
-mod game_over;
+use timer::TimerBar;
 
 styled_view!(game_container, "max-w-6xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors");
 styled_view!(lobby_info_bar, "flex items-center gap-2 mb-6 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm relative transition-colors");
@@ -47,6 +49,16 @@ where
     let is_loading = RwSignal::new(false);
     let is_copied = RwSignal::new(false);
     let error_message = RwSignal::new(String::new());
+    let shake_trigger = RwSignal::new(false);
+
+    // Watch for result changes to trigger shake
+    Effect::new(move |_| {
+        let res = result.get();
+        if !res.is_empty() && (res.contains("Invalid") || res.contains("Wrong") || res.contains("Try")) {
+            shake_trigger.set(true);
+            set_timeout(move || shake_trigger.set(false), std::time::Duration::from_millis(500));
+        }
+    });
 
     let input_ref = NodeRef::<html::Input>::new();
 
@@ -88,6 +100,11 @@ where
 
     let submit_word = move |_: ev::MouseEvent| {
         perform_submit();
+    };
+
+    let skip_turn = move |_: ev::MouseEvent| {
+        let msg = ClientMessage::Skip;
+        send_message(msg);
     };
 
     let handle_key_press = move |ev: ev::KeyboardEvent| {
@@ -162,7 +179,7 @@ where
     });
 
     view! {
-        <div class=game_container()>
+        <div class=move || format!("{} {}", game_container(), if shake_trigger.get() { "animate-shake" } else { "" })>
 
             <GameHeader
                 content_mode=lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
@@ -196,6 +213,19 @@ where
                 // Main Game Area
                 <div class="flex-1 space-y-8">
 
+                    <TimerBar
+                        time_limit=Signal::derive(move || -> Option<u32> {
+                            lobby_info.get().and_then(|info| {
+                                if info.settings.mode != shared::GameMode::Zen {
+                                    info.settings.time_limit_seconds
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        reset_trigger=Signal::derive(move || -> String { prompt.get() })
+                    />
+
                     <PromptDisplay
                         prompt=prompt
                         is_loading=is_loading.read_only()
@@ -210,6 +240,7 @@ where
                         on_input=handle_input
                         on_submit=submit_word
                         on_keydown=handle_key_press
+                        on_skip=skip_turn
                         disabled=Signal::derive(move || {
                              if let Some(info) = lobby_info.get() {
                                  if info.settings.mode == shared::GameMode::Duel {
@@ -240,6 +271,7 @@ where
                             current_player_id=player_id
                             typing_status=typing_status.read_only()
                             game_mode=Signal::derive(move || lobby_info.get().map(|i| i.settings.mode).unwrap_or_default())
+                            initial_lives=Signal::derive(move || lobby_info.get().map(|i| i.settings.initial_lives.unwrap_or(3)).unwrap_or(3))
                         />
                     </Show>
                 </div>

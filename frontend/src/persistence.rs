@@ -2,6 +2,8 @@ use leptos::prelude::*;
 use shared::{LobbyId, PlayerId};
 use web_sys::Storage;
 
+use serde::{Serialize, Deserialize};
+
 const STORAGE_KEY_LOBBY_ID: &str = "moji_lobby_id";
 const STORAGE_KEY_PLAYER_ID: &str = "moji_player_id";
 const STORAGE_KEY_PLAYER_NAME: &str = "moji_player_name";
@@ -9,14 +11,16 @@ const STORAGE_KEY_IS_IN_GAME: &str = "moji_is_in_game";
 
 const STORAGE_KEY_AUTH_USERNAME: &str = "moji_auth_username";
 const STORAGE_KEY_AUTH_IS_GUEST: &str = "moji_auth_is_guest";
+const STORAGE_KEY_AUTH_TOKEN: &str = "moji_auth_token";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthData {
     pub username: String,
     pub is_guest: bool,
+    pub token: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionData {
     pub lobby_id: LobbyId,
     pub player_id: PlayerId,
@@ -81,6 +85,11 @@ pub fn save_auth(auth: &AuthData) {
     if let Some(storage) = get_storage() {
         let _ = storage.set_item(STORAGE_KEY_AUTH_USERNAME, &auth.username);
         let _ = storage.set_item(STORAGE_KEY_AUTH_IS_GUEST, &auth.is_guest.to_string());
+        if let Some(token) = &auth.token {
+            let _ = storage.set_item(STORAGE_KEY_AUTH_TOKEN, token);
+        } else {
+            let _ = storage.remove_item(STORAGE_KEY_AUTH_TOKEN);
+        }
     }
 }
 
@@ -92,14 +101,16 @@ pub fn load_auth() -> Option<AuthData> {
         .ok()?
         .and_then(|s| s.parse::<bool>().ok())
         .unwrap_or(false);
+    let token = storage.get_item(STORAGE_KEY_AUTH_TOKEN).ok().flatten();
 
-    Some(AuthData { username, is_guest })
+    Some(AuthData { username, is_guest, token })
 }
 
 pub fn clear_auth() {
     if let Some(storage) = get_storage() {
         let _ = storage.remove_item(STORAGE_KEY_AUTH_USERNAME);
         let _ = storage.remove_item(STORAGE_KEY_AUTH_IS_GUEST);
+        let _ = storage.remove_item(STORAGE_KEY_AUTH_TOKEN);
     }
 }
 

@@ -35,7 +35,7 @@ pub fn Home() -> impl IntoView {
     };
 
     view! {
-        <div class="max-w-2xl mx-auto my-8">
+        <div class="max-w-2xl mx-auto my-8 animate-page-entry">
             <LobbyJoinComponent
                 is_loading=is_loading
                 set_is_loading=set_is_loading

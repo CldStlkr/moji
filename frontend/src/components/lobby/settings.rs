@@ -27,12 +27,14 @@ styled_view!(difficulty_btn, is_active: bool,
 
 /// Hook to handle updating lobby settings
 pub fn use_lobby_settings(
-    lobby_id: LobbyId,
-    player_id: PlayerId,
+    lobby_id: impl Into<Signal<LobbyId>>,
+    player_id: impl Into<Signal<PlayerId>>,
 ) -> Callback<GameSettings> {
+    let lobby_id_sig = lobby_id.into();
+    let player_id_sig = player_id.into();
     Callback::new(move |new_settings: GameSettings| {
-        let l_id = lobby_id.clone();
-        let p_id = player_id.clone();
+        let l_id = lobby_id_sig.get();
+        let p_id = player_id_sig.get();
         spawn_local(async move {
             let req = UpdateSettingsRequest {
                 player_id: p_id,
@@ -47,14 +49,14 @@ pub fn use_lobby_settings(
 #[component]
 pub fn LobbySettingsPanel(
     settings: Signal<GameSettings>,
-    is_leader: bool,
+    #[prop(into)] is_leader: Signal<bool>,
     on_update: Callback<GameSettings>,
 ) -> impl IntoView
 {
     // Handler for toggling difficulty
     let toggle_difficulty = {
         move |level: String| {
-            if !is_leader { return; }
+            if !is_leader.get() { return; }
             let mut new_settings = settings.get();
             if new_settings.difficulty_levels.contains(&level) {
                 // Don't allow removing the last level
@@ -71,7 +73,7 @@ pub fn LobbySettingsPanel(
 
     let toggle_weighted = {
         move |_| {
-            if !is_leader { return; }
+            if !is_leader.get() { return; }
             let mut new_settings = settings.get();
             new_settings.weighted = !new_settings.weighted;
             on_update.run(new_settings);
@@ -89,30 +91,44 @@ pub fn LobbySettingsPanel(
                     <button
                         on:click={
                             move |_| {
-                                if !is_leader { return; }
+                                if !is_leader.get() { return; }
                                 let mut new_settings = settings.get();
                                 new_settings.mode = shared::GameMode::Deathmatch;
                                 on_update.run(new_settings);
                             }
                         }
-                        disabled=!is_leader
-                        class=mode_btn(settings.get().mode == shared::GameMode::Deathmatch)
+                        disabled=move || !is_leader.get()
+                        class=move || mode_btn(settings.get().mode == shared::GameMode::Deathmatch)
                     >
                         "Deathmatch (Race)"
                     </button>
                     <button
                         on:click={
                             move |_| {
-                                if !is_leader { return; }
+                                if !is_leader.get() { return; }
                                 let mut new_settings = settings.get();
                                 new_settings.mode = shared::GameMode::Duel;
                                 on_update.run(new_settings);
                             }
                         }
-                        disabled=!is_leader
-                        class=mode_btn(settings.get().mode == shared::GameMode::Duel)
+                        disabled=move || !is_leader.get()
+                        class=move || mode_btn(settings.get().mode == shared::GameMode::Duel)
                     >
                         "Duel (Survival)"
+                    </button>
+                    <button
+                        on:click={
+                            move |_| {
+                                if !is_leader.get() { return; }
+                                let mut new_settings = settings.get();
+                                new_settings.mode = shared::GameMode::Zen;
+                                on_update.run(new_settings);
+                            }
+                        }
+                        disabled=move || !is_leader.get()
+                        class=move || mode_btn(settings.get().mode == shared::GameMode::Zen)
+                    >
+                        "Zen (Infinite)"
                     </button>
                 </div>
             </div>
@@ -124,28 +140,28 @@ pub fn LobbySettingsPanel(
                     <button
                         on:click={
                             move |_| {
-                                if !is_leader { return; }
+                                if !is_leader.get() { return; }
                                 let mut new_settings = settings.get();
                                 new_settings.content_mode = shared::ContentMode::Kanji;
                                 on_update.run(new_settings);
                             }
                         }
-                        disabled=!is_leader
-                        class=mode_btn(settings.get().content_mode == shared::ContentMode::Kanji)
+                        disabled=move || !is_leader.get()
+                        class=move || mode_btn(settings.get().content_mode == shared::ContentMode::Kanji)
                     >
                         "Kanji"
                     </button>
                     <button
                         on:click={
                             move |_| {
-                                if !is_leader { return; }
+                                if !is_leader.get() { return; }
                                 let mut new_settings = settings.get();
                                 new_settings.content_mode = shared::ContentMode::Vocab;
                                 on_update.run(new_settings);
                             }
                         }
-                        disabled=!is_leader
-                        class=mode_btn(settings.get().content_mode == shared::ContentMode::Vocab)
+                        disabled=move || !is_leader.get()
+                        class=move || mode_btn(settings.get().content_mode == shared::ContentMode::Vocab)
                     >
                         "Vocab"
                     </button>
@@ -161,17 +177,17 @@ pub fn LobbySettingsPanel(
                             type="number"
                             min="1"
                             max="999"
-                            value=settings.get().target_score.unwrap_or(10)
+                            value=move || settings.get().target_score.unwrap_or(10)
                             on:input={
                                 move |ev| {
-                                     if !is_leader { return; }
+                                     if !is_leader.get() { return; }
                                      let val = event_target_value(&ev).parse::<u32>().ok();
                                      let mut new_settings = settings.get();
                                      new_settings.target_score = val;
                                      on_update.run(new_settings);
                                 }
                             }
-                            disabled=!is_leader
+                            disabled=move || !is_leader.get()
                             class=input_field()
                         />
                          <p class="text-xs text-gray-500">"First player to reach this score wins."</p>
@@ -186,17 +202,17 @@ pub fn LobbySettingsPanel(
                                 type="number"
                                 min="1"
                                 max="99"
-                                value=settings.get().initial_lives.unwrap_or(3)
+                                value=move || settings.get().initial_lives.unwrap_or(3)
                                 on:input={
                                     move |ev| {
-                                         if !is_leader { return; }
+                                         if !is_leader.get() { return; }
                                          let val = event_target_value(&ev).parse::<u32>().ok();
                                          let mut new_settings = settings.get();
                                          new_settings.initial_lives = val;
                                          on_update.run(new_settings);
                                     }
                                 }
-                                disabled=!is_leader
+                                disabled=move || !is_leader.get()
                                 class=input_field()
                             />
                         </div>
@@ -208,16 +224,16 @@ pub fn LobbySettingsPanel(
                             <button
                                 on:click={
                                     move |_| {
-                                         if !is_leader { return; }
+                                         if !is_leader.get() { return; }
                                          let mut new_settings = settings.get();
                                          new_settings.duel_allow_kanji_reuse = !new_settings.duel_allow_kanji_reuse;
                                          on_update.run(new_settings);
                                     }
                                 }
-                                disabled=!is_leader
-                                class=toggle_switch(settings.get().duel_allow_kanji_reuse)
+                                disabled=move || !is_leader.get()
+                                class=move || toggle_switch(settings.get().duel_allow_kanji_reuse)
                             >
-                                <span class=toggle_knob(settings.get().duel_allow_kanji_reuse) />
+                                <span class=move || toggle_knob(settings.get().duel_allow_kanji_reuse) />
                             </button>
                         </div>
                         <p class="text-xs text-gray-500">
@@ -238,16 +254,15 @@ pub fn LobbySettingsPanel(
             <div>
                 <span class=label_text()>"JLPT Levels:"</span>
                 <div class="flex gap-2 flex-wrap">
-                    {let diff_levels = settings.get().difficulty_levels;
+                    {let diff_levels = move || settings.get().difficulty_levels;
                      ["N1", "N2", "N3", "N4", "N5"].into_iter().map(move |level| {
-                        let is_active = diff_levels.contains(&level.to_string());
                         let level_str = level.to_string();
                         let toggle_difficulty = toggle_difficulty;
                         view! {
                            <button
                                on:click=move |_| toggle_difficulty(level_str.clone())
-                               disabled=!is_leader
-                               class=difficulty_btn(is_active)
+                               disabled=move || !is_leader.get()
+                               class=move || difficulty_btn(diff_levels().contains(&level.to_string()))
                             >
                                 {level}
                            </button>
@@ -261,11 +276,35 @@ pub fn LobbySettingsPanel(
                 <span class="text-sm text-gray-600 dark:text-gray-300">"Weighted Random (Prioritize more common kanji)"</span>
                 <button
                     on:click=toggle_weighted
-                    disabled=!is_leader
-                    class=toggle_switch(settings.get().weighted)
+                    disabled=move || !is_leader.get()
+                    class=move || toggle_switch(settings.get().weighted)
                 >
-                    <span class=toggle_knob(settings.get().weighted) />
+                    <span class=move || toggle_knob(settings.get().weighted) />
                 </button>
+            </div>
+
+            // Time Limit
+            <div class="flex flex-col gap-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                <label class="text-sm text-gray-600 dark:text-gray-400">"Time Limit (seconds):"</label>
+                <input
+                    type="number"
+                    min="0"
+                    max="300"
+                    value=move || settings.get().time_limit_seconds.unwrap_or(0)
+                    on:input={
+                        move |ev| {
+                             if !is_leader.get() { return; }
+                             let val = event_target_value(&ev).parse::<u32>().ok();
+                             let mut new_settings = settings.get();
+                             // Treat 0 as None (no limit)
+                             new_settings.time_limit_seconds = val.and_then(|v| if v == 0 { None } else { Some(v) });
+                             on_update.run(new_settings);
+                        }
+                    }
+                    disabled=move || !is_leader.get()
+                    class=input_field()
+                />
+                <p class="text-xs text-gray-500">"Set to 0 for no time limit. Applies to Deathmatch and Duel."</p>
             </div>
         </div>
     }

@@ -29,6 +29,9 @@ fn App() -> impl IntoView {
         set_show_auth_modal,
     });
 
+    // Provide Toast Context
+    components::toast::provide_toast_context();
+
     // Check for auth on mount
     Effect::new(move |_| {
         if let Some(auth) = load_auth() {
@@ -67,6 +70,7 @@ fn App() -> impl IntoView {
 
     view! {
         <Router>
+            <components::toast::ToastContainer />
             <div class="max-w-4xl mx-auto p-5 dark:text-gray-100 min-h-screen flex flex-col">
                 <header class="flex justify-between items-center mb-8">
                     <h1 class="text-4xl font-bold text-blue-500">

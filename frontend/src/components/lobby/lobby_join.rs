@@ -47,6 +47,7 @@ where
 
             let request = JoinLobbyRequest {
                 player_name: user.username.clone(),
+                player_id: None,
             };
 
             match create_lobby(request).await {
@@ -109,8 +110,16 @@ where
             set_is_loading.set(true);
             set_status.set(format!("Joining lobby {}...", lobby_id));
 
+            let session = crate::persistence::load_session();
+            let player_id_opt = if let Some(s) = session {
+                if s.lobby_id.to_string() == lobby_id.to_string() {
+                    Some(s.player_id)
+                } else { None }
+            } else { None };
+
             let request = JoinLobbyRequest {
                 player_name: user.username.clone(),
+                player_id: player_id_opt,
             };
 
             match join_lobby(lobby_id.clone(), request).await {

@@ -8,7 +8,7 @@ use crate::{
     lobby::LobbyState,
 };
 use axum::{
-    extract::{Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{Path, State, WebSocketUpgrade, Query, ws::{Message, WebSocket}},
     response::IntoResponse,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
@@ -23,9 +23,53 @@ use shared::{
     PlayerId, StartGameRequest, UpdateSettingsRequest, ApiContext,
     JsonResult, PromptResult, LobbyResult, PlayerResult
 };
-use std::sync::Arc;
 use async_trait::async_trait;
 use leptos::server_fn::error::ServerFnError;
+use serde::{Deserialize, Serialize};
+use rustrict::{CensorStr, Type};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH}
+};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    sub: String,
+    exp: usize,
+}
+
+fn generate_jwt(user_id: &str) -> Result<String, ServerFnError> {
+    let expiration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize + 60 * 60 * 24; // 24 hours
+
+    let claims = Claims {
+        sub: user_id.to_string(),
+        exp: expiration,
+    };
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "INSECURE_DEFAULT_SECRET".to_string());
+
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_ref())
+    ).map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+fn validate_username(username: &str) -> std::result::Result<(), ServerFnError> {
+    if username.len() < 3 || username.len() > 20 {
+        return Err(ServerFnError::new("Username must be between 3 and 20 characters"));
+    }
+    if !username.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(ServerFnError::new("Username can only contain letters, numbers, and underscores"));
+    }
+    if username.is(Type::INAPPROPRIATE) || username.is(Type::EVASIVE) {
+        return Err(ServerFnError::new("Username is not appropriate"));
+    }
+
+    Ok(())
+}
 
 #[async_trait]
 impl ApiContext for AppState {
@@ -103,7 +147,7 @@ impl ApiContext for AppState {
     async fn join_lobby(&self, lobby_id: LobbyId, request: JoinLobbyRequest) -> JsonResult {
         let lobby = self.get_lobby(&lobby_id)?;
 
-        let player_id = generate_player_id();
+        let player_id = request.player_id.unwrap_or_else(generate_player_id);
         let _ = lobby.add_player(player_id.clone(), request.player_name.clone())?;
 
         if let Some(game_id) = lobby.game_session_id {
@@ -150,6 +194,8 @@ impl ApiContext for AppState {
     }
 
     async fn check_username(&self, username: String) -> JsonResult {
+        validate_username(&username)?;
+
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
 
@@ -169,6 +215,8 @@ impl ApiContext for AppState {
     }
 
     async fn authenticate(&self, request: shared::AuthRequest) -> JsonResult {
+        validate_username(&request.username)?;
+
         let db_pool = self.db_pool.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
         let existing_user = User::find_by_username(db_pool, &request.username).await
@@ -182,8 +230,8 @@ impl ApiContext for AppState {
                     if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok() {
                         Ok(json!({
                             "message": "Login successful",
-                            "user": user,
-                            "token": "TODO_SESSION_TOKEN"
+                            "user": &user,
+                            "token": generate_jwt(&user.id.to_string())?
                         }))
                     } else {
                         Err(ServerFnError::new("Invalid password"))
@@ -198,8 +246,8 @@ impl ApiContext for AppState {
             let user = User::create(db_pool, &request.username, None, true).await?;
             Ok(json!({
                 "message": "Guest account created",
-                "user": user,
-                "token": "TODO_SESSION_TOKEN"
+                "user": &user,
+                "token": generate_jwt(&user.id.to_string())?
             }))
         } else if let Some(password) = request.password {
             let salt = SaltString::generate(&mut OsRng);
@@ -210,8 +258,8 @@ impl ApiContext for AppState {
             let user = User::create(db_pool, &request.username, Some(password_hash), false).await?;
             Ok(json!({
                 "message": "Account created",
-                "user": user,
-                "token": "TODO_SESSION_TOKEN"
+                "user": &user,
+                "token": generate_jwt(&user.id.to_string())?
             }))
         } else {
             Err(ServerFnError::new("Password required to register"))
@@ -229,15 +277,27 @@ impl ApiContext for AppState {
     }
 
     async fn leave_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
+        let lobby = match self.get_lobby(&lobby_id) {
+            Ok(l) => l,
+            Err(crate::error::AppError::LobbyNotFound(_)) => {
+                // If the lobby is already gone (e.g. WS cleanup finished first), this is fine.
+                return Ok(json!({ "message": "Lobby already cleaned up" }));
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         lobby.remove_player(&player_id);
 
         let is_empty = lobby.players.read(|players| players.is_empty());
+        let actually_removed = if is_empty {
+            self.lobbies.write(|lobbies| {
+                lobbies.remove(&lobby_id).is_some()
+            })
+        } else {
+            false
+        };
 
-        if is_empty {
-            self.lobbies.write(|lobbies| { lobbies.remove(&lobby_id); });
-
+        if actually_removed {
             if let Some(game_id) = lobby.game_session_id {
                 if let Some(db_pool) = &self.db_pool {
                     let pool = Arc::clone(db_pool);
@@ -261,20 +321,49 @@ impl ApiContext for AppState {
     }
 }
 
+#[derive(Deserialize)]
+pub struct WsParams {
+    token: Option<String>,
+}
+
+#[axum::debug_handler]
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(app_state): State<Arc<AppState>>,
     Path((lobby_id, player_id)): Path<(LobbyId, PlayerId)>,
+    Query(params): Query<WsParams>,
+    State(app_state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "INSECURE_DEFAULT_SECRET".to_string());
+    
+    let is_valid = if let Some(t) = params.token {
+        jsonwebtoken::decode::<Claims>(
+            &t,
+            &jsonwebtoken::DecodingKey::from_secret(secret.as_ref()),
+            &jsonwebtoken::Validation::default()
+        ).is_ok()
+    } else {
+        false
+    };
+
+    if !is_valid {
+        tracing::warn!("Unauthorized WebSocket connection attempt to lobby {}", lobby_id.0);
+        return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_socket(socket, app_state, lobby_id, player_id))
 }
 
 async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: LobbyId, player_id: PlayerId) {
+    let conn_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+    tracing::info!("[WS:{}] Connected: player {} in lobby {}", conn_id, player_id.0, lobby_id.0);
     let (mut sender, mut receiver) = socket.split();
 
     let lobby = match app_state.get_lobby(&lobby_id) {
         Ok(l) => l,
-        Err(_) => return, // Lobby closed or not found
+        Err(_) => {
+            tracing::warn!("[WS:{}] Connect failed: lobby {} not found for player {}", conn_id, lobby_id.0, player_id.0);
+            return;
+        }
     };
 
     let mut rx = lobby.tx.subscribe();
@@ -297,19 +386,33 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
         let _ = sender.send(Message::Text(game_msg.into())).await;
     }
 
+    let player_id_for_send = player_id.clone();
+    let conn_id_for_send = conn_id.clone();
     let mut send_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         loop {
-            match rx.recv().await {
-                Ok(msg) => {
-                    if sender.send(Message::Text(msg.into())).await.is_err() {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if sender.send(Message::Ping(Default::default())).await.is_err() {
                         break;
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("WebSocket receiver lagged behind by {} messages", n);
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    break;
+                result = rx.recv() => {
+                    match result {
+                        Ok(msg) => {
+                            tracing::debug!("[WS:{}] sending to player {}: {}...", conn_id_for_send, player_id_for_send.0, &msg[..msg.len().min(100)]);
+                            if sender.send(Message::Text(msg.into())).await.is_err() {
+                                tracing::warn!("[WS:{}] send failed for player {}, closing", conn_id_for_send, player_id_for_send.0);
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("[WS:{}] receiver lagged behind by {} messages", conn_id_for_send, n);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -318,7 +421,22 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
     let lobby_ref = lobby.clone();
     let player_id_ref = player_id.clone();
     let mut recv_task = tokio::spawn(async move {
+        let mut msg_count = 0;
+        let mut last_reset = tokio::time::Instant::now();
+
         while let Some(Ok(msg)) = receiver.next().await {
+            let now = tokio::time::Instant::now();
+            if now.duration_since(last_reset).as_secs() >= 1 {
+                msg_count = 0;
+                last_reset = now;
+            }
+            
+            msg_count += 1;
+            if msg_count > 20 { // 20 messages per second limit
+                tracing::warn!("WebSocket rate limit exceeded by player {}", player_id_ref);
+                break;
+            }
+
             if let Message::Text(text) = msg {
                  if let Ok(client_msg) = serde_json::from_str::<shared::ClientMessage>(&text) {
                      match client_msg {
@@ -332,6 +450,11 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                              if let Err(e) = lobby_ref.process_guess(&player_id_ref, &input) {
                                  tracing::error!("Error processing guess: {:?}", e);
                              }
+                         },
+                         shared::ClientMessage::Skip => {
+                             if let Err(e) = lobby_ref.process_skip(&player_id_ref) {
+                                 tracing::error!("Error processing skip: {:?}", e);
+                             }
                          }
                      }
                  }
@@ -343,4 +466,8 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
         _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort(),
     }
+
+    // Ensure the lobby is cleaned up if the user disconnects
+    tracing::info!("[WS:{}] Disconnected: performing cleanup for player {} in lobby {}", conn_id, player_id.0, lobby_id.0);
+    let _ = app_state.leave_lobby(lobby_id, player_id).await;
 }

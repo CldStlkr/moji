@@ -33,8 +33,37 @@ async fn spawn_server() -> (SocketAddr, Arc<AppState>) {
     (addr, state)
 }
 
+fn generate_test_jwt(user_id: &str) -> String {
+    use serde::{Deserialize, Serialize};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Claims {
+        sub: String,
+        exp: usize,
+    }
+
+    let expiration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize + 60 * 60; // 1 hour
+        
+    let claims = Claims {
+        sub: user_id.to_string(),
+        exp: expiration,
+    };
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "INSECURE_DEFAULT_SECRET".to_string());
+    
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_ref())
+    ).unwrap()
+}
+
 async fn connect_ws(addr: SocketAddr, lobby_id: &str, player_id: &str) -> WsStream {
-    let url = format!("ws://{addr}/ws/{lobby_id}/{player_id}");
+    let token = generate_test_jwt(player_id);
+    let url = format!("ws://{addr}/ws/{lobby_id}/{player_id}?token={token}");
     let (ws, _) = connect_async(&url).await.expect("WS connect failed");
     ws
 }
@@ -63,7 +92,7 @@ async fn next_msg_of_type(ws: &mut WsStream, expected_type: &str) -> Value {
 #[tokio::test]
 async fn test_ws_connect_receives_player_list() {
     let (addr, state) = spawn_server().await;
-    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id = create["lobby_id"].as_str().unwrap();
     let player_id = create["player_id"].as_str().unwrap();
 
@@ -78,14 +107,14 @@ async fn test_ws_connect_receives_player_list() {
 #[tokio::test]
 async fn test_ws_second_player_join_broadcast() {
     let (addr, state) = spawn_server().await;
-    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
     let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;
     next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
 
-    state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
 
     let msg = next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
     let players = msg["payload"]["players"].as_array().unwrap();
@@ -95,11 +124,11 @@ async fn test_ws_second_player_join_broadcast() {
 #[tokio::test]
 async fn test_ws_typing_broadcast() {
     let (addr, state) = spawn_server().await;
-    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
-    let join = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let join = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
     let bob_id = join["player_id"].as_str().unwrap().to_string();
 
     let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;
@@ -122,7 +151,7 @@ async fn test_ws_typing_broadcast() {
 #[tokio::test]
 async fn test_ws_game_start_broadcast() {
     let (addr, state) = spawn_server().await;
-    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
@@ -145,7 +174,7 @@ async fn test_ws_game_start_broadcast() {
 #[tokio::test]
 async fn test_ws_correct_submit_increments_score() {
     let (addr, state) = spawn_server().await;
-    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
     let alice_id = create["player_id"].as_str().unwrap().to_string();
 
@@ -177,4 +206,73 @@ async fn test_ws_correct_submit_increments_score() {
 
     let response = next_msg_of_type(&mut alice_ws, "WordChecked").await;
     assert_eq!(response["payload"]["result"]["score"].as_u64().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn test_ws_leave_lobby_broadcasts_player_removal() {
+    let (addr, state) = spawn_server().await;
+
+    // Alice creates the lobby
+    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
+    let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
+    let alice_id = create["player_id"].as_str().unwrap().to_string();
+
+    // Bob joins
+    let join = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
+    let bob_id = join["player_id"].as_str().unwrap().to_string();
+
+    // Both connect via WebSocket
+    let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;
+    let mut bob_ws = connect_ws(addr, &lobby_id, &bob_id).await;
+
+    // Drain initial messages
+    next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
+    next_msg_of_type(&mut alice_ws, "GameState").await;
+    next_msg_of_type(&mut bob_ws, "PlayerListUpdate").await;
+    next_msg_of_type(&mut bob_ws, "GameState").await;
+
+    // Bob leaves via the API
+    state.leave_lobby(lobby_id.clone(), PlayerId(bob_id.clone())).await.unwrap();
+
+    // Alice should receive a PlayerListUpdate with only 1 player (herself)
+    let msg = next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
+    let players = msg["payload"]["players"].as_array().unwrap();
+    assert_eq!(players.len(), 1, "Expected 1 player after Bob left, got {}", players.len());
+    assert_eq!(players[0]["name"].as_str().unwrap(), "Alice");
+}
+
+#[tokio::test]
+async fn test_ws_disconnect_removes_player() {
+    let (addr, state) = spawn_server().await;
+
+    // Alice creates the lobby
+    let create = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
+    let lobby_id: LobbyId = create["lobby_id"].as_str().unwrap().into();
+    let alice_id = create["player_id"].as_str().unwrap().to_string();
+
+    // Bob joins
+    let join = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
+    let bob_id = join["player_id"].as_str().unwrap().to_string();
+
+    // Both connect via WebSocket
+    let mut alice_ws = connect_ws(addr, &lobby_id, &alice_id).await;
+    let mut bob_ws = connect_ws(addr, &lobby_id, &bob_id).await;
+
+    // Drain initial messages
+    next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
+    next_msg_of_type(&mut alice_ws, "GameState").await;
+    next_msg_of_type(&mut bob_ws, "PlayerListUpdate").await;
+    next_msg_of_type(&mut bob_ws, "GameState").await;
+
+    // Bob disconnects by dropping his WebSocket
+    drop(bob_ws);
+
+    // Give the server a moment to process the disconnect
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Alice should receive a PlayerListUpdate with only herself
+    let msg = next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
+    let players = msg["payload"]["players"].as_array().unwrap();
+    assert_eq!(players.len(), 1, "Expected 1 player after Bob disconnected, got {}", players.len());
+    assert_eq!(players[0]["name"].as_str().unwrap(), "Alice");
 }

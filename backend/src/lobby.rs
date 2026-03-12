@@ -2,7 +2,7 @@ use chrono::Utc;
 use rand::{RngExt, distr::{Distribution, weighted::WeightedIndex}};
 use tokio::sync::broadcast;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::Arc,
 };
 
@@ -36,6 +36,8 @@ pub struct LobbyState {
     pub game_session_id: Option<uuid::Uuid>,
     pub turn_order: Shared<Vec<PlayerId>>,
     pub current_turn_index: Shared<usize>,
+    pub prompt_counter: Shared<u64>,
+    pub skip_votes: Shared<HashSet<PlayerId>>,
 }
 
 impl LobbyState {
@@ -56,6 +58,8 @@ impl LobbyState {
             game_session_id,
             turn_order: Shared::new(Vec::new()),
             current_turn_index: Shared::new(0),
+            prompt_counter: Shared::new(0),
+            skip_votes: Shared::new(HashSet::new()),
         }
     }
 
@@ -122,13 +126,10 @@ impl LobbyState {
             ))?;
         }
 
-        self.game_status.write(|status| {
-            if *status != GameStatus::Lobby {
-                return Err(AppError::InvalidInput("game is not in lobby state".to_string()));
-            }
-            *status = GameStatus::Playing;
-            Ok::<(), AppError>(())
-        })?;
+        let status = self.game_status.read(|status| *status);
+        if status != GameStatus::Lobby {
+            return Err(AppError::InvalidInput("game is not in lobby state".to_string()))?;
+        }
 
         let settings = self.settings.read(|s| s.clone());
 
@@ -196,6 +197,8 @@ impl LobbyState {
 
         self.generate_random_prompt(false)?;
 
+        self.game_status.write(|status| *status = GameStatus::Playing);
+
         let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
             prompt: self.get_current_prompt_text().unwrap_or_default(),
             status: GameStatus::Playing,
@@ -220,9 +223,8 @@ impl LobbyState {
             let normalized_name = trimmed_name.split_whitespace().collect::<Vec<&str>>().join(" ");
 
 
-            // Allow duplicate names? Original didn't check. 
-            // We'll proceed with adding the player.
-
+            // Remove any lingering duplicates (same ID or same name)
+            players.retain(|p| p.id != player_id && p.name != normalized_name);
 
             players.push(PlayerData {
                 id: player_id.clone(),
@@ -262,17 +264,19 @@ impl LobbyState {
                 self.lobby_leader.write(|leader| {
                     if leader.to_string() == player_id.to_string() {
                         if let Some(new_leader) = players.first() {
+                            tracing::info!("Reassigned lobby leader to {}", new_leader.id.0);
                             *leader = new_leader.id.clone();
                             let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::LeaderUpdate {
                                 leader_id: new_leader.id.clone()
                             }).unwrap_or_default());
                         } else {
+                            tracing::info!("No players left to be leader");
                             *leader = PlayerId::default(); 
                         }
                     }
                 });
 
-                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+                let pl_update = shared::ServerMessage::PlayerListUpdate {
                     players: players.iter().map(|p| shared::PlayerData {
                         id: p.id.clone(),
                         name: p.name.clone(),
@@ -282,10 +286,17 @@ impl LobbyState {
                         is_eliminated: p.is_eliminated,
                         is_turn: false,
                     }).collect()
-                }).unwrap_or_default());
+                };
+                
+                tracing::debug!("Broadcasting PlayerListUpdate to {} receivers: {:?}", self.tx.receiver_count(), pl_update);
+                match self.tx.send(serde_json::to_string(&pl_update).unwrap_or_default()) {
+                    Ok(n) => tracing::debug!("Broadcast delivered to {} receivers", n),
+                    Err(e) => tracing::warn!("Broadcast failed: {:?}", e),
+                }
 
                 true
             } else {
+                tracing::info!("remove_player: player {} already removed or not found (likely already cleaned up)", player_id.0);
                 false
             }
         })
@@ -418,6 +429,19 @@ impl LobbyState {
             }).unwrap_or_default());
         }
 
+        self.prompt_counter.write(|c| *c += 1);
+        self.skip_votes.write(|v| v.clear());
+
+        let time_limit = self.settings.read(|s| s.time_limit_seconds);
+        if let Some(secs) = time_limit {
+            let counter = self.prompt_counter.read(|c| *c);
+            let lobby = self.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(secs as u64)).await;
+                lobby.process_timeout(counter);
+            });
+        }
+
         Ok(display_text)
     }
 
@@ -486,6 +510,7 @@ impl LobbyState {
         let mut message = String::new();
         let mut new_prompt_opt = None;
         let mut game_over = false;
+        let mut error_details = None;
 
         if is_correct {
             let new_score = self.increment_player_score(player_id)?;
@@ -506,8 +531,13 @@ impl LobbyState {
                 let _ = self.generate_random_prompt(true);
                 new_prompt_opt = self.get_current_prompt_text();
                 let _ = self.advance_turn();
+            } else if settings.mode == shared::GameMode::Zen {
+                message = "Good guess!".to_string();
+                let _ = self.generate_random_prompt(true);
+                new_prompt_opt = self.get_current_prompt_text();
             }
         } else {
+            error_details = self.get_error_details();
             match &prompt {
                 ActivePrompt::Kanji { character } => {
                     let has_kanji = trimmed_input.contains(character.as_str());
@@ -523,50 +553,9 @@ impl LobbyState {
                 ActivePrompt::Vocab { word, .. } => { message = format!("Incorrect reading for {}", word); }
             }
             if settings.mode == shared::GameMode::Duel {
-                let eliminated = self.players.write(|players| {
-                     let mut eliminated = false;
-                     if let Some(p) = players.iter_mut().find(|p| p.id == *player_id) {
-                         if let Some(lives) = p.lives.as_mut() {
-                             if *lives > 0 {
-                                 *lives -= 1;
-                             }
-                             if *lives == 0 {
-                                 p.is_eliminated = true;
-                                 eliminated = true;
-                             }
-                         }
-                     }
-                     eliminated
-                });
+                let (eliminated, duel_message) = self.apply_duel_penalty(player_id, &mut new_prompt_opt, &mut game_over);
                 if eliminated {
-                     message = "Eliminated!".to_string();
-                }
-
-                if !settings.duel_allow_kanji_reuse {
-                    let _ = self.generate_random_prompt(true);
-                    new_prompt_opt = self.get_current_prompt_text();
-                }
-
-                if eliminated {
-                     self.turn_order.write(|order| {
-                         if let Some(pos) = order.iter().position(|id| id == player_id) {
-                             order.remove(pos);
-                             self.current_turn_index.write(|idx| {
-                                 if *idx >= order.len() && !order.is_empty() {
-                                     *idx = 0;
-                                 }
-                             })
-                         }
-                    });
-                } else {
-                     let _ = self.advance_turn();
-                }
-                let order_len = self.turn_order.read(|o| o.len());
-                if order_len <= 1 {
-                    game_over = true;
-                    if !eliminated {
-                         message = "Winner!".to_string();
-                    }
+                    message = format!("{}\n{}", message, duel_message);
                 }
             }
         }
@@ -581,7 +570,8 @@ impl LobbyState {
             result: shared::CheckWordResponse {
                 message,
                 score,
-                error: None,
+                error: if !is_correct { Some("Incorrect".into()) } else { None },
+                error_details,
                 prompt: new_prompt_opt,
             },
         }).unwrap_or_default());
@@ -593,6 +583,222 @@ impl LobbyState {
                 status: GameStatus::Finished,
                 scores: self.get_all_players(),
             }).unwrap_or_default());
+        }
+
+        Ok(())
+    }
+
+    fn get_error_details(&self) -> Option<Vec<String>> {
+        let prompt = self.current_prompt.read(|p| p.clone())?;
+        match prompt {
+            ActivePrompt::Vocab { readings, .. } => Some(readings),
+            ActivePrompt::Kanji { character } => {
+                let mut matches = Vec::new();
+                for w in self.dict_list.iter() {
+                    if w.contains(&character) {
+                        matches.push(w.clone());
+                        if matches.len() >= 3 { break; }
+                    }
+                }
+                Some(matches)
+            }
+        }
+    }
+
+    fn apply_duel_penalty(&self, player_id: &PlayerId, new_prompt_opt: &mut Option<String>, game_over: &mut bool) -> (bool, String) {
+        let eliminated = self.players.write(|players| {
+             let mut eliminated = false;
+             if let Some(p) = players.iter_mut().find(|p| p.id == *player_id) {
+                 if let Some(lives) = p.lives.as_mut() {
+                     if *lives > 0 {
+                         *lives -= 1;
+                     }
+                     if *lives == 0 {
+                         p.is_eliminated = true;
+                         eliminated = true;
+                     }
+                 }
+             }
+             eliminated
+        });
+        
+        let mut msg = String::new();
+        if eliminated {
+             msg = "Eliminated!".to_string();
+        }
+
+        let settings = self.settings.read(|s| s.clone());
+        if !settings.duel_allow_kanji_reuse {
+            let _ = self.generate_random_prompt(true);
+            *new_prompt_opt = self.get_current_prompt_text();
+        }
+
+        if eliminated {
+             self.turn_order.write(|order| {
+                 if let Some(pos) = order.iter().position(|id| id == player_id) {
+                     order.remove(pos);
+                     self.current_turn_index.write(|idx| {
+                         if *idx >= order.len() && !order.is_empty() {
+                             *idx = 0;
+                         }
+                     })
+                 }
+            });
+        } else {
+             let _ = self.advance_turn();
+        }
+        let order_len = self.turn_order.read(|o| o.len());
+        if order_len <= 1 {
+            *game_over = true;
+            if !eliminated {
+                 msg = "Winner!".to_string();
+            }
+        }
+        (eliminated, msg)
+    }
+
+    pub fn process_timeout(&self, expected_counter: u64) {
+        let current_counter = self.prompt_counter.read(|c| *c);
+        if current_counter != expected_counter {
+            return; // Prompt has already advanced
+        }
+        
+        // Ensure game is still active
+        let status = self.game_status.read(|s| *s);
+        if status != GameStatus::Playing {
+            return;
+        }
+
+        let settings = self.settings.read(|s| s.clone());
+        let error_details = self.get_error_details();
+        
+        if settings.mode == shared::GameMode::Duel {
+            if let Some(player_id) = self.get_current_turn_player() {
+                let mut new_prompt_opt = None;
+                let mut game_over = false;
+                
+                let (eliminated, duel_msg) = self.apply_duel_penalty(&player_id, &mut new_prompt_opt, &mut game_over);
+                let message = if eliminated { format!("Time's up!\n{}", duel_msg) } else { "Time's up!".to_string() };
+
+                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+                    players: self.get_all_players()
+                }).unwrap_or_default());
+            
+                let score = self.get_player_score(&player_id).unwrap_or(0);
+                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+                    player_id,
+                    result: shared::CheckWordResponse {
+                        message,
+                        score,
+                        error: Some("Time's up!".into()),
+                        error_details,
+                        prompt: new_prompt_opt.clone(),
+                    },
+                }).unwrap_or_default());
+            
+                if game_over {
+                    self.game_status.write(|st| *st = GameStatus::Finished);
+                    let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+                        prompt: self.get_current_prompt_text().unwrap_or_default(),
+                        status: GameStatus::Finished,
+                        scores: self.get_all_players(),
+                    }).unwrap_or_default());
+                }
+            }
+        } else {
+            // Deathmatch: Skip the prompt
+            let _ = self.generate_random_prompt(true);
+            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+                player_id: PlayerId::default(), // Nobody in particular
+                result: shared::CheckWordResponse {
+                    message: "Time's up! Skipped prompt.".to_string(),
+                    score: 0,
+                    error: Some("Time's up!".into()),
+                    error_details,
+                    prompt: self.get_current_prompt_text(),
+                },
+            }).unwrap_or_default());
+        }
+    }
+
+    pub fn process_skip(&self, player_id: &PlayerId) -> Result<()> {
+        let status = self.game_status.read(|s| *s);
+        if status != GameStatus::Playing {
+            return Ok(());
+        }
+
+        let settings = self.settings.read(|s| s.clone());
+        let error_details = self.get_error_details();
+
+        if settings.mode == shared::GameMode::Duel {
+            let current_turn = self.get_current_turn_player();
+            if current_turn.as_ref() != Some(player_id) {
+                return Ok(()); // Handled only if it's your turn
+            }
+
+            let mut new_prompt_opt = None;
+            let mut game_over = false;
+            
+            let (eliminated, duel_msg) = self.apply_duel_penalty(player_id, &mut new_prompt_opt, &mut game_over);
+            let message = if eliminated { format!("Skipped!\n{}", duel_msg) } else { "Skipped!".to_string() };
+
+            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+                players: self.get_all_players()
+            }).unwrap_or_default());
+        
+            let score = self.get_player_score(player_id).unwrap_or(0);
+            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+                player_id: player_id.clone(),
+                result: shared::CheckWordResponse {
+                    message,
+                    score,
+                    error: Some("Skipped!".into()),
+                    error_details,
+                    prompt: new_prompt_opt,
+                },
+            }).unwrap_or_default());
+        
+            if game_over {
+                self.game_status.write(|st| *st = GameStatus::Finished);
+                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+                    prompt: self.get_current_prompt_text().unwrap_or_default(),
+                    status: GameStatus::Finished,
+                    scores: self.get_all_players(),
+                }).unwrap_or_default());
+            }
+
+        } else {
+            // Deathmatch skipping requires majority vote
+            let mut skip_passed = false;
+            let (votes, required) = self.skip_votes.write(|votes| {
+                votes.insert(player_id.clone());
+                let total_players = self.get_all_players().iter().filter(|p| !p.is_eliminated).count();
+                // Majority > 50%
+                let required = (total_players / 2) + 1;
+                if votes.len() >= required {
+                    skip_passed = true;
+                }
+                (votes.len(), required)
+            });
+
+            if skip_passed {
+                let _ = self.generate_random_prompt(true);
+                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+                    player_id: PlayerId::default(),
+                    result: shared::CheckWordResponse {
+                        message: "Prompt skipped by vote!".to_string(),
+                        score: 0,
+                        error: Some("Skipped!".into()),
+                        error_details,
+                        prompt: self.get_current_prompt_text(),
+                    },
+                }).unwrap_or_default());
+            } else {
+                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::SkipVoteUpdate {
+                    votes,
+                    required,
+                }).unwrap_or_default());
+            }
         }
 
         Ok(())

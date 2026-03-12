@@ -10,7 +10,7 @@ async fn get_state() -> Arc<AppState> {
 #[tokio::test]
 async fn test_create_lobby_returns_ids() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     assert!(res["lobby_id"].as_str().is_some_and(|id| id.len() == 6));
     assert!(res["player_id"].as_str().is_some_and(|id| !id.is_empty()));
 }
@@ -18,11 +18,11 @@ async fn test_create_lobby_returns_ids() {
 #[tokio::test]
 async fn test_join_lobby_gives_unique_player_id() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
     let creator_id = res["player_id"].as_str().unwrap().to_string();
 
-    let res2 = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let res2 = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
     let joiner_id = res2["player_id"].as_str().unwrap();
     assert_ne!(joiner_id, creator_id.as_str());
 }
@@ -30,14 +30,14 @@ async fn test_join_lobby_gives_unique_player_id() {
 #[tokio::test]
 async fn test_join_nonexistent_lobby_is_error() {
     let state = get_state().await;
-    let res = state.join_lobby("NOPE00".into(), JoinLobbyRequest { player_name: "Nobody".into() }).await;
+    let res = state.join_lobby("NOPE00".into(), JoinLobbyRequest { player_name: "Nobody".into(), player_id: None }).await;
     assert!(res.is_err());
 }
 
 #[tokio::test]
 async fn test_get_lobby_info_contains_creator() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
 
     let info = state.get_lobby_info(lobby_id.clone()).await.unwrap();
@@ -49,10 +49,10 @@ async fn test_get_lobby_info_contains_creator() {
 #[tokio::test]
 async fn test_get_lobby_players_returns_list() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
 
-    state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
 
     let players_res = state.get_lobby_players(lobby_id).await.unwrap();
     assert_eq!(players_res["players"].as_array().unwrap().len(), 2);
@@ -61,7 +61,7 @@ async fn test_get_lobby_players_returns_list() {
 #[tokio::test]
 async fn test_get_player_info_found() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
     let player_id = res["player_id"].as_str().unwrap().to_string();
 
@@ -73,7 +73,7 @@ async fn test_get_player_info_found() {
 #[tokio::test]
 async fn test_get_player_info_not_found_is_error() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
 
     let res = state.get_player_info(lobby_id.clone(), shared::PlayerId("nonexistent".into())).await;
@@ -83,10 +83,10 @@ async fn test_get_player_info_not_found_is_error() {
 #[tokio::test]
 async fn test_leave_lobby_removes_player() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
 
-    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
     let joiner_id = join_res["player_id"].as_str().unwrap().to_string();
 
     state.leave_lobby(lobby_id.clone(), shared::PlayerId(joiner_id.clone())).await.unwrap();
@@ -98,7 +98,7 @@ async fn test_leave_lobby_removes_player() {
 #[tokio::test]
 async fn test_update_settings_leader_succeeds() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
     let player_id = res["player_id"].as_str().unwrap().to_string();
 
@@ -116,10 +116,10 @@ async fn test_update_settings_leader_succeeds() {
 #[tokio::test]
 async fn test_update_settings_non_leader_fails() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
 
-    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
     let joiner_id = join_res["player_id"].as_str().unwrap().to_string();
 
     let res = state.update_lobby_settings(lobby_id.clone(), UpdateSettingsRequest {
@@ -132,7 +132,7 @@ async fn test_update_settings_non_leader_fails() {
 #[tokio::test]
 async fn test_start_game_leader_succeeds() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
     let player_id = res["player_id"].as_str().unwrap().to_string();
 
@@ -145,10 +145,10 @@ async fn test_start_game_leader_succeeds() {
 #[tokio::test]
 async fn test_start_game_non_leader_fails() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
 
-    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into() }).await.unwrap();
+    let join_res = state.join_lobby(lobby_id.clone(), JoinLobbyRequest { player_name: "Bob".into(), player_id: None }).await.unwrap();
     let bob_id = join_res["player_id"].as_str().unwrap().to_string();
 
     let res = state.start_game(lobby_id.clone(), StartGameRequest { player_id: shared::PlayerId(bob_id) }).await;
@@ -158,7 +158,7 @@ async fn test_start_game_non_leader_fails() {
 #[tokio::test]
 async fn test_reset_lobby_returns_to_lobby_status() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
     let player_id = res["player_id"].as_str().unwrap().to_string();
 
@@ -172,7 +172,7 @@ async fn test_reset_lobby_returns_to_lobby_status() {
 #[tokio::test]
 async fn test_get_kanji_after_game_start() {
     let state = get_state().await;
-    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into() }).await.unwrap();
+    let res = state.create_lobby(JoinLobbyRequest { player_name: "Alice".into(), player_id: None }).await.unwrap();
     let lobby_id: LobbyId = res["lobby_id"].as_str().unwrap().into();
     let player_id = res["player_id"].as_str().unwrap().to_string();
 

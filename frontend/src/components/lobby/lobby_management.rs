@@ -181,61 +181,57 @@ where
             .unwrap_or_default()
     });
 
-    let player_id = current_player_id.get_untracked();
     let lobby_id_for_settings = Signal::derive(move || {
         lobby_info.get()
             .map(|i| i.lobby_id)
             .unwrap_or_default()
     });
 
-    let on_update = use_lobby_settings(lobby_id_for_settings.get_untracked(), player_id);
+    let on_update = use_lobby_settings(lobby_id_for_settings, current_player_id);
+
+    let players = Signal::derive(move || lobby_info.get().map(|i| i.players).unwrap_or_default());
+    let leader_id = Signal::derive(move || lobby_info.get().map(|i| i.leader_id).unwrap_or_default());
+    let player_count = Signal::derive(move || players.get().len());
+    let max_players = Signal::derive(move || lobby_info.get().map(|i| i.settings.max_players).unwrap_or(4));
 
     view! {
         <Show
             when=move || lobby_info.get().is_some()
             fallback=|| view! { <div class=loading_text()>"Loading lobby info..."</div> }
         >
-            {move || lobby_info.get().map(|info| {
-                let player_count = info.players.len();
-                let max_players = info.settings.max_players;
-                let leader_id = info.leader_id.clone();
+            <div class="space-y-6">
+                <PlayersList
+                    players=players
+                    current_player_id=current_player_id
+                    leader_id=leader_id
+                    player_count=player_count
+                    max_players=max_players
+                />
 
-                view! {
-                    <div class="space-y-6">
-                        <PlayersList
-                            players=info.players
-                            current_player_id=current_player_id
-                            leader_id=leader_id
-                            player_count=player_count
-                            max_players=max_players
-                        />
+                <LobbySettingsPanel
+                    settings=settings
+                    is_leader=is_leader
+                    on_update=on_update
+                />
 
-                        <LobbySettingsPanel
-                            settings=settings
-                            is_leader=is_leader()
-                            on_update=on_update
-                        />
-
-                        <LobbyActions
-                            is_leader=is_leader
-                            player_count=player_count
-                            on_start_game=on_start_game
-                            on_leave_lobby=on_leave_lobby
-                        />
-                    </div>
-                }
-            })}
+                <LobbyActions
+                    is_leader=is_leader
+                    player_count=player_count
+                    on_start_game=on_start_game
+                    on_leave_lobby=on_leave_lobby
+                />
+            </div>
         </Show>
     }
 }
 
 #[component]
 fn PlayersList(
-    players: Vec<PlayerData>,
+    #[prop(into)] players: Signal<Vec<PlayerData>>,
     current_player_id: ReadSignal<PlayerId>,
-    leader_id: PlayerId,
-    player_count: usize,
-    max_players: u32,
+    #[prop(into)] leader_id: Signal<PlayerId>,
+    #[prop(into)] player_count: Signal<usize>,
+    #[prop(into)] max_players: Signal<u32>,
 ) -> impl IntoView {
     view! {
         <div class="space-y-4">
@@ -243,21 +239,24 @@ fn PlayersList(
                 "Players (" {player_count} "/" {max_players} ")"
             </h3>
             <ul class="space-y-2">
-                {players
-                    .into_iter()
-                    .map(|player| {
-                        let is_current = player.id == current_player_id.get();
-                        let is_leader = player.id == leader_id;
+                <For
+                    each=move || players.get()
+                    key=|player| player.id.clone()
+                    children=move |player| {
+                        let id_for_item = player.id.clone();
+                        let id_for_leader = player.id.clone();
+                        let id_for_you = player.id.clone();
+                        
                         view! {
-                            <li class=move || player_item(is_current)>
+                            <li class=move || player_item(id_for_item == current_player_id.get())>
                                 <span class="font-medium">{player.name}</span>
                                 <div class="flex items-center gap-2">
-                                    <Show when=move || is_leader>
+                                    <Show when=move || id_for_leader == leader_id.get()>
                                         <span class="text-lg" title="Lobby Leader">
                                             "👑"
                                         </span>
                                     </Show>
-                                    <Show when=move || is_current>
+                                    <Show when=move || id_for_you == current_player_id.get()>
                                         <span class="text-sm text-blue-600 dark:text-blue-400 font-medium">
                                             "(You)"
                                         </span>
@@ -265,8 +264,8 @@ fn PlayersList(
                                 </div>
                             </li>
                         }
-                    })
-                    .collect_view()}
+                    }
+                />
             </ul>
         </div>
     }
@@ -274,8 +273,8 @@ fn PlayersList(
 
 #[component]
 fn LobbyActions<F1, F2>(
-    is_leader: impl Fn() -> bool + 'static + Copy + Send + Sync,
-    player_count: usize,
+    #[prop(into)] is_leader: Signal<bool>,
+    #[prop(into)] player_count: Signal<usize>,
     on_start_game: F1,
     on_leave_lobby: F2,
 ) -> impl IntoView
@@ -283,11 +282,11 @@ where
     F1: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
     F2: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
-    let not_enough_players = player_count < 1;
+    let not_enough_players = Signal::derive(move || player_count.get() < 1);
     view! {
         <div class="flex flex-col gap-4 my-6">
             <Show
-                when=is_leader
+                when=move || is_leader.get()
                 fallback=|| {
                     view! {
                         <p class="text-center text-gray-600 dark:text-gray-400 italic py-4">
@@ -298,12 +297,12 @@ where
             >
                 <button
                     on:click=on_start_game
-                    disabled=move || not_enough_players
+                    disabled=move || not_enough_players.get()
                     class=btn_start_game()
                 >
                     "Start Game"
                 </button>
-                <Show when=move || not_enough_players>
+                <Show when=move || not_enough_players.get()>
                     <p class="text-orange-600 dark:text-orange-400 text-center font-medium">
                         "Need at least 2 players to start"
                     </p>

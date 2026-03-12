@@ -17,7 +17,7 @@ pub fn AuthModal(
 
     let auth_context = use_context::<AuthContext>().expect("AuthContext missing");
 
-    let finalize_auth = move |username: String, is_guest: bool| {
+    let finalize_auth = move |username: String, is_guest: bool, token: Option<String>| {
         let user = User {
             username: username.clone(),
             is_guest,
@@ -27,6 +27,7 @@ pub fn AuthModal(
         save_auth(&AuthData {
             username,
             is_guest,
+            token,
         });
 
         auth_context.set_show_auth_modal.set(false);
@@ -75,7 +76,10 @@ pub fn AuthModal(
             };
 
             match authenticate(req).await {
-                Ok(_) => finalize_auth(name, false),
+                Ok(res) => {
+                    let token = res.get("token").and_then(|t| t.as_str()).map(|s| s.to_string());
+                    finalize_auth(name, false, token)
+                },
                 Err(e) => set_error.set(format!("Login failed: {}", e)),
             }
         });
@@ -85,7 +89,7 @@ pub fn AuthModal(
          let name = username.get();
          spawn_local(async move {
              match crate::context::create_guest_account(name.clone()).await {
-                 Ok(final_name) => finalize_auth(final_name, true),
+                 Ok((final_name, token)) => finalize_auth(final_name, true, token),
                  Err(e) => set_error.set(format!("Guest login failed: {}", e)),
              }
          });
@@ -102,7 +106,10 @@ pub fn AuthModal(
                 create_guest: false,
             };
             match authenticate(req).await {
-                 Ok(_) => finalize_auth(name, false),
+                 Ok(res) => {
+                    let token = res.get("token").and_then(|t| t.as_str()).map(|s| s.to_string());
+                    finalize_auth(name, false, token)
+                 },
                  Err(e) => set_error.set(format!("Registration failed: {}", e)),
             }
         });
@@ -114,7 +121,7 @@ pub fn AuthModal(
 
     view! {
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl max-w-sm w-full mx-4 border border-gray-200 dark:border-gray-700">
+            <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl max-w-sm w-full mx-4 border border-gray-200 dark:border-gray-700 animate-slide-up">
                 <div class="flex justify-end">
                     <button
                         class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl font-bold"

@@ -63,6 +63,8 @@ pub enum ClientMessage {
     Typing { input: String },
     /// User submits a guess
     Submit { input: String, prompt: String },
+    /// User votes to skip or skips their turn
+    Skip,
 }
 
 
@@ -95,7 +97,7 @@ pub enum ServerMessage {
     PlayerListUpdate { players: Vec<PlayerData> },
     SettingsUpdate { settings: GameSettings },
     LeaderUpdate { leader_id: PlayerId },
-
+    SkipVoteUpdate { votes: usize, required: usize },
 }
 
 /// A prompt sent from the server to each client at the start of a round.
@@ -108,6 +110,7 @@ pub struct PromptResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinLobbyRequest {
     pub player_name: String,
+    pub player_id: Option<PlayerId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,6 +163,7 @@ pub enum GameMode {
     #[default]
     Deathmatch,
     Duel,
+    Zen,
 }
 
 
@@ -214,6 +218,8 @@ pub struct CheckWordResponse {
     pub score: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_details: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
 }
