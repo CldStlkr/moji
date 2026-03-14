@@ -2,22 +2,15 @@ use leptos::prelude::*;
 use shared::{LobbyInfo, LobbyId, PlayerId, ClientMessage, ServerMessage};
 use crate::components::toast::use_toast;
 use wasm_bindgen_futures::spawn_local;
-use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
 use std::collections::HashMap;
-use futures::future::{select, Either};
+use futures::{SinkExt, StreamExt, FutureExt};
 
 #[derive(Clone)]
 pub struct UseSharedSocketConfig {
     pub lobby_id: ReadSignal<LobbyId>,
     pub player_id: ReadSignal<PlayerId>,
-
-    // Central state that home manages
     pub lobby_info: RwSignal<Option<LobbyInfo>>,
-
-    // Game specific states (prompt, word result, typing status) that could also conceptually live in Home,
-    // but we can pass them down to Game via context or keep them isolated.
-    // For now we will update global signals that Home passes to Game.
     pub set_prompt: WriteSignal<String>,
     pub set_result: WriteSignal<String>,
     pub set_typing_status: WriteSignal<HashMap<PlayerId, String>>,
@@ -38,7 +31,6 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
         let player_id = player_id.get();
 
         if lobby_id.is_empty() || player_id.to_string().is_empty() {
-            // Clear any existing sender so the old WS loop terminates
             ws_sender.set(None);
             return;
         }
@@ -46,14 +38,21 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<String>();
         ws_sender.set(Some(tx));
 
-        // Register cleanup OUTSIDE spawn_local so it fires when the Effect re-runs
+        let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel::<()>();
+
+        let lobby_id_str = lobby_id.to_string();
         on_cleanup(move || {
+            leptos::logging::log!("[cleanup] firing for lobby_id={:?}", lobby_id_str);
             ws_sender.set(None);
+            // Sending on cancel_tx wakes up the select! immediately
+            let _ = cancel_tx.send(());
         });
 
         let toast = use_toast();
 
+        leptos::logging::log!("[effect] spawning WS loop for lobby_id={:?}", lobby_id);
         spawn_local(async move {
+            leptos::logging::log!("[spawn_local] starting for lobby_id={:?}", lobby_id);
             let window = web_sys::window().unwrap();
             let location = window.location();
             let protocol = if location.protocol().unwrap() == "https:" { "wss" } else { "ws" };
@@ -77,125 +76,115 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
             };
 
             let (mut write, mut read) = ws.split();
+            let mut cancel_rx = cancel_rx.fuse();
 
             loop {
-                let recv_fut = read.next();
-                let send_fut = rx.next();
+                let recv_fut = read.next().fuse();
+                let send_fut = rx.next().fuse();
 
-                match select(recv_fut, send_fut).await {
-                    Either::Left((msg, _)) => {
+                futures::pin_mut!(recv_fut);
+                futures::pin_mut!(send_fut);
+
+                futures::select! {
+                    msg = recv_fut => {
                         match msg {
                             Some(Ok(Message::Text(text))) => {
                                 match serde_json::from_str::<ServerMessage>(&text) {
                                     Ok(server_msg) => {
-                                    match server_msg {
-                                        ServerMessage::GameState { prompt: new_prompt, status, scores } => {
-                                            leptos::logging::debug_warn!("[WS] GameState received: status={:?}, players={}", status, scores.len());
-                                            set_prompt.set(new_prompt);
-
-                                            lobby_info_signal.update(|info_opt| {
-                                                let mut info = info_opt.clone().unwrap_or_else(|| LobbyInfo {
-                                                    lobby_id: lobby_id.clone(),
-                                                    ..Default::default()
-                                                });
-                                                info.status = status;
-                                                info.players = scores;
-                                                *info_opt = Some(info);
-                                            });
-                                            set_typing_status.update(|m| m.clear());
-                                        },
-                                        ServerMessage::WordChecked { player_id: pid, result: res } => {
-                                            if pid == player_id || pid.to_string().is_empty() || pid.to_string() == "null" || pid.to_string() == "" {
-                                                let msg = res.message;
-                                                // if let Some(details) = res.error_details {
-                                                //     msg = format!("{}\nTry: {}", msg, details.join(", "));
-                                                // }
-                                                set_result.set(msg);
-                                            }
-
-                                            lobby_info_signal.update(|info_opt| {
-                                                if let Some(info) = info_opt {
-                                                    if let Some(me) = info.players.iter_mut().find(|p| p.id == pid) {
-                                                        me.score = res.score;
-                                                    }
-                                                }
-                                            });
-
-                                            if let Some(k) = res.prompt {
-                                                set_prompt.set(k);
-                                            }
-                                        },
-                                        ServerMessage::PromptUpdate { new_prompt} => {
-                                            set_result.set(String::new());
-                                            set_prompt.set(new_prompt);
-                                            set_typing_status.update(|m| m.clear());
-                                        },
-                                        ServerMessage::PlayerListUpdate { players: new_players } => {
-                                            let current_pid = player_id.clone();
-
-                                            lobby_info_signal.update(|info_opt| {
-                                                if let Some(info) = info_opt {
-                                                    let old_players = info.players.clone();
-
-                                                    // Find new players
-                                                    for p in &new_players {
-                                                        if p.id != current_pid && !old_players.iter().any(|old| old.id == p.id) {
-                                                            toast.push.run((format!("{} joined!", p.name), crate::components::toast::ToastType::Info));
-                                                        }
-                                                    }
-
-                                                    // Find leaving players
-                                                    for p in &old_players {
-                                                        if p.id != current_pid && !new_players.iter().any(|new| new.id == p.id) {
-                                                            toast.push.run((format!("{} left!", p.name), crate::components::toast::ToastType::Info));
-                                                        }
-                                                    }
-
-                                                    info.players = new_players;
-                                                } else {
-                                                    // Initial load, just set with stub info
-                                                    *info_opt = Some(LobbyInfo {
+                                        match server_msg {
+                                            ServerMessage::GameState { prompt: new_prompt, status, scores } => {
+                                                leptos::logging::debug_warn!("[WS] GameState received: status={:?}, players={}", status, scores.len());
+                                                set_prompt.set(new_prompt);
+                                                lobby_info_signal.update(|info_opt| {
+                                                    let mut info = info_opt.clone().unwrap_or_else(|| LobbyInfo {
                                                         lobby_id: lobby_id.clone(),
-                                                        players: new_players,
                                                         ..Default::default()
                                                     });
+                                                    info.status = status;
+                                                    info.players = scores;
+                                                    *info_opt = Some(info);
+                                                });
+                                                set_typing_status.update(|m| m.clear());
+                                            },
+                                            ServerMessage::WordChecked { player_id: pid, result: res } => {
+                                                if pid == player_id || pid.to_string().is_empty() || pid.to_string() == "null" || pid.to_string() == "" {
+                                                    set_result.set(res.message);
                                                 }
-                                            });
-                                        },
-                                        ServerMessage::PlayerTyping { player_id: pid, input } => {
-                                            set_typing_status.update(|m| {
-                                                if input.is_empty() {
-                                                    m.remove(&pid);
-                                                } else {
-                                                    m.insert(pid, input);
+                                                lobby_info_signal.update(|info_opt| {
+                                                    if let Some(info) = info_opt {
+                                                        if let Some(me) = info.players.iter_mut().find(|p| p.id == pid) {
+                                                            me.score = res.score;
+                                                        }
+                                                    }
+                                                });
+                                                if let Some(k) = res.prompt {
+                                                    set_prompt.set(k);
                                                 }
-                                            });
-                                        },
-                                        ServerMessage::LeaderUpdate { leader_id: lid } => {
-                                            lobby_info_signal.update(|info_opt| {
-                                                if let Some(info) = info_opt {
-                                                    info.leader_id = lid;
-                                                }
-                                            });
-                                        },
-                                        ServerMessage::SettingsUpdate { settings: new_settings } => {
-                                            lobby_info_signal.update(|info_opt| {
-                                                if let Some(info) = info_opt {
-                                                    info.settings = new_settings;
-                                                }
-                                            });
-                                        },
-                                        ServerMessage::SkipVoteUpdate { votes, required } => {
-                                            set_result.set(format!("Votes to skip: {}/{}", votes, required));
-                                        },
-                                    }
+                                            },
+                                            ServerMessage::PromptUpdate { new_prompt } => {
+                                                set_result.set(String::new());
+                                                set_prompt.set(new_prompt);
+                                                set_typing_status.update(|m| m.clear());
+                                            },
+                                            ServerMessage::PlayerListUpdate { players: new_players } => {
+                                                let current_pid = player_id.clone();
+                                                lobby_info_signal.update(|info_opt| {
+                                                    if let Some(info) = info_opt {
+                                                        let old_players = info.players.clone();
+                                                        for p in &new_players {
+                                                            if p.id != current_pid && !old_players.iter().any(|old| old.id == p.id) {
+                                                                toast.push.run((format!("{} joined!", p.name), crate::components::toast::ToastType::Info));
+                                                            }
+                                                        }
+                                                        for p in &old_players {
+                                                            if p.id != current_pid && !new_players.iter().any(|new| new.id == p.id) {
+                                                                toast.push.run((format!("{} left!", p.name), crate::components::toast::ToastType::Info));
+                                                            }
+                                                        }
+                                                        info.players = new_players;
+                                                    } else {
+                                                        *info_opt = Some(LobbyInfo {
+                                                            lobby_id: lobby_id.clone(),
+                                                            players: new_players,
+                                                            ..Default::default()
+                                                        });
+                                                    }
+                                                });
+                                            },
+                                            ServerMessage::PlayerTyping { player_id: pid, input } => {
+                                                set_typing_status.update(|m| {
+                                                    if input.is_empty() {
+                                                        m.remove(&pid);
+                                                    } else {
+                                                        m.insert(pid, input);
+                                                    }
+                                                });
+                                            },
+                                            ServerMessage::LeaderUpdate { leader_id: lid } => {
+                                                lobby_info_signal.update(|info_opt| {
+                                                    if let Some(info) = info_opt {
+                                                        info.leader_id = lid;
+                                                    }
+                                                });
+                                            },
+                                            ServerMessage::SettingsUpdate { settings: new_settings } => {
+                                                lobby_info_signal.update(|info_opt| {
+                                                    if let Some(info) = info_opt {
+                                                        info.settings = new_settings;
+                                                    }
+                                                });
+                                            },
+                                            ServerMessage::SkipVoteUpdate { votes, required } => {
+                                                set_result.set(format!("Votes to skip: {}/{}", votes, required));
+                                            },
+                                        }
                                     },
                                     Err(e) => {
                                         leptos::logging::warn!("[WS] Failed to deserialize message: {:?} | raw: {}", e, &text[..text.len().min(200)]);
                                     }
                                 }
                             },
-                            Some(Ok(_)) => {}, // Ignore binary/ping messages
+                            Some(Ok(_)) => {},
                             Some(Err(e)) => {
                                 leptos::logging::log!("WS closed: {:?}", e);
                                 break;
@@ -206,11 +195,11 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                             }
                         }
                     },
-                    Either::Right((msg, _)) => {
+                    msg = send_fut => {
                         match msg {
                             Some(text) => {
                                 if let Err(e) = write.send(Message::Text(text)).await {
-                                    leptos::logging::log!("WS send failed (connection closing): {:?}", e);
+                                    leptos::logging::log!("WS send failed: {:?}", e);
                                     break;
                                 }
                             },
@@ -219,6 +208,11 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                 break;
                             }
                         }
+                    },
+                    _ = cancel_rx => {
+                        leptos::logging::log!("WS cancelled, closing connection");
+                        let _ = write.close().await;
+                        break;
                     }
                 }
             }

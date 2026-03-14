@@ -20,6 +20,11 @@ pub fn LobbyPage() -> impl IntoView {
     let params = use_params_map();
     let url_lobby_id = move || params.get().get("id").unwrap_or_default();
 
+    leptos::logging::log!("[LobbyPage] mounting");
+    on_cleanup(move || {
+        leptos::logging::log!("[LobbyPage] unmounting");
+    });
+
     let auth_context = use_context::<AuthContext>().expect("AuthContext missing");
 
     // Core state
@@ -112,6 +117,12 @@ pub fn LobbyPage() -> impl IntoView {
 
     // Sync Resource to Signals
     Effect::new(move |_| {
+        let resource_val = lobby_data_resource.get();
+        leptos::logging::log!("[resource-sync] firing, is_leaving={}, has_data={}", 
+            is_leaving.get_untracked(), 
+            resource_val.is_some()
+        );
+        if is_leaving.get() { return; }
         if let Some(Some((info, p_info, session))) = lobby_data_resource.get() {
             if let Some(i) = info {
                 lobby_info.set(Some(i));
@@ -119,11 +130,14 @@ pub fn LobbyPage() -> impl IntoView {
             if let Some(pi) = p_info {
                 player_name.set(pi.name);
                 if let Some(s) = session {
-                    lobby_id.set(s.lobby_id);
-                    player_id.set(s.player_id);
+                    if lobby_id.get_untracked() != s.lobby_id {
+                        lobby_id.set(s.lobby_id);
+                    }
+                    if player_id.get_untracked() != s.player_id {
+                        player_id.set(s.player_id);
+                    }
                 }
             } else {
-                // No session or invalid session
                 clear_session();
             }
         }
@@ -228,6 +242,12 @@ pub fn LobbyPage() -> impl IntoView {
 
         // Clear session immediately so no restore can happen
         clear_session();
+
+        // Clear these first so use_shared_socket's Effect sees empty IDs
+        // and huts down the WS loop before the component unmounts
+        lobby_id.set(LobbyId::default());
+        player_id.set(PlayerId::default());
+        lobby_info.set(None);
 
         // Navigate away FIRST - this will unmount the component and dispose
         // all Effects (including auto-join) before lobby_id changes can trigger them
