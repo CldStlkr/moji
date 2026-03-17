@@ -106,7 +106,7 @@ pub fn CompactPlayerScoresComponent(
                                 } else {
                                     "bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700"
                                 },
-                                if is_eliminated { "opacity-60 grayscale bg-gray-100 dark:bg-gray-800" } else { "" }
+                                if is_eliminated || !player.is_connected { "opacity-60 grayscale bg-gray-100 dark:bg-gray-800" } else { "" }
                             )>
                                 <div class="flex justify-between items-center w-full">
                                     <div class="flex items-center gap-3">
@@ -118,9 +118,9 @@ pub fn CompactPlayerScoresComponent(
                                             else { "bg-gray-300 dark:bg-gray-600" }
                                         )></div>
 
-                                        <div class="flex flex-col">
+                                        <div class="flex flex-col min-w-0">
                                             <span class=format!(
-                                                "font-medium text-lg {}",
+                                                "font-medium text-lg truncate {}",
                                                 if is_current { "text-blue-700 dark:text-blue-300" }
                                                 else { "text-gray-900 dark:text-gray-200" }
                                             )>{player.name.clone()}</span>

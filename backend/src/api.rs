@@ -319,6 +319,12 @@ impl ApiContext for AppState {
 
         Ok(json!({ "message": "Logged out" }))
     }
+
+    async fn set_player_connected(&self, lobby_id: LobbyId, player_id: PlayerId, is_connected: bool) -> JsonResult {
+        let lobby = self.get_lobby(&lobby_id)?;
+        lobby.set_player_connected(&player_id, is_connected);
+        Ok(json!({ "message": "Connection status updated" }))
+    }
 }
 
 #[derive(Deserialize)]
@@ -335,22 +341,32 @@ pub async fn ws_handler(
 ) -> impl IntoResponse {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "INSECURE_DEFAULT_SECRET".to_string());
     
-    let is_valid = if let Some(t) = params.token {
+    let result = if let Some(t) = params.token {
         jsonwebtoken::decode::<Claims>(
             &t,
             &jsonwebtoken::DecodingKey::from_secret(secret.as_ref()),
             &jsonwebtoken::Validation::default()
-        ).is_ok()
+        )
     } else {
-        false
+        Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into())
     };
 
-    if !is_valid {
-        tracing::warn!("Unauthorized WebSocket connection attempt to lobby {}", lobby_id.0);
-        return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    if let Err(e) = result {
+        let reason = match e.kind() {
+            jsonwebtoken::errors::ErrorKind::ExpiredSignature => "Token expired",
+            jsonwebtoken::errors::ErrorKind::InvalidToken => "Invalid token or missing",
+            jsonwebtoken::errors::ErrorKind::InvalidSignature => "Invalid signature",
+            _ => "Unauthorized",
+        };
+        tracing::warn!("Unauthorized WebSocket connection attempt to lobby {}: {}", lobby_id.0, reason);
+        return (axum::http::StatusCode::UNAUTHORIZED, reason).into_response();
     }
 
-    ws.on_upgrade(move |socket| handle_socket(socket, app_state, lobby_id, player_id))
+    ws.on_upgrade(move |socket| async move {
+        // Set player as connected when WS starts
+        let _ = app_state.set_player_connected(lobby_id.clone(), player_id.clone(), true).await;
+        handle_socket(socket, app_state, lobby_id, player_id).await
+    })
 }
 
 async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: LobbyId, player_id: PlayerId) {
@@ -467,7 +483,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
         _ = (&mut recv_task) => send_task.abort(),
     }
 
-    // Ensure the lobby is cleaned up if the user disconnects
-    tracing::info!("[WS:{}] Disconnected: performing cleanup for player {} in lobby {}", conn_id, player_id.0, lobby_id.0);
-    let _ = app_state.leave_lobby(lobby_id, player_id).await;
+    // Mark the player as disconnected instead of removing them immediately
+    tracing::info!("[WS:{}] Disconnected: marking player {} in lobby {} as disconnected", conn_id, player_id.0, lobby_id.0);
+    let _ = app_state.set_player_connected(lobby_id, player_id, false).await;
 }

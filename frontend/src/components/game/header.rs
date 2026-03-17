@@ -14,8 +14,8 @@ where
     let player_name = player_name.into();
     let score = score.into();
     view! {
-        <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
-            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">{
+        <div class="flex justify-between items-center mb-4 sm:mb-6 flex-wrap gap-2 sm:gap-4">
+            <h2 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100">{
                 move || if content_mode == ContentMode::Vocab {
                     "Vocab"
                 } else {

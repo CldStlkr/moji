@@ -23,6 +23,7 @@ pub fn UserMenu() -> impl IntoView {
         }
 
         clear_auth();
+        crate::persistence::clear_session();
         auth_context.set_user.set(None);
         set_is_open.set(false);
     };

@@ -21,7 +21,7 @@ use feedback::GameFeedback;
 use game_over::GameOver;
 use timer::TimerBar;
 
-styled_view!(game_container, "max-w-6xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors");
+styled_view!(game_container, "max-w-6xl mx-auto my-4 sm:my-8 p-4 sm:p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors");
 styled_view!(lobby_info_bar, "flex items-center gap-2 mb-6 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm relative transition-colors");
 styled_view!(lobby_id_label, "text-gray-700 dark:text-gray-300");
 styled_view!(lobby_id_value, "font-bold tracking-wider text-blue-600 dark:text-blue-400");
@@ -54,7 +54,7 @@ where
     // Watch for result changes to trigger shake
     Effect::new(move |_| {
         let res = result.get();
-        if !res.is_empty() && (res.contains("Invalid") || res.contains("Wrong") || res.contains("Try")) {
+        if !res.is_empty() && (res.contains("Bad") || res.contains("Incorrect") || res.contains("Time") || res.contains("Skip")) {
             shake_trigger.set(true);
             set_timeout(move || shake_trigger.set(false), std::time::Duration::from_millis(500));
         }
@@ -209,9 +209,9 @@ where
             </div>
 
             // Game Layout with Sidebar
-            <div class="flex gap-8 flex-col lg:flex-row">
+            <div class="flex gap-4 sm:gap-8 flex-col lg:flex-row min-w-0">
                 // Main Game Area
-                <div class="flex-1 space-y-8">
+                <div class="flex-1 space-y-4 sm:space-y-8 min-w-0">
 
                     <TimerBar
                         time_limit=Signal::derive(move || -> Option<u32> {

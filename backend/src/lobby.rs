@@ -105,6 +105,7 @@ impl LobbyState {
                 joined_at: p.joined_at.to_rfc3339(),
                 lives: p.lives,
                 is_eliminated: p.is_eliminated,
+                is_connected: p.is_connected,
                 is_turn: current_turn.as_ref() == Some(&p.id) && status == GameStatus::Playing && settings.mode == shared::GameMode::Duel,
             })
             .collect::<Vec<_>>()
@@ -233,6 +234,7 @@ impl LobbyState {
                 joined_at: Utc::now(),
                 lives: None,
                 is_eliminated: false,
+                is_connected: true,
             });
             Ok(is_leader)
         })?;
@@ -284,6 +286,7 @@ impl LobbyState {
                         joined_at: p.joined_at.to_rfc3339(),
                         lives: p.lives,
                         is_eliminated: p.is_eliminated,
+                        is_connected: p.is_connected,
                         is_turn: false,
                     }).collect()
                 };
@@ -300,6 +303,26 @@ impl LobbyState {
                 false
             }
         })
+    }
+
+    pub fn set_player_connected(&self, player_id: &PlayerId, is_connected: bool) -> bool {
+        let changed = self.players.write(|players| {
+            if let Some(p) = players.iter_mut().find(|p| &p.id == player_id) {
+                p.is_connected = is_connected;
+                true
+            } else {
+                false
+            }
+        });
+
+        if changed {
+            let pl_update = shared::ServerMessage::PlayerListUpdate {
+                players: self.get_all_players()
+            };
+            let _ = self.tx.send(serde_json::to_string(&pl_update).unwrap_or_default());
+        }
+        
+        changed
     }
 
     pub fn get_player_score(&self, player_id: &PlayerId) -> Result<u32> {
@@ -348,6 +371,7 @@ impl LobbyState {
                 joined_at: p.joined_at.to_rfc3339(),
                 lives: p.lives,
                 is_eliminated: p.is_eliminated,
+                is_connected: p.is_connected,
                 is_turn: false, // Default to false here
             }).collect();
 

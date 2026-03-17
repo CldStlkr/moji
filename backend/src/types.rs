@@ -44,6 +44,7 @@ pub struct PlayerData {
     pub joined_at: DateTime<Utc>,
     pub lives: Option<u32>,
     pub is_eliminated: bool,
+    pub is_connected: bool,
 }
 
 

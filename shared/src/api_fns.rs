@@ -32,6 +32,7 @@ pub trait ApiContext: Send + Sync {
     async fn get_player_info(&self, lobby_id: LobbyId, player_id: PlayerId) -> PlayerResult;
     async fn leave_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> JsonResult;
     async fn logout(&self, username: String) -> JsonResult;
+    async fn set_player_connected(&self, lobby_id: LobbyId, player_id: PlayerId, is_connected: bool) -> JsonResult;
 }
 
 #[cfg(feature = "ssr")]

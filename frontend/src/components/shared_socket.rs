@@ -44,11 +44,12 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
         }
 
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<String>();
+        let (halt_tx, mut halt_rx) = futures::channel::oneshot::channel::<()>();
         ws_sender.set(Some(tx));
 
-        // Register cleanup OUTSIDE spawn_local so it fires when the Effect re-runs
         on_cleanup(move || {
             ws_sender.set(None);
+            let _ = halt_tx.send(());
         });
 
         let toast = use_toast();
@@ -67,11 +68,14 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
 
             let ws = match WebSocket::open(&ws_url) {
                 Ok(ws) => {
-                    leptos::logging::log!("WebSocket connected to {:?}", ws_url);
                     ws
                 },
                 Err(e) => {
                     leptos::logging::error!("Failed to open connection: {:?}", e);
+                    toast.push.run((
+                        "Could not connect to game server. Your session might be expired or the server is down.".to_string(),
+                        crate::components::toast::ToastType::Error
+                    ));
                     return;
                 }
             };
@@ -82,8 +86,8 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                 let recv_fut = read.next();
                 let send_fut = rx.next();
 
-                match select(recv_fut, send_fut).await {
-                    Either::Left((msg, _)) => {
+                match select(select(recv_fut, send_fut), &mut halt_rx).await {
+                    Either::Left((Either::Left((msg, _)), _)) => {
                         match msg {
                             Some(Ok(Message::Text(text))) => {
                                 match serde_json::from_str::<ServerMessage>(&text) {
@@ -206,7 +210,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                             }
                         }
                     },
-                    Either::Right((msg, _)) => {
+                    Either::Left((Either::Right((msg, _)), _)) => {
                         match msg {
                             Some(text) => {
                                 if let Err(e) = write.send(Message::Text(text)).await {
@@ -219,6 +223,10 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                 break;
                             }
                         }
+                    },
+                    Either::Right(_) => {
+                        leptos::logging::log!("WS loop cancelled via halt signal");
+                        break;
                     }
                 }
             }

@@ -42,9 +42,9 @@ where
     F3: Fn(ev::KeyboardEvent) + 'static + Copy,
     F4: Fn(ev::MouseEvent) + 'static + Copy,
 {
-    window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
+    let handle = window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
         let key = e.key();
-        if e.meta_key() || e.ctrl_key() | e.alt_key()
+        if e.meta_key() || e.ctrl_key() || e.alt_key()
             || key == "Tab" || key == "Escape" || key.starts_with('F')
             { return; }
 
@@ -58,6 +58,10 @@ where
                 let _ = input.focus();
             }
         }
+    });
+
+    on_cleanup(move || {
+        handle.remove();
     });
 
     let is_btn_disabled = move || {

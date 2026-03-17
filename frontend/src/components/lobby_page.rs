@@ -129,6 +129,33 @@ pub fn LobbyPage() -> impl IntoView {
         }
     });
 
+    let handle_leave_and_cleanup = move || {
+        // Prevent auto-join Effect from re-joining before navigation completes
+        is_leaving.set(true);
+
+        // CLEAR SESSION IN BACKEND
+        let l_id = lobby_id.get_untracked();
+        let p_id = player_id.get_untracked();
+        if !l_id.0.is_empty() && !p_id.0.is_empty() {
+             spawn_local(async move {
+                 let _ = shared::leave_lobby(l_id, p_id).await;
+             });
+        }
+
+        // Clear session immediately so no restore can happen
+        clear_session();
+
+        // Navigate away FIRST - this will unmount the component and dispose
+        // all Effects (including auto-join) before lobby_id changes can trigger them
+        navigate_replace_path.set(Some("/".to_string()));
+
+        // Clear signals after setting navigate (they fire in same microtask batch)
+        lobby_id.set(LobbyId::default());
+        player_id.set(PlayerId::default());
+        player_name.set(String::new());
+        lobby_info.set(None);
+    };
+
     // Auto-join effect when user logs in via Auth modal while sitting on the Join UI
     Effect::new(move |_| {
         let id = url_lobby_id();
@@ -191,6 +218,14 @@ pub fn LobbyPage() -> impl IntoView {
             });
         } 
     });
+    
+    // Auto-cleanup on logout
+    Effect::new(move |_| {
+        if auth_context.user.get().is_none() && !lobby_id.get().is_empty() && !is_leaving.get() {
+            leptos::logging::log!("User logged out while in lobby, triggering cleanup...");
+            handle_leave_and_cleanup();
+        }
+    });
 
     let handle_guest_join = move |_| {
         spawn_local(async move {
@@ -221,24 +256,7 @@ pub fn LobbyPage() -> impl IntoView {
         });
     };
 
-    let handle_leave_and_cleanup = move || {
 
-        // Prevent auto-join Effect from re-joining before navigation completes
-        is_leaving.set(true);
-
-        // Clear session immediately so no restore can happen
-        clear_session();
-
-        // Navigate away FIRST - this will unmount the component and dispose
-        // all Effects (including auto-join) before lobby_id changes can trigger them
-        navigate_replace_path.set(Some("/".to_string()));
-
-        // Clear signals after setting navigate (they fire in same microtask batch)
-        lobby_id.set(LobbyId::default());
-        player_id.set(PlayerId::default());
-        player_name.set(String::new());
-        lobby_info.set(None);
-    };
 
     let (mgmt_is_loading, mgmt_set_is_loading) = signal(false);
     let (mgmt_status, mgmt_set_status) = signal(String::new());

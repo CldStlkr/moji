@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>文字</title>
+  <script>
+    (function() {
+      try {
+        var dark = localStorage.getItem('dark_mode');
+        if (dark === 'true') {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
   <link data-trunk rel="copy-dir" href="public"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/public/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/public/favicon-32x32.png">

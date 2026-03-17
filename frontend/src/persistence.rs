@@ -93,6 +93,42 @@ pub fn save_auth(auth: &AuthData) {
     }
 }
 
+impl AuthData {
+    pub fn is_expired(&self) -> bool {
+        let Some(token) = &self.token else { return true; };
+        
+        let window = web_sys::window().unwrap();
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() != 3 { return true; }
+        
+        // Decode payload (middle part)
+        let payload_b64 = parts[1];
+        let payload_b64 = payload_b64.replace("-", "+").replace("_", "/");
+        let payload_b64 = match payload_b64.len() % 4 {
+            2 => format!("{}==", payload_b64),
+            3 => format!("{}=", payload_b64),
+            _ => payload_b64.to_string(),
+        };
+
+        let decoded = match window.atob(&payload_b64) {
+            Ok(d) => d,
+            Err(_) => return true,
+        };
+
+        let json: serde_json::Value = match serde_json::from_str(&decoded) {
+            Ok(j) => j,
+            Err(_) => return true,
+        };
+
+        if let Some(exp) = json.get("exp").and_then(|e| e.as_u64()) {
+            let now = js_sys::Date::now() / 1000.0;
+            return (exp as f64) < now;
+        }
+
+        true
+    }
+}
+
 pub fn load_auth() -> Option<AuthData> {
     let storage = get_storage()?;
     let username = storage.get_item(STORAGE_KEY_AUTH_USERNAME).ok()??;
@@ -103,7 +139,14 @@ pub fn load_auth() -> Option<AuthData> {
         .unwrap_or(false);
     let token = storage.get_item(STORAGE_KEY_AUTH_TOKEN).ok().flatten();
 
-    Some(AuthData { username, is_guest, token })
+    let auth = AuthData { username, is_guest, token };
+    if auth.is_expired() {
+        leptos::logging::warn!("Auth token expired, clearing auth state.");
+        clear_auth();
+        return None;
+    }
+
+    Some(auth)
 }
 
 pub fn clear_auth() {

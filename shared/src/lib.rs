@@ -131,6 +131,7 @@ pub struct PlayerData {
     pub lives: Option<u32>,
     pub is_eliminated: bool,
     pub is_turn: bool,
+    pub is_connected: bool,
 }
 
 /// Full lobby state, sent to all clients every poll / push.
