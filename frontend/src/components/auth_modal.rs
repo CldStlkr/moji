@@ -53,7 +53,7 @@ pub fn AuthModal(
                         set_stage.set("guest_or_login".to_string());
                         set_error.set(String::new());
                     } else if is_guest {
-                        set_error.set("Username already taken".to_string());
+                        set_error.set("Name currently in use".to_string());
                     } else {
                         set_stage.set("password_login".to_string());
                         set_error.set(String::new());

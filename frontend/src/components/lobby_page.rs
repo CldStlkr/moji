@@ -10,7 +10,6 @@ use crate::{
         shared_socket::{use_shared_socket, UseSharedSocketConfig},
     },
     context::AuthContext,
-    error::{get_user_friendly_message, log_error},
     persistence::{clear_session, load_session, save_session, use_session_persistence, SessionData},
 };
 use shared::{get_lobby_info, get_player_info, join_lobby, JoinLobbyRequest, LobbyId, LobbyInfo, PlayerId};
@@ -156,6 +155,8 @@ pub fn LobbyPage() -> impl IntoView {
         lobby_info.set(None);
     };
 
+    let run_api_action = crate::hooks::use_api_action(set_is_joining, set_join_status);
+
     // Auto-join effect when user logs in via Auth modal while sitting on the Join UI
     Effect::new(move |_| {
         let id = url_lobby_id();
@@ -169,53 +170,46 @@ pub fn LobbyPage() -> impl IntoView {
         }
 
         if let Some(user) = auth_context.user.get() {
-            spawn_local(async move {
-                set_is_joining.set(true);
-                set_join_status.set(format!("Joining lobby {} as {}...", id, user.username));
+            run_api_action(Box::pin({
+                let u_name = user.username.clone();
+                let l_id_str = id.clone();
+                async move {
+                    set_join_status.set(format!("Joining lobby {} as {}...", l_id_str, u_name));
 
-                let request = JoinLobbyRequest {
-                    player_name: user.username.clone(),
-                    player_id: load_session().map(|s| s.player_id),
-                };
-                let join_lobby_id = LobbyId::from(id.clone());
+                    let request = JoinLobbyRequest {
+                        player_name: u_name.clone(),
+                        player_id: load_session().map(|s| s.player_id),
+                    };
+                    let join_lobby_id = LobbyId::from(l_id_str);
 
-                match join_lobby(join_lobby_id.clone(), request).await {
-                    Ok(response) => {
-                         let new_player_id = PlayerId::from(
-                            response.get("player_id").and_then(|pid| pid.as_str()).unwrap_or("")
-                        );
+                    let response = join_lobby(join_lobby_id.clone(), request).await?;
+                    let new_player_id = PlayerId::from(
+                        response.get("player_id").and_then(|pid| pid.as_str()).unwrap_or("")
+                    );
 
-                        if new_player_id.0.is_empty() {
-                             set_join_status.set("Invalid response from server".to_string());
-                             set_is_joining.set(false);
-                        } else {
-                            let session = SessionData {
-                                lobby_id: join_lobby_id.clone(),
-                                player_id: new_player_id.clone(),
-                                player_name: user.username.clone(),
-                                is_in_game: false,
-                            };
-                            save_session(&session);
-
-                            // Trigger complete state hydrate to enter lobby mode
-                            lobby_id.set(join_lobby_id.clone());
-                            player_id.set(new_player_id.clone());
-                            player_name.set(user.username.clone());
-
-                            if let Ok(info) = get_lobby_info(join_lobby_id.clone()).await {
-                                lobby_info.set(Some(info));
-                            }
-
-                            set_is_joining.set(false);
-                        }
+                    if new_player_id.0.is_empty() {
+                         return Err(crate::error::ClientError::Data("Invalid response from server".to_string()));
                     }
-                    Err(e) => {
-                        log_error("Failed to join lobby via link", e.clone());
-                        set_join_status.set(get_user_friendly_message(e.clone()));
-                        set_is_joining.set(false);
+
+                    let session = SessionData {
+                        lobby_id: join_lobby_id.clone(),
+                        player_id: new_player_id.clone(),
+                        player_name: u_name.clone(),
+                        is_in_game: false,
+                    };
+                    save_session(&session);
+
+                    // Trigger complete state hydrate to enter lobby mode
+                    lobby_id.set(join_lobby_id.clone());
+                    player_id.set(new_player_id.clone());
+                    player_name.set(u_name);
+
+                    if let Ok(info) = get_lobby_info(join_lobby_id).await {
+                        lobby_info.set(Some(info));
                     }
+                    Ok(())
                 }
-            });
+            }));
         } 
     });
     
@@ -228,32 +222,30 @@ pub fn LobbyPage() -> impl IntoView {
     });
 
     let handle_guest_join = move |_| {
-        spawn_local(async move {
-            set_is_joining.set(true);
-            let random_suffix: String = (0..4).map(|_| {
-                let idx = (js_sys::Math::random() * 10.0) as usize;
-                idx.to_string()
-            }).collect();
-            let guest_name = format!("Guest{}", random_suffix);
+        run_api_action(Box::pin({
+            async move {
+                let random_suffix: String = (0..4).map(|_| {
+                    let idx = (js_sys::Math::random() * 10.0) as usize;
+                    idx.to_string()
+                }).collect();
+                let guest_name = format!("Guest{}", random_suffix);
 
-            match crate::context::create_guest_account(guest_name.clone()).await {
-                Ok((final_username, token)) => {
-                    auth_context.set_user.set(Some(crate::context::User {
-                        username: final_username.clone(),
-                        is_guest: true,
-                    }));
-                    crate::persistence::save_auth(&crate::persistence::AuthData {
-                        username: final_username,
-                        is_guest: true,
-                        token,
-                    });
-                }
-                Err(e) => {
-                    set_join_status.set(format!("Failed to create guest: {}", e));
-                    set_is_joining.set(false);
-                }
+                let (final_username, token) = crate::context::create_guest_account(guest_name).await
+                    .map_err(|e| crate::error::ClientError::Auth(e.to_string()))?;
+
+                auth_context.set_user.set(Some(crate::context::User {
+                    username: final_username.clone(),
+                    is_guest: true,
+                }));
+                crate::persistence::save_auth(&crate::persistence::AuthData {
+                    username: final_username,
+                    is_guest: true,
+                    token,
+                });
+                
+                Ok(())
             }
-        });
+        }));
     };
 
 

@@ -1,6 +1,5 @@
 // Component for managing lobby state
 use crate::{
-    error::{get_user_friendly_message, log_error},
     components::lobby::settings::{LobbySettingsPanel, use_lobby_settings},
     styled_view,
 };
@@ -41,29 +40,30 @@ where
     F: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
     let is_copied = RwSignal::new(false);
+    let is_leader = move || {
+        if let Some(info) = lobby_info.get() {
+            info.leader_id == current_player_id.get()
+        } else {
+            false
+        }
+    };
+
+    let run_api_action = crate::hooks::use_api_action(set_is_loading, set_status);
+
     let start_game_action = move |_: ev::MouseEvent| {
         let lobby_id = current_lobby_id.get();
         let player_id = current_player_id.get();
 
-        spawn_local(async move {
-            set_is_loading.set(true);
-            set_status.set("Starting game...".to_string());
-
-            let request = StartGameRequest {
-                player_id: player_id.clone(),
-            };
-
-            match start_game(lobby_id.clone(), request).await {
-                Ok(_) => {
-                    set_status.set("Game starting...".to_string());
-                }
-                Err(e) => {
-                    log_error("Failed to start game", e.clone());
-                    set_status.set(get_user_friendly_message(e.clone()));
-                }
+        run_api_action(Box::pin({
+            let l_id = lobby_id.clone();
+            let p_id = player_id.clone();
+            async move {
+                set_status.set("Starting game...".to_string());
+                let request = StartGameRequest { player_id: p_id };
+                let _ = start_game(l_id, request).await?;
+                Ok(())
             }
-            set_is_loading.set(false);
-        });
+        }));
     };
 
     let copy_lobby_id = move |_: ev::MouseEvent| {
@@ -90,14 +90,6 @@ where
         });
     };
 
-    let is_leader = move || {
-        if let Some(info) = lobby_info.get() {
-            info.leader_id == current_player_id.get()
-        } else {
-            false
-        }
-    };
-
     view! {
         <div class=lobby_container()>
             <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
@@ -107,6 +99,8 @@ where
                 is_leader=is_leader
                 on_start_game=start_game_action
                 on_leave_lobby=on_leave_lobby
+                set_is_loading=set_is_loading
+                set_status=set_status
             />
         </div>
     }
@@ -153,7 +147,7 @@ pub fn StatusMessage(status: ReadSignal<String>) -> impl IntoView {
         <Show when=move || !status.get().is_empty()>
             <div class=move || {
                 let base_classes = "my-4 p-3 rounded text-center font-medium";
-                if status.get().contains("Error") {
+                if status.get().contains("Error") || status.get().contains("Invalid") || status.get().contains("Failed") {
                     format!("{} bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300", base_classes)
                 } else {
                     format!("{} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300", base_classes)
@@ -170,6 +164,8 @@ fn LobbyDetails<F1, F2>(
     is_leader: impl Fn() -> bool + 'static + Copy + Send + Sync,
     on_start_game: F1,
     on_leave_lobby: F2,
+    set_is_loading: WriteSignal<bool>,
+    set_status: WriteSignal<String>,
 ) -> impl IntoView
 where
     F1: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
@@ -187,7 +183,7 @@ where
             .unwrap_or_default()
     });
 
-    let on_update = use_lobby_settings(lobby_id_for_settings, current_player_id);
+    let on_update = use_lobby_settings(lobby_id_for_settings, current_player_id, set_is_loading, set_status);
 
     let players = Signal::derive(move || lobby_info.get().map(|i| i.players).unwrap_or_default());
     let leader_id = Signal::derive(move || lobby_info.get().map(|i| i.leader_id).unwrap_or_default());

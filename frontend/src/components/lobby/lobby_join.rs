@@ -1,6 +1,5 @@
 // Component for joining/creating lobbies
 use crate::{
-    error::{get_user_friendly_message, log_error},
     persistence::SessionData,
     context::AuthContext,
     styled_view,
@@ -8,7 +7,6 @@ use crate::{
 use leptos::ev;
 use leptos::prelude::*;
 use shared::{JoinLobbyRequest, LobbyId, PlayerId, create_lobby, join_lobby};
-use wasm_bindgen_futures::spawn_local;
 
 use super::{GameInstructions, StatusMessage};
 
@@ -32,6 +30,8 @@ where
     let input_lobby_id = RwSignal::new(String::new());
     let auth_context = use_context::<AuthContext>().expect("AuthContext missing");
 
+    let run_api_action = crate::hooks::use_api_action(set_is_loading, set_status);
+
     let create_lobby_action = move |_: ev::MouseEvent| {
         let user = match auth_context.user.get() {
             Some(u) => u,
@@ -41,53 +41,39 @@ where
             }
         };
 
-        spawn_local(async move {
-            set_is_loading.set(true);
-            set_status.set("Creating lobby...".to_string());
-
+        run_api_action(Box::pin({
+            let username = user.username.clone();
             let request = JoinLobbyRequest {
-                player_name: user.username.clone(),
+                player_name: username.clone(),
                 player_id: None,
             };
 
-            match create_lobby(request).await {
-                Ok(response) => {
-                    let lobby_id = LobbyId::from(
-                        response
-                        .get("lobby_id")
-                        .and_then(|id| id.as_str())
-                        .unwrap_or("")
-                        .to_string()
-                    );
-                    let player_id = PlayerId::from(
-                        response
-                            .get("player_id")
-                            .and_then(|id| id.as_str())
-                            .unwrap_or(""),
-                    );
+            async move {
+                set_status.set("Creating lobby...".to_string());
+                let response = create_lobby(request).await?;
+                
+                let lobby_id = LobbyId::from(
+                    response.get("lobby_id").and_then(|id| id.as_str()).unwrap_or("").to_string()
+                );
+                let player_id = PlayerId::from(
+                    response.get("player_id").and_then(|id| id.as_str()).unwrap_or("")
+                );
 
-                    if lobby_id.is_empty() || player_id.is_empty() {
-                        set_status.set("Invalid response from server".to_string());
-                    } else {
-                        let session = SessionData {
-                            lobby_id: lobby_id.clone(),
-                            player_id: player_id.clone(),
-                            player_name: user.username.clone(),
-                            is_in_game: false,
-                        };
-                        crate::persistence::save_session(&session);
+                if lobby_id.is_empty() || player_id.is_empty() {
+                    return Err(crate::error::ClientError::Data("Invalid response from server".to_string()));
+                }
 
-                        set_status.set(format!("Created lobby: {}", lobby_id));
-                        on_lobby_joined(lobby_id, player_id);
-                    }
-                }
-                Err(e) => {
-                    log_error("Failed to create lobby", e.clone());
-                    set_status.set(get_user_friendly_message(e.clone()));
-                }
+                let session = SessionData {
+                    lobby_id: lobby_id.clone(),
+                    player_id: player_id.clone(),
+                    player_name: username,
+                    is_in_game: false,
+                };
+                crate::persistence::save_session(&session);
+                on_lobby_joined(lobby_id, player_id);
+                Ok(())
             }
-            set_is_loading.set(false);
-        });
+        }));
     };
 
     let join_lobby_action = move |_: ev::MouseEvent| {
@@ -106,53 +92,45 @@ where
             }
         };
 
-        spawn_local(async move {
-            set_is_loading.set(true);
-            set_status.set(format!("Joining lobby {}...", lobby_id));
+        run_api_action(Box::pin({
+            let username = user.username.clone();
+            let l_id = lobby_id.clone();
+            
+            async move {
+                set_status.set(format!("Joining lobby {}...", l_id));
+                
+                let session = crate::persistence::load_session();
+                let player_id_opt = if let Some(s) = session {
+                    if s.lobby_id.to_string() == l_id.to_string() {
+                        Some(s.player_id)
+                    } else { None }
+                } else { None };
 
-            let session = crate::persistence::load_session();
-            let player_id_opt = if let Some(s) = session {
-                if s.lobby_id.to_string() == lobby_id.to_string() {
-                    Some(s.player_id)
-                } else { None }
-            } else { None };
+                let request = JoinLobbyRequest {
+                    player_name: username.clone(),
+                    player_id: player_id_opt,
+                };
 
-            let request = JoinLobbyRequest {
-                player_name: user.username.clone(),
-                player_id: player_id_opt,
-            };
+                let response = join_lobby(l_id.clone(), request).await?;
+                let player_id = PlayerId::from(
+                    response.get("player_id").and_then(|id| id.as_str()).unwrap_or("")
+                );
 
-            match join_lobby(lobby_id.clone(), request).await {
-                Ok(response) => {
-                    let player_id = PlayerId::from(
-                        response
-                            .get("player_id")
-                            .and_then(|id| id.as_str())
-                            .unwrap_or(""),
-                    );
-
-                    if player_id.0.is_empty() {
-                        set_status.set("Invalid response from server".to_string());
-                    } else {
-                        let session = SessionData {
-                            lobby_id: lobby_id.clone(),
-                            player_id: player_id.clone(),
-                            player_name: user.username.clone(),
-                            is_in_game: false,
-                        };
-                        crate::persistence::save_session(&session);
-
-                        set_status.set(format!("Joined lobby: {}", lobby_id));
-                        on_lobby_joined(lobby_id, player_id);
-                    }
+                if player_id.0.is_empty() {
+                    return Err(crate::error::ClientError::Data("Invalid response from server".to_string()));
                 }
-                Err(e) => {
-                    log_error("Failed to join lobby", e.clone());
-                    set_status.set(get_user_friendly_message(e.clone()));
-                }
+
+                let session = SessionData {
+                    lobby_id: l_id.clone(),
+                    player_id: player_id.clone(),
+                    player_name: username,
+                    is_in_game: false,
+                };
+                crate::persistence::save_session(&session);
+                on_lobby_joined(l_id, player_id);
+                Ok(())
             }
-            set_is_loading.set(false);
-        });
+        }));
     };
 
     let handle_key_press = move |ev: ev::KeyboardEvent| {

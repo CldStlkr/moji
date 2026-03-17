@@ -52,6 +52,3 @@ path = "src/main.rs"
 
 [features]
 ssr = []
-
-[env]
-SQLX_OFFLINE = "true"

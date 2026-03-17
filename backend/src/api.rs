@@ -237,10 +237,12 @@ impl ApiContext for AppState {
                         Err(ServerFnError::new("Invalid password"))
                     }
                 } else {
-                    Err(ServerFnError::new("Account is a guest account. Cannot login with password."))
+                    // It's a guest account
+                    Err(ServerFnError::new("Name currently in use"))
                 }
             } else {
-                Err(ServerFnError::new("Password required"))
+                // Name is taken, but no password was provided to check ownership
+                Err(ServerFnError::new("Name currently in use"))
             }
         } else if request.create_guest {
             let user = User::create(db_pool, &request.username, None, true).await?;

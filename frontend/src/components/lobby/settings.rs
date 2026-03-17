@@ -1,7 +1,6 @@
 use crate::styled_view;
 use leptos::prelude::*;
 use shared::{GameSettings, LobbyId, PlayerId, UpdateSettingsRequest, update_lobby_settings};
-use wasm_bindgen_futures::spawn_local;
 
 styled_view!(settings_container, "p-4 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-200 dark:border-gray-600 transition-colors space-y-6");
 styled_view!(settings_title, "font-semibold text-gray-700 dark:text-gray-200");
@@ -29,19 +28,27 @@ styled_view!(difficulty_btn, is_active: bool,
 pub fn use_lobby_settings(
     lobby_id: impl Into<Signal<LobbyId>>,
     player_id: impl Into<Signal<PlayerId>>,
+    set_is_loading: WriteSignal<bool>,
+    set_status: WriteSignal<String>,
 ) -> Callback<GameSettings> {
     let lobby_id_sig = lobby_id.into();
     let player_id_sig = player_id.into();
+    let run_api_action = crate::hooks::use_api_action(set_is_loading, set_status);
+    
     Callback::new(move |new_settings: GameSettings| {
         let l_id = lobby_id_sig.get();
         let p_id = player_id_sig.get();
-        spawn_local(async move {
+        
+        run_api_action(Box::pin({
             let req = UpdateSettingsRequest {
-                player_id: p_id,
-                settings: new_settings,
+                player_id: p_id.clone(),
+                settings: new_settings.clone(),
             };
-            let _ = update_lobby_settings(l_id, req).await;
-        });
+            async move {
+                let _ = update_lobby_settings(l_id, req).await?;
+                Ok(())
+            }
+        }));
     })
 }
 
@@ -87,7 +94,7 @@ pub fn LobbySettingsPanel(
             // --- Game Mode Selection ---
             <div>
                 <span class=label_text()>"Game Mode:"</span>
-                <div class="flex gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <button
                         on:click={
                             move |_| {
@@ -136,7 +143,7 @@ pub fn LobbySettingsPanel(
             // --- Content Mode Selection ---
             <div>
                 <span class=label_text()>"Content Mode:"</span>
-                <div class="flex gap-2">
+                <div class="grid grid-cols-2 gap-2">
                     <button
                         on:click={
                             move |_| {

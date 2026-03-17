@@ -63,6 +63,13 @@ impl LobbyState {
         }
     }
 
+    pub fn broadcast(&self, msg: shared::ServerMessage) {
+        let msg_json = serde_json::to_string(&msg).unwrap_or_default();
+        if self.tx.receiver_count() > 0 {
+            let _ = self.tx.send(msg_json);
+        }
+    }
+
     pub fn is_leader(&self, player_id: &PlayerId) -> bool {
         self.lobby_leader.read(|leader| {
             leader.to_string() == player_id.to_string()
@@ -80,9 +87,9 @@ impl LobbyState {
             *settings = new_settings.clone();
         });
 
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::SettingsUpdate {
+        self.broadcast(shared::ServerMessage::SettingsUpdate {
             settings: new_settings
-        }).unwrap_or_default());
+        });
 
         Ok(())
     }
@@ -200,11 +207,11 @@ impl LobbyState {
 
         self.game_status.write(|status| *status = GameStatus::Playing);
 
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+        self.broadcast(shared::ServerMessage::GameState {
             prompt: self.get_current_prompt_text().unwrap_or_default(),
             status: GameStatus::Playing,
             scores: self.get_all_players(),
-        }).unwrap_or_default());
+        });
 
         Ok(())
     }
@@ -239,9 +246,9 @@ impl LobbyState {
             Ok(is_leader)
         })?;
 
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+        self.broadcast(shared::ServerMessage::PlayerListUpdate {
             players: self.get_all_players(),
-        }).unwrap_or_default());
+        });
 
         Ok(is_leader_result)
     }
@@ -268,9 +275,9 @@ impl LobbyState {
                         if let Some(new_leader) = players.first() {
                             tracing::info!("Reassigned lobby leader to {}", new_leader.id.0);
                             *leader = new_leader.id.clone();
-                            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::LeaderUpdate {
+                            self.broadcast(shared::ServerMessage::LeaderUpdate {
                                 leader_id: new_leader.id.clone()
-                            }).unwrap_or_default());
+                            });
                         } else {
                             tracing::info!("No players left to be leader");
                             *leader = PlayerId::default(); 
@@ -291,11 +298,7 @@ impl LobbyState {
                     }).collect()
                 };
                 
-                tracing::debug!("Broadcasting PlayerListUpdate to {} receivers: {:?}", self.tx.receiver_count(), pl_update);
-                match self.tx.send(serde_json::to_string(&pl_update).unwrap_or_default()) {
-                    Ok(n) => tracing::debug!("Broadcast delivered to {} receivers", n),
-                    Err(e) => tracing::warn!("Broadcast failed: {:?}", e),
-                }
+                self.broadcast(pl_update);
 
                 true
             } else {
@@ -448,9 +451,9 @@ impl LobbyState {
         };
 
         if broadcast {
-            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PromptUpdate {
+            self.broadcast(shared::ServerMessage::PromptUpdate {
                 new_prompt: display_text.clone(),
-            }).unwrap_or_default());
+            });
         }
 
         self.prompt_counter.write(|c| *c += 1);
@@ -477,12 +480,12 @@ impl LobbyState {
         }
 
         self.game_status.write(|status| *status = GameStatus::Lobby);
-
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+ 
+        self.broadcast(shared::ServerMessage::GameState {
             prompt: "".to_string(),
             status: GameStatus::Lobby,
             scores: self.get_all_players(),
-        }).unwrap_or_default());
+        });
 
         Ok(())
     }
@@ -584,12 +587,12 @@ impl LobbyState {
             }
         }
 
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+        self.broadcast(shared::ServerMessage::PlayerListUpdate {
             players: self.get_all_players()
-        }).unwrap_or_default());
+        });
 
         let score = self.get_player_score(player_id).unwrap_or(0);
-        let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+        self.broadcast(shared::ServerMessage::WordChecked {
             player_id: player_id.clone(),
             result: shared::CheckWordResponse {
                 message,
@@ -598,15 +601,15 @@ impl LobbyState {
                 error_details,
                 prompt: new_prompt_opt,
             },
-        }).unwrap_or_default());
+        });
 
         if game_over {
             self.game_status.write(|st| *st = GameStatus::Finished);
-            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+            self.broadcast(shared::ServerMessage::GameState {
                 prompt: self.get_current_prompt_text().unwrap_or_default(),
                 status: GameStatus::Finished,
                 scores: self.get_all_players(),
-            }).unwrap_or_default());
+            });
         }
 
         Ok(())
@@ -703,13 +706,13 @@ impl LobbyState {
                 
                 let (eliminated, duel_msg) = self.apply_duel_penalty(&player_id, &mut new_prompt_opt, &mut game_over);
                 let message = if eliminated { format!("Time's up!\n{}", duel_msg) } else { "Time's up!".to_string() };
-
-                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+ 
+                self.broadcast(shared::ServerMessage::PlayerListUpdate {
                     players: self.get_all_players()
-                }).unwrap_or_default());
+                });
             
                 let score = self.get_player_score(&player_id).unwrap_or(0);
-                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+                self.broadcast(shared::ServerMessage::WordChecked {
                     player_id,
                     result: shared::CheckWordResponse {
                         message,
@@ -718,21 +721,21 @@ impl LobbyState {
                         error_details,
                         prompt: new_prompt_opt.clone(),
                     },
-                }).unwrap_or_default());
+                });
             
                 if game_over {
                     self.game_status.write(|st| *st = GameStatus::Finished);
-                    let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+                    self.broadcast(shared::ServerMessage::GameState {
                         prompt: self.get_current_prompt_text().unwrap_or_default(),
                         status: GameStatus::Finished,
                         scores: self.get_all_players(),
-                    }).unwrap_or_default());
+                    });
                 }
             }
         } else {
             // Deathmatch: Skip the prompt
             let _ = self.generate_random_prompt(true);
-            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+            self.broadcast(shared::ServerMessage::WordChecked {
                 player_id: PlayerId::default(), // Nobody in particular
                 result: shared::CheckWordResponse {
                     message: "Time's up! Skipped prompt.".to_string(),
@@ -741,7 +744,7 @@ impl LobbyState {
                     error_details,
                     prompt: self.get_current_prompt_text(),
                 },
-            }).unwrap_or_default());
+            });
         }
     }
 
@@ -765,13 +768,13 @@ impl LobbyState {
             
             let (eliminated, duel_msg) = self.apply_duel_penalty(player_id, &mut new_prompt_opt, &mut game_over);
             let message = if eliminated { format!("Skipped!\n{}", duel_msg) } else { "Skipped!".to_string() };
-
-            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
+ 
+            self.broadcast(shared::ServerMessage::PlayerListUpdate {
                 players: self.get_all_players()
-            }).unwrap_or_default());
+            });
         
             let score = self.get_player_score(player_id).unwrap_or(0);
-            let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+            self.broadcast(shared::ServerMessage::WordChecked {
                 player_id: player_id.clone(),
                 result: shared::CheckWordResponse {
                     message,
@@ -780,15 +783,15 @@ impl LobbyState {
                     error_details,
                     prompt: new_prompt_opt,
                 },
-            }).unwrap_or_default());
+            });
         
             if game_over {
                 self.game_status.write(|st| *st = GameStatus::Finished);
-                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::GameState {
+                self.broadcast(shared::ServerMessage::GameState {
                     prompt: self.get_current_prompt_text().unwrap_or_default(),
                     status: GameStatus::Finished,
                     scores: self.get_all_players(),
-                }).unwrap_or_default());
+                });
             }
 
         } else {
@@ -807,7 +810,7 @@ impl LobbyState {
 
             if skip_passed {
                 let _ = self.generate_random_prompt(true);
-                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::WordChecked {
+                self.broadcast(shared::ServerMessage::WordChecked {
                     player_id: PlayerId::default(),
                     result: shared::CheckWordResponse {
                         message: "Prompt skipped by vote!".to_string(),
@@ -816,12 +819,12 @@ impl LobbyState {
                         error_details,
                         prompt: self.get_current_prompt_text(),
                     },
-                }).unwrap_or_default());
+                });
             } else {
-                let _ = self.tx.send(serde_json::to_string(&shared::ServerMessage::SkipVoteUpdate {
+                self.broadcast(shared::ServerMessage::SkipVoteUpdate {
                     votes,
                     required,
-                }).unwrap_or_default());
+                });
             }
         }
 
