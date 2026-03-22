@@ -98,6 +98,7 @@ pub enum ServerMessage {
     SettingsUpdate { settings: GameSettings },
     LeaderUpdate { leader_id: PlayerId },
     SkipVoteUpdate { votes: usize, required: usize },
+    Kicked { player_id: PlayerId },
 }
 
 /// A prompt sent from the server to each client at the start of a round.

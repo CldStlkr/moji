@@ -33,6 +33,8 @@ pub trait ApiContext: Send + Sync {
     async fn leave_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> JsonResult;
     async fn logout(&self, username: String) -> JsonResult;
     async fn set_player_connected(&self, lobby_id: LobbyId, player_id: PlayerId, is_connected: bool) -> JsonResult;
+    async fn kick_player(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult;
+    async fn promote_leader(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult;
 }
 
 #[cfg(feature = "ssr")]
@@ -109,4 +111,14 @@ pub async fn leave_lobby(lobby_id: LobbyId, player_id: PlayerId) -> JsonResult {
 #[server(endpoint = "/api/logout")]
 pub async fn logout(username: String) -> JsonResult {
     get_api_context()?.logout(username).await
+}
+
+#[server(endpoint = "/api/kick_player")]
+pub async fn kick_player(lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
+    get_api_context()?.kick_player(lobby_id, requestor_id, target_player_id).await
+}
+
+#[server(endpoint = "/api/promote_leader")]
+pub async fn promote_leader(lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
+    get_api_context()?.promote_leader(lobby_id, requestor_id, target_player_id).await
 }

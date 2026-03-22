@@ -21,6 +21,7 @@ pub struct UseSharedSocketConfig {
     pub set_prompt: WriteSignal<String>,
     pub set_result: WriteSignal<String>,
     pub set_typing_status: WriteSignal<HashMap<PlayerId, String>>,
+    pub on_kicked: Option<Callback<()>>,
 }
 
 pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage) + Copy + 'static {
@@ -32,6 +33,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
     let set_prompt = config.set_prompt;
     let set_result = config.set_result;
     let set_typing_status = config.set_typing_status;
+    let on_kicked = config.on_kicked;
 
     Effect::new(move |_| {
         let lobby_id = lobby_id.get();
@@ -191,6 +193,22 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                         },
                                         ServerMessage::SkipVoteUpdate { votes, required } => {
                                             set_result.set(format!("Votes to skip: {}/{}", votes, required));
+                                        },
+                                        ServerMessage::Kicked { player_id: pid } => {
+                                            if pid == player_id {
+                                                toast.push.run((
+                                                    "You were kicked from the lobby.".to_string(),
+                                                    crate::components::toast::ToastType::Error
+                                                ));
+                                                
+                                                crate::persistence::clear_session();
+                                                if let Some(cb) = on_kicked {
+                                                    cb.run(());
+                                                } else {
+                                                    let window = web_sys::window().unwrap();
+                                                    let _ = window.location().set_href("/");
+                                                }
+                                            }
                                         },
                                     }
                                     },

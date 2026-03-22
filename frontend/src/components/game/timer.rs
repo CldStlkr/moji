@@ -1,16 +1,30 @@
 use leptos::prelude::*;
+use crate::context::GameContext;
 use std::time::Duration;
 
 #[component]
-pub fn TimerBar(
-    #[prop(into)] time_limit: Signal<Option<u32>>,
-    #[prop(into)] reset_trigger: Signal<String>,
-) -> impl IntoView {
+pub fn TimerBar() -> impl IntoView {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    
+    let lobby_info = game_context.lobby_info;
+    let prompt = game_context.prompt;
+
     let progress = RwSignal::new(100.0);
+    
+    let time_limit = Signal::derive(move || -> Option<u32> {
+        lobby_info.get().and_then(|info| {
+            if info.settings.mode != shared::GameMode::Zen {
+                info.settings.time_limit_seconds
+            } else {
+                None
+            }
+        })
+    });
+
     let is_active = Signal::derive(move || time_limit.get().is_some() && time_limit.get().unwrap_or(0) > 0);
 
     Effect::new(move |_| {
-        let trigger = reset_trigger.get();
+        let trigger = prompt.get();
         let limit = time_limit.get();
         if trigger.is_empty() || limit.is_none() || limit.unwrap_or(0) == 0 {
             progress.set(100.0);

@@ -327,6 +327,18 @@ impl ApiContext for AppState {
         lobby.set_player_connected(&player_id, is_connected);
         Ok(json!({ "message": "Connection status updated" }))
     }
+
+    async fn kick_player(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
+        let lobby = self.get_lobby(&lobby_id)?;
+        lobby.kick_player(&requestor_id, &target_player_id)?;
+        Ok(json!({ "message": "Player kicked" }))
+    }
+
+    async fn promote_leader(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
+        let lobby = self.get_lobby(&lobby_id)?;
+        lobby.promote_leader(&requestor_id, &target_player_id)?;
+        Ok(json!({ "message": "Leader promoted" }))
+    }
 }
 
 #[derive(Deserialize)]

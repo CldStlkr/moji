@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
+    context::GameContext,
     components::{
         game::GameComponent,
         lobby::LobbyManagementComponent,
@@ -13,7 +14,6 @@ use crate::{
     persistence::{clear_session, load_session, save_session, use_session_persistence, SessionData},
 };
 use shared::{get_lobby_info, get_player_info, join_lobby, JoinLobbyRequest, LobbyId, LobbyInfo, PlayerId};
-
 #[component]
 pub fn LobbyPage() -> impl IntoView {
     let params = use_params_map();
@@ -21,23 +21,63 @@ pub fn LobbyPage() -> impl IntoView {
 
     let auth_context = use_context::<AuthContext>().expect("AuthContext missing");
 
-    // Core state
+    // Game/Lobby State (Contextual)
     let lobby_id = RwSignal::new(LobbyId::default());
     let player_id = RwSignal::new(PlayerId::default());
     let player_name = RwSignal::new(String::new());
-
-    // Game/Lobby State
     let lobby_info = RwSignal::new(None::<LobbyInfo>);
+
+    let navigate = use_navigate();
+
+    let is_leader = Memo::new(move |_| {
+        if let (Some(info), p_id) = (lobby_info.get(), player_id.get()) {
+            info.leader_id == p_id && !p_id.0.is_empty()
+        } else {
+            false
+        }
+    });
+
     let prompt = RwSignal::new(String::new());
     let result = RwSignal::new(String::new());
     let typing_status = RwSignal::new(HashMap::<PlayerId, String>::new());
+
+    let navigate_kick = navigate.clone();
+    let send_message = use_shared_socket(UseSharedSocketConfig {
+        lobby_id: lobby_id.read_only(),
+        player_id: player_id.read_only(),
+        lobby_info,
+        set_prompt: prompt.write_only(),
+        set_result: result.write_only(),
+        set_typing_status: typing_status.write_only(),
+        on_kicked: Some(Callback::new(move |_| {
+            navigate_kick("/", Default::default());
+        })),
+    });
+
+    provide_context(GameContext {
+        lobby_id: lobby_id.read_only(),
+        set_lobby_id: lobby_id.write_only(),
+        player_id: player_id.read_only(),
+        set_player_id: player_id.write_only(),
+        player_name: player_name.read_only(),
+        set_player_name: player_name.write_only(),
+        lobby_info: lobby_info.read_only(),
+        set_lobby_info: lobby_info.write_only(),
+        is_leader,
+        prompt: prompt.read_only(),
+        set_prompt: prompt.write_only(),
+        result: result.read_only(),
+        set_result: result.write_only(),
+        typing_status: typing_status.read_only(),
+        set_typing_status: typing_status.write_only(),
+        send_message: Callback::new(send_message),
+    });
 
     // UI State
     let is_leaving = RwSignal::new(false);
     let (join_status, set_join_status) = signal(String::new());
     let (is_joining, set_is_joining) = signal(false);
 
-    let navigate = use_navigate();
     let navigate_path = RwSignal::new(None::<String>);
     let navigate_replace_path = RwSignal::new(None::<String>);
 
@@ -56,15 +96,6 @@ pub fn LobbyPage() -> impl IntoView {
                  ..Default::default()
              });
         }
-    });
-
-    let send_message = use_shared_socket(UseSharedSocketConfig {
-        lobby_id: lobby_id.read_only(),
-        player_id: player_id.read_only(),
-        lobby_info,
-        set_prompt: prompt.write_only(),
-        set_result: result.write_only(),
-        set_typing_status: typing_status.write_only(),
     });
 
     let is_in_game = Signal::derive(move || {
@@ -210,9 +241,9 @@ pub fn LobbyPage() -> impl IntoView {
                     Ok(())
                 }
             }));
-        } 
+        }
     });
-    
+
     // Auto-cleanup on logout
     Effect::new(move |_| {
         if auth_context.user.get().is_none() && !lobby_id.get().is_empty() && !is_leaving.get() {
@@ -242,7 +273,7 @@ pub fn LobbyPage() -> impl IntoView {
                     is_guest: true,
                     token,
                 });
-                
+
                 Ok(())
             }
         }));
@@ -250,8 +281,8 @@ pub fn LobbyPage() -> impl IntoView {
 
 
 
-    let (mgmt_is_loading, mgmt_set_is_loading) = signal(false);
-    let (mgmt_status, mgmt_set_status) = signal(String::new());
+    let (_mgmt_is_loading, mgmt_set_is_loading) = signal(false);
+    let (_mgmt_status, mgmt_set_status) = signal(String::new());
 
     view! {
         <Transition
@@ -331,15 +362,8 @@ pub fn LobbyPage() -> impl IntoView {
                             fallback=move || {
                                 view! {
                                     <div class="space-y-6 animate-page-entry">
-                                        <GameComponent
-                                            lobby_id=lobby_id.read_only()
-                                            player_id=player_id.read_only()
-                                            on_exit_game=handle_leave_and_cleanup
-                                            send_message=send_message
-                                            prompt=prompt.read_only()
-                                            result=result.read_only()
-                                            typing_status=typing_status
-                                            lobby_info=lobby_info.read_only()
+                                        <GameComponent 
+                                            on_exit_game=Callback::new(move |_| handle_leave_and_cleanup())
                                         />
                                     </div>
                                 }
@@ -347,12 +371,7 @@ pub fn LobbyPage() -> impl IntoView {
                         >
                             <div class="animate-page-entry">
                                 <LobbyManagementComponent 
-                                    lobby_info=lobby_info.read_only()
-                                    current_lobby_id=lobby_id.read_only()
-                                    current_player_id=player_id.read_only()
-                                    _is_loading=mgmt_is_loading
                                     set_is_loading=mgmt_set_is_loading
-                                    _status=mgmt_status
                                     set_status=mgmt_set_status
                                     on_leave_lobby=move |_| handle_leave_and_cleanup()
                                 />

@@ -2,10 +2,11 @@
 use crate::{
     components::lobby::settings::{LobbySettingsPanel, use_lobby_settings},
     styled_view,
+    context::GameContext,
 };
 use leptos::ev;
 use leptos::prelude::*;
-use shared::{LobbyInfo, LobbyId, PlayerData, PlayerId, StartGameRequest, start_game};
+use shared::{StartGameRequest, GameMode, start_game};
 use wasm_bindgen_futures::spawn_local;
 
 styled_view!(lobby_container, "max-w-2xl mx-auto my-8 p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg transition-colors");
@@ -26,48 +27,37 @@ styled_view!(btn_start_game, "bg-green-500 hover:bg-green-600 dark:bg-green-600 
 styled_view!(btn_leave_lobby, "bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-400 dark:border-gray-500 font-medium py-2 px-4 rounded transition-colors");
 
 #[component]
-pub fn LobbyManagementComponent<F>(
-    lobby_info: ReadSignal<Option<LobbyInfo>>,
-    current_lobby_id: ReadSignal<LobbyId>,
-    current_player_id: ReadSignal<PlayerId>,
-    _is_loading: ReadSignal<bool>,
+pub fn LobbyManagementComponent(
+    #[prop(into)] on_leave_lobby: Callback<ev::MouseEvent>, // Use Callback for cleaner prop
     set_is_loading: WriteSignal<bool>,
-    _status: ReadSignal<String>,
     set_status: WriteSignal<String>,
-    on_leave_lobby: F,
 ) -> impl IntoView
-where
-    F: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
     let is_copied = RwSignal::new(false);
-    let is_leader = move || {
-        if let Some(info) = lobby_info.get() {
-            info.leader_id == current_player_id.get()
-        } else {
-            false
+    
+    let start_game_action = {
+        let lobby_id = game_context.lobby_id;
+        let player_id = game_context.player_id;
+        let run_api_action = crate::hooks::use_api_action(set_is_loading, set_status);
+
+        move |_: ev::MouseEvent| {
+            let l_id = lobby_id.get();
+            let p_id = player_id.get();
+
+            run_api_action(Box::pin({
+                async move {
+                    set_status.set("Starting game...".to_string());
+                    let request = StartGameRequest { player_id: p_id };
+                    let _ = start_game(l_id, request).await?;
+                    Ok(())
+                }
+            }));
         }
     };
 
-    let run_api_action = crate::hooks::use_api_action(set_is_loading, set_status);
-
-    let start_game_action = move |_: ev::MouseEvent| {
-        let lobby_id = current_lobby_id.get();
-        let player_id = current_player_id.get();
-
-        run_api_action(Box::pin({
-            let l_id = lobby_id.clone();
-            let p_id = player_id.clone();
-            async move {
-                set_status.set("Starting game...".to_string());
-                let request = StartGameRequest { player_id: p_id };
-                let _ = start_game(l_id, request).await?;
-                Ok(())
-            }
-        }));
-    };
-
     let copy_lobby_id = move |_: ev::MouseEvent| {
-        let lobby_id = current_lobby_id.get();
+        let lobby_id = game_context.lobby_id.get();
         spawn_local(async move {
             let window = web_sys::window().expect("global window");
             let navigator = window.navigator();
@@ -75,11 +65,8 @@ where
             match wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await {
                 Ok(_) => {
                     is_copied.set(true);
-
                     set_timeout(
-                        move || {
-                            is_copied.set(false);
-                        },
+                        move || { is_copied.set(false); },
                         std::time::Duration::from_millis(1000),
                     );
                 }
@@ -92,12 +79,9 @@ where
 
     view! {
         <div class=lobby_container()>
-            <LobbyHeader lobby_id=current_lobby_id on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
+            <LobbyHeader on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
             <LobbyDetails
-                lobby_info=lobby_info
-                current_player_id=current_player_id
-                is_leader=is_leader
-                on_start_game=start_game_action
+                on_start_game=Callback::new(start_game_action)
                 on_leave_lobby=on_leave_lobby
                 set_is_loading=set_is_loading
                 set_status=set_status
@@ -107,14 +91,14 @@ where
 }
 
 #[component]
-fn LobbyHeader<F>(
-    lobby_id: ReadSignal<LobbyId>,
-    on_copy_id: F,
+fn LobbyHeader(
+    #[prop(into)] on_copy_id: Callback<ev::MouseEvent>,
     is_copied: ReadSignal<bool>,
 ) -> impl IntoView
-where
-    F: Fn(ev::MouseEvent) + 'static + Copy,
 {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let lobby_id = game_context.lobby_id;
+
     view! {
         <div class=header_container()>
             <h2 class=header_title()>
@@ -124,7 +108,7 @@ where
                 </span>
             </h2>
             <button
-                on:click=on_copy_id
+                on:click=move |ev| on_copy_id.run(ev)
                 class=copy_button()
                 title="Copy Lobby ID"
             >
@@ -158,37 +142,23 @@ pub fn StatusMessage(status: ReadSignal<String>) -> impl IntoView {
 }
 
 #[component]
-fn LobbyDetails<F1, F2>(
-    lobby_info: ReadSignal<Option<LobbyInfo>>,
-    current_player_id: ReadSignal<PlayerId>,
-    is_leader: impl Fn() -> bool + 'static + Copy + Send + Sync,
-    on_start_game: F1,
-    on_leave_lobby: F2,
+fn LobbyDetails(
+    #[prop(into)] on_start_game: Callback<ev::MouseEvent>,
+    #[prop(into)] on_leave_lobby: Callback<ev::MouseEvent>,
     set_is_loading: WriteSignal<bool>,
     set_status: WriteSignal<String>,
 ) -> impl IntoView
-where
-    F1: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
-    F2: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let lobby_info = game_context.lobby_info;
+
     let settings = Signal::derive(move || {
         lobby_info.get()
             .map(|i| i.settings)
             .unwrap_or_default()
     });
 
-    let lobby_id_for_settings = Signal::derive(move || {
-        lobby_info.get()
-            .map(|i| i.lobby_id)
-            .unwrap_or_default()
-    });
-
-    let on_update = use_lobby_settings(lobby_id_for_settings, current_player_id, set_is_loading, set_status);
-
-    let players = Signal::derive(move || lobby_info.get().map(|i| i.players).unwrap_or_default());
-    let leader_id = Signal::derive(move || lobby_info.get().map(|i| i.leader_id).unwrap_or_default());
-    let player_count = Signal::derive(move || players.get().len());
-    let max_players = Signal::derive(move || lobby_info.get().map(|i| i.settings.max_players).unwrap_or(4));
+    let on_update = use_lobby_settings(set_is_loading, set_status);
 
     view! {
         <Show
@@ -196,39 +166,27 @@ where
             fallback=|| view! { <div class=loading_text()>"Loading lobby info..."</div> }
         >
             <div class="space-y-6">
-                <PlayersList
-                    players=players
-                    current_player_id=current_player_id
-                    leader_id=leader_id
-                    player_count=player_count
-                    max_players=max_players
-                />
-
-                <LobbySettingsPanel
-                    settings=settings
-                    is_leader=is_leader
-                    on_update=on_update
-                />
-
-                <LobbyActions
-                    is_leader=is_leader
-                    player_count=player_count
-                    on_start_game=on_start_game
-                    on_leave_lobby=on_leave_lobby
-                />
+                <PlayersList set_is_loading=set_is_loading set_status=set_status />
+                <LobbySettingsPanel settings=settings on_update=on_update />
+                <LobbyActions on_start_game=on_start_game on_leave_lobby=on_leave_lobby />
             </div>
         </Show>
     }
 }
 
 #[component]
-fn PlayersList(
-    #[prop(into)] players: Signal<Vec<PlayerData>>,
-    current_player_id: ReadSignal<PlayerId>,
-    #[prop(into)] leader_id: Signal<PlayerId>,
-    #[prop(into)] player_count: Signal<usize>,
-    #[prop(into)] max_players: Signal<u32>,
-) -> impl IntoView {
+fn PlayersList(set_is_loading: WriteSignal<bool>, set_status: WriteSignal<String>) -> impl IntoView {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let lobby_info = game_context.lobby_info;
+    let current_player_id = game_context.player_id;
+    let is_leader = game_context.is_leader;
+    let run_api_action = crate::hooks::use_api_action(set_is_loading, set_status);
+
+    let players = Signal::derive(move || lobby_info.get().map(|i| i.players).unwrap_or_default());
+    let leader_id = Signal::derive(move || lobby_info.get().map(|i| i.leader_id).unwrap_or_default());
+    let player_count = Signal::derive(move || players.get().len());
+    let max_players = Signal::derive(move || lobby_info.get().map(|i| i.settings.max_players).unwrap_or(4));
+
     view! {
         <div class="space-y-4">
             <h3 class=player_list_title()>
@@ -242,7 +200,38 @@ fn PlayersList(
                         let id_for_item = player.id.clone();
                         let id_for_leader = player.id.clone();
                         let id_for_you = player.id.clone();
-                        
+                        let id_for_actions = player.id.clone();
+
+                        let on_kick = {
+                            let r_id = current_player_id.get();
+                            let t_id = id_for_actions.clone();
+                            let run_api = run_api_action;
+                            move |_| {
+                                let t_id = t_id.clone();
+                                let l_id = lobby_info.get().map(|i| i.lobby_id).unwrap_or_default();
+                                let r_id = r_id.clone();
+                                run_api(Box::pin(async move {
+                                    shared::kick_player(l_id, r_id, t_id).await?;
+                                    Ok(())
+                                }));
+                            }
+                        };
+
+                        let on_promote = {
+                            let r_id = current_player_id.get();
+                            let t_id = id_for_actions.clone();
+                            let run_api = run_api_action;
+                            move |_| {
+                                let t_id = t_id.clone();
+                                let l_id = lobby_info.get().map(|i| i.lobby_id).unwrap_or_default();
+                                let r_id = r_id.clone();
+                                run_api(Box::pin(async move {
+                                    shared::promote_leader(l_id, r_id, t_id).await?;
+                                    Ok(())
+                                }));
+                            }
+                        };
+
                         view! {
                             <li class=move || player_item(id_for_item == current_player_id.get())>
                                 <span class="font-medium">{player.name}</span>
@@ -257,6 +246,22 @@ fn PlayersList(
                                             "(You)"
                                         </span>
                                     </Show>
+                                    <Show when=move || is_leader.get() && id_for_actions != current_player_id.get()>
+                                        <button
+                                            on:click=on_kick.clone()
+                                            class="px-2 py-1 text-xs font-semibold rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-800 transition-colors"
+                                            title="Kick Player"
+                                        >
+                                            "Kick"
+                                        </button>
+                                        <button
+                                            on:click=on_promote.clone()
+                                            class="px-2 py-1 text-xs font-semibold rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                                            title="Make Leader"
+                                        >
+                                            "Make Leader"
+                                        </button>
+                                    </Show>
                                 </div>
                             </li>
                         }
@@ -268,17 +273,23 @@ fn PlayersList(
 }
 
 #[component]
-fn LobbyActions<F1, F2>(
-    #[prop(into)] is_leader: Signal<bool>,
-    #[prop(into)] player_count: Signal<usize>,
-    on_start_game: F1,
-    on_leave_lobby: F2,
+fn LobbyActions(
+    #[prop(into)] on_start_game: Callback<ev::MouseEvent>,
+    #[prop(into)] on_leave_lobby: Callback<ev::MouseEvent>,
 ) -> impl IntoView
-where
-    F1: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
-    F2: Fn(ev::MouseEvent) + 'static + Copy + Send + Sync,
 {
-    let not_enough_players = Signal::derive(move || player_count.get() < 1);
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let is_leader = game_context.is_leader;
+    let lobby_info = game_context.lobby_info;
+
+    let player_count = Signal::derive(move || lobby_info.get().map(|i| i.players.len()).unwrap_or(0));
+    let game_mode = Signal::derive(move || lobby_info.get().map(|i| i.settings.mode).unwrap_or(GameMode::Zen));
+
+    let not_enough_players = Signal::derive(move || match game_mode.get() {
+        GameMode::Duel | GameMode::Deathmatch => player_count.get() < 2 ,
+        _ => false,
+    });
+
     view! {
         <div class="flex flex-col gap-4 my-6">
             <Show
@@ -292,7 +303,7 @@ where
                 }
             >
                 <button
-                    on:click=on_start_game
+                    on:click=move |ev| on_start_game.run(ev)
                     disabled=move || not_enough_players.get()
                     class=btn_start_game()
                 >
@@ -300,13 +311,16 @@ where
                 </button>
                 <Show when=move || not_enough_players.get()>
                     <p class="text-orange-600 dark:text-orange-400 text-center font-medium">
-                        "Need at least 2 players to start"
+                        {move || match game_mode.get() {
+                            GameMode::Duel | GameMode::Deathmatch => "Need at least 2 players to start",
+                            _ => "",
+                        }}
                     </p>
                 </Show>
             </Show>
 
             <button
-                on:click=on_leave_lobby
+                on:click=move |ev| on_leave_lobby.run(ev)
                 class=btn_leave_lobby()
             >
                 "Leave Lobby"

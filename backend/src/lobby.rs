@@ -253,6 +253,43 @@ impl LobbyState {
         Ok(is_leader_result)
     }
 
+    pub fn kick_player(&self, requestor_id: &PlayerId, target_player_id: &PlayerId) -> Result<()> {
+        if !self.is_leader(requestor_id) {
+            return Err(AppError::AuthError("Only the lobby leader can kick players".to_string()));
+        }
+        if requestor_id == target_player_id {
+            return Err(AppError::InvalidInput("Cannot kick yourself".to_string()));
+        }
+
+        self.remove_player(target_player_id);
+        self.broadcast(shared::ServerMessage::Kicked { player_id: target_player_id.clone() });
+        
+        Ok(())
+    }
+
+    pub fn promote_leader(&self, requestor_id: &PlayerId, target_player_id: &PlayerId) -> Result<()> {
+        if !self.is_leader(requestor_id) {
+            return Err(AppError::AuthError("Only the lobby leader can promote a new leader".to_string()));
+        }
+        
+        let player_exists = self.players.read(|players| {
+            players.iter().any(|p| &p.id == target_player_id)
+        });
+        
+        if !player_exists {
+            return Err(AppError::InvalidInput("Target player is not in the lobby".to_string()));
+        }
+        
+        self.lobby_leader.write(|leader| {
+            *leader = target_player_id.clone();
+        });
+        
+        self.broadcast(shared::ServerMessage::LeaderUpdate { leader_id: target_player_id.clone() });
+        self.broadcast(shared::ServerMessage::PlayerListUpdate { players: self.get_all_players() });
+        
+        Ok(())
+    }
+
     pub fn remove_player(&self, player_id: &PlayerId) -> bool {
         self.players.write(|players| {
             if let Some(pos) = players.iter().position(|p| &p.id == player_id) {

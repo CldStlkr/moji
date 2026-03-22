@@ -1,6 +1,7 @@
 // Component for displaying player scores
 use leptos::prelude::*;
 use shared::{PlayerData, PlayerId, GameMode};
+use crate::context::GameContext;
 
 #[component]
 pub fn PlayerScoresComponent(
@@ -67,16 +68,26 @@ pub fn PlayerScoresComponent(
 }
 
 #[component]
-pub fn CompactPlayerScoresComponent(
-    players: Vec<PlayerData>,
-    current_player_id: ReadSignal<PlayerId>,
-    typing_status: ReadSignal<std::collections::HashMap<PlayerId, String>>,
-    #[prop(into)] game_mode: Signal<GameMode>,
-    #[prop(into)] initial_lives: Signal<u32>,
-) -> impl IntoView {
-    // Sort players by score (highest first)
-    let mut sorted_players = players;
-    sorted_players.sort_by(|a, b| b.score.cmp(&a.score));
+pub fn CompactPlayerScoresComponent() -> impl IntoView {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    
+    let lobby_info = game_context.lobby_info;
+    let current_player_id = game_context.player_id;
+    let typing_status = game_context.typing_status;
+
+    let sorted_players = Signal::derive(move || {
+        let mut p = lobby_info.get().map(|i| i.players).unwrap_or_default();
+        p.sort_by(|a, b| b.score.cmp(&a.score));
+        p
+    });
+    
+    let game_mode = Signal::derive(move || {
+        lobby_info.get().map(|i| i.settings.mode).unwrap_or_default()
+    });
+    
+    let initial_lives = Signal::derive(move || {
+        lobby_info.get().map(|i| i.settings.initial_lives.unwrap_or(3)).unwrap_or(3)
+    });
 
     view! {
         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4 transition-colors">
@@ -88,54 +99,67 @@ pub fn CompactPlayerScoresComponent(
             </h4>
             <div class="space-y-1">
                 <For
-                    each=move || sorted_players.clone()
+                    each=move || sorted_players.get()
                     key=|player| player.id.clone()
                     children=move |player| {
-                        let is_current = player.id == current_player_id.get();
                         let pid = player.id.clone();
-                        let is_turn = player.is_turn;
-                        let is_eliminated = player.is_eliminated;
-                        let lives = player.lives;
-                        let mode = game_mode.get();
+                        let sig_pid = pid.clone();
+                        let sig_player = player.clone();
+                        let player_sig = Signal::derive(move || {
+                            sorted_players.get().into_iter().find(|p| p.id == sig_pid).unwrap_or_else(|| sig_player.clone())
+                        });
 
                         view! {
-                            <div class=format!(
-                                "flex flex-col px-4 py-3 rounded-lg mb-2 shadow-sm transition-all border {} {}",
-                                if is_current {
-                                    "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
-                                } else {
-                                    "bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700"
-                                },
-                                if is_eliminated || !player.is_connected { "opacity-60 grayscale bg-gray-100 dark:bg-gray-800" } else { "" }
-                            )>
+                            <div class=move || {
+                                let p = player_sig.get();
+                                let is_current = p.id == current_player_id.get();
+                                let is_eliminated = p.is_eliminated;
+                                format!(
+                                    "flex flex-col px-4 py-3 rounded-lg mb-2 shadow-sm transition-all border {} {}",
+                                    if is_current {
+                                        "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+                                    } else {
+                                        "bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700"
+                                    },
+                                    if is_eliminated || !p.is_connected { "opacity-60 grayscale bg-gray-100 dark:bg-gray-800" } else { "" }
+                                )
+                            }>
                                 <div class="flex justify-between items-center w-full">
                                     <div class="flex items-center gap-3">
                                         // Rank/Status Indicator
-                                        <div class=format!(
-                                            "w-2 h-2 rounded-full {}",
-                                            if is_turn && mode == GameMode::Duel { "bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" }
-                                            else if is_eliminated { "bg-red-500" }
-                                            else { "bg-gray-300 dark:bg-gray-600" }
-                                        )></div>
+                                        <div class=move || {
+                                            let p = player_sig.get();
+                                            let mode = game_mode.get();
+                                            format!(
+                                                "w-2 h-2 rounded-full {}",
+                                                if p.is_turn && mode == GameMode::Duel { "bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" }
+                                                else if p.is_eliminated { "bg-red-500" }
+                                                else { "bg-gray-300 dark:bg-gray-600" }
+                                            )
+                                        }></div>
 
                                         <div class="flex flex-col min-w-0">
-                                            <span class=format!(
-                                                "font-medium text-lg truncate {}",
-                                                if is_current { "text-blue-700 dark:text-blue-300" }
-                                                else { "text-gray-900 dark:text-gray-200" }
-                                            )>{player.name.clone()}</span>
+                                            <span class=move || {
+                                                let is_current = player_sig.get().id == current_player_id.get();
+                                                format!(
+                                                    "font-medium text-lg truncate {}",
+                                                    if is_current { "text-blue-700 dark:text-blue-300" }
+                                                    else { "text-gray-900 dark:text-gray-200" }
+                                                )
+                                            }>{move || player_sig.get().name.clone()}</span>
 
-                                            <Show when=move || is_eliminated>
+                                            <Show when=move || player_sig.get().is_eliminated>
                                                 <span class="text-[10px] uppercase tracking-wider font-bold text-red-500">"Eliminated"</span>
                                             </Show>
                                         </div>
                                     </div>
 
                                     <div class="flex items-center gap-6">
-                                         <Show when=move || mode == GameMode::Duel && !is_eliminated>
+                                         <Show when=move || game_mode.get() == GameMode::Duel && !player_sig.get().is_eliminated>
                                             <div class="flex items-center gap-1">
                                                 {move || {
-                                                    let current_lives = lives.unwrap_or(0);
+                                                    let p = player_sig.get();
+                                                    let current_lives = p.lives.unwrap_or(0);
                                                     let initial_lives_val = initial_lives.get();
                                                     
                                                     (0..initial_lives_val).map(|i| {
@@ -160,10 +184,10 @@ pub fn CompactPlayerScoresComponent(
                                             </div>
                                          </Show>
 
-                                        <Show when=move || mode != GameMode::Duel>
+                                        <Show when=move || game_mode.get() != GameMode::Duel>
                                             <div class="flex flex-col items-end min-w-[3rem]">
                                                  <span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">"Pts"</span>
-                                                 <span class="font-bold text-2xl text-blue-600 dark:text-blue-400 leading-none">{player.score}</span>
+                                                 <span class="font-bold text-2xl text-blue-600 dark:text-blue-400 leading-none">{move || player_sig.get().score}</span>
                                             </div>
                                         </Show>
                                     </div>
@@ -171,14 +195,14 @@ pub fn CompactPlayerScoresComponent(
 
                                 <Show when={
                                     let pid_show = pid.clone();
-                                    move || typing_status.with(|map| map.get(&pid_show).is_some_and(|s| !s.is_empty()))
+                                    move || typing_status.get().get(&pid_show).is_some_and(|s| !s.is_empty())
                                 }>
                                     <div class="mt-2 text-sm text-gray-600 dark:text-gray-300 italic flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 px-2 py-1 rounded">
                                         <span class="animate-bounce">"✎"</span>
                                         <span class="truncate">
                                             {
                                                 let pid_text = pid.clone();
-                                                move || typing_status.with(|map| map.get(&pid_text).cloned().unwrap_or_default())
+                                                move || typing_status.get().get(&pid_text).cloned().unwrap_or_default()
                                             }
                                         </span>
                                     </div>

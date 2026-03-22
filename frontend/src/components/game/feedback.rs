@@ -1,12 +1,18 @@
 use leptos::prelude::*;
-use shared::ContentMode;
+use crate::context::{GameContext, InGameContext};
 
 #[component]
-pub fn GameFeedback(
-    content_mode: ContentMode,
-    result: ReadSignal<String>,
-    error_message: ReadSignal<String>,
-) -> impl IntoView {
+pub fn GameFeedback() -> impl IntoView {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let in_game_context = use_context::<InGameContext>().expect("InGameContext missing");
+    
+    let lobby_info = game_context.lobby_info;
+    let result = game_context.result;
+    let error_message = in_game_context.error_message;
+
+    let content_mode = Signal::derive(move || {
+        lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
+    });
 
     let get_result_class = move || {
         let result_text = result.get();
@@ -44,7 +50,7 @@ pub fn GameFeedback(
 
 
                 <p class="mb-2">{
-                        move || if content_mode == ContentMode::Vocab {
+                        move || if content_mode.get() == shared::ContentMode::Vocab {
                             "Enter the hiragana reading of the displayed word."
                         } else {
                             "Type a Japanese word containing the displayed kanji."

@@ -1,9 +1,7 @@
 use crate::styled_view;
 use leptos::ev;
-use leptos::html;
 use leptos::prelude::*;
 use leptos_dom::helpers::window_event_listener;
-use shared::ContentMode;
 
 styled_view!(game_input_field, "w-full p-3 text-lg border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white rounded focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed");
 styled_view!(game_submit_button, disabled: bool,
@@ -23,25 +21,41 @@ styled_view!(game_skip_button, disabled: bool,
     }
 );
 
+use crate::context::{GameContext, InGameContext};
+
 #[component]
-pub fn GameInput<F1, F2, F3, F4>(
-    content_mode: ContentMode,
-    word: ReadSignal<String>,
-    is_loading: ReadSignal<bool>,
-    prompt: ReadSignal<String>,
-    input_ref: NodeRef<html::Input>,
-    on_input: F1,
-    on_submit: F2,
-    on_keydown: F3,
-    on_skip: F4,
-    #[prop(into)] disabled: Signal<bool>,
-) -> impl IntoView
-where
-    F1: Fn(ev::Event) + 'static + Copy,
-    F2: Fn(ev::MouseEvent) + 'static + Copy,
-    F3: Fn(ev::KeyboardEvent) + 'static + Copy,
-    F4: Fn(ev::MouseEvent) + 'static + Copy,
-{
+pub fn GameInput() -> impl IntoView {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let in_game_context = use_context::<InGameContext>().expect("InGameContext missing");
+
+    let lobby_info = game_context.lobby_info;
+    let player_id = game_context.player_id;
+    let prompt = game_context.prompt;
+    let send_message = game_context.send_message;
+
+    let word = in_game_context.word;
+    let is_loading = in_game_context.is_loading;
+    let input_ref = in_game_context.input_ref;
+    let on_submit = in_game_context.on_submit;
+    let on_skip = in_game_context.on_skip;
+
+    let content_mode = Signal::derive(move || {
+        lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
+    });
+
+    let disabled = Signal::derive(move || {
+         if let Some(info) = lobby_info.get() {
+             if info.settings.mode == shared::GameMode::Duel {
+                 let me = info.players.into_iter().find(|p| p.id == player_id.get());
+                 !me.map(|p| p.is_turn).unwrap_or(false)
+             } else {
+                 false
+             }
+         } else {
+             false
+         }
+    });
+
     let handle = window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
         let key = e.key();
         if e.meta_key() || e.ctrl_key() || e.alt_key()
@@ -49,7 +63,6 @@ where
             { return; }
 
         if let Some(input) = input_ref.get() {
-            // Only intercept if the input isn't already focused
             if !input.is_same_node(document()
                 .active_element().as_ref()
                 .map(|e| e.as_ref()))
@@ -69,17 +82,29 @@ where
             || prompt.get().is_empty() || disabled.get()
     };
 
+    let handle_input = move |ev| {
+        let val = event_target_value(&ev);
+        word.set(val.clone());
+        send_message.run(shared::ClientMessage::Typing { input: val });
+    };
+
+    let handle_keydown = move |ev: ev::KeyboardEvent| {
+        if ev.key() == "Enter" && !is_btn_disabled() {
+            on_submit.run(());
+        }
+    };
+
     view! {
         <div class="space-y-4">
             <input
                 node_ref=input_ref
                 type="text"
                 value=move || word.get()
-                on:input=on_input
-                on:keydown=on_keydown
+                on:input=handle_input
+                on:keydown=handle_keydown
 
                 placeholder=move || {
-                    if content_mode == ContentMode::Vocab {
+                    if content_mode.get() == shared::ContentMode::Vocab {
                         "Enter the reading in hiragana"
                     } else {
                         "Enter a Japanese word with this kanji"
@@ -91,14 +116,14 @@ where
 
             <div class="flex gap-4 w-full">
                 <button
-                    on:click=on_submit
+                    on:click=move |_| on_submit.run(())
                     disabled=is_btn_disabled
                     class=move || game_submit_button(is_btn_disabled())
                 >
                     "Submit"
                 </button>
                 <button
-                    on:click=on_skip
+                    on:click=move |_| on_skip.run(())
                     disabled=move || is_loading.get() || disabled.get()
                     class=move || game_skip_button(is_loading.get() || disabled.get())
                 >

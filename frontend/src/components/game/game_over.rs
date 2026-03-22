@@ -1,41 +1,48 @@
 use leptos::prelude::*;
-use shared::{PlayerData, GameMode, PlayerId};
+use crate::context::{GameContext, InGameContext};
+use shared::GameMode;
 
 #[component]
-pub fn GameOver(
-    players: Vec<PlayerData>,
-    mode: GameMode,
-    current_player_id: PlayerId,
-    #[prop(into)] is_leader: Signal<bool>,
-    #[prop(into)] on_return_to_lobby: Callback<()>,
-    #[prop(into)] on_exit: Callback<()>,
-) -> impl IntoView
-{
-    Effect::new(move |_| { let _ = is_leader.get(); });
+pub fn GameOver() -> impl IntoView {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let in_game_context = use_context::<InGameContext>().expect("InGameContext missing");
+    
+    let lobby_info = game_context.lobby_info;
+    let player_id = game_context.player_id;
+    let is_leader = game_context.is_leader;
+    let on_return_to_lobby = in_game_context.on_return_to_lobby;
+    let on_exit = in_game_context.on_exit_game;
+
+    let players = Signal::derive(move || lobby_info.get().map(|i| i.players).unwrap_or_default());
+    let mode = Signal::derive(move || lobby_info.get().map(|i| i.settings.mode).unwrap_or_default());
 
     // Determine winner(s)
-    let winner = match mode {
-        GameMode::Deathmatch => {
-            // Highest score
-            let mut p = players.clone();
-            p.sort_by(|a, b| b.score.cmp(&a.score));
-            p.first().cloned()
-        },
-        GameMode::Duel => {
-            let mut active: Vec<_> = players.iter().filter(|p| !p.is_eliminated).collect();
-            if active.is_empty() {
-                 let mut p = players.clone();
-                 p.sort_by(|a, b| b.score.cmp(&a.score));
-                 p.first().cloned()
-            } else {
-                active.sort_by(|a, b| b.score.cmp(&a.score));
-                active.first().map(|p| (*p).clone())
-            }
-        },
-        GameMode::Zen => None,
-    };
+    let winner = Signal::derive(move || {
+        let players_list = players.get();
+        match mode.get() {
+            GameMode::Deathmatch => {
+                let mut p = players_list.clone();
+                p.sort_by(|a, b| b.score.cmp(&a.score));
+                p.first().cloned()
+            },
+            GameMode::Duel => {
+                let mut active: Vec<_> = players_list.iter().filter(|p| !p.is_eliminated).cloned().collect();
+                if active.is_empty() {
+                     let mut p = players_list.clone();
+                     p.sort_by(|a, b| b.score.cmp(&a.score));
+                     p.first().cloned()
+                } else {
+                    active.sort_by(|a, b| b.score.cmp(&a.score));
+                    active.first().cloned()
+                }
+            },
+            GameMode::Zen => None,
+        }
+    });
 
-    let is_winner = winner.as_ref().map(|w| w.id == current_player_id).unwrap_or(false);
+    let is_winner = Signal::derive(move || {
+        winner.get().map(|w| w.id == player_id.get()).unwrap_or(false)
+    });
 
     view! {
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 animate-fade-in backdrop-blur-sm">
@@ -43,16 +50,16 @@ pub fn GameOver(
 
                 <div class="mb-6">
                     <span class="text-6xl mb-4 block">
-                        {if is_winner { "🏆" } else { "💀" }}
+                        {move || if is_winner.get() { "🏆" } else { "💀" }}
                     </span>
                     <h2 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-600 dark:from-blue-400 dark:to-purple-500">
-                        {if is_winner { "VICTORY!" } else { "GAME OVER" }}
+                        {move || if is_winner.get() { "VICTORY!" } else { "GAME OVER" }}
                     </h2>
                 </div>
 
                 <div class="mb-8 space-y-2">
                     <p class="text-gray-600 dark:text-gray-300">
-                        {match mode {
+                        {move || match mode.get() {
                             GameMode::Deathmatch => "Target score reached!",
                             GameMode::Duel => "Last player standing!",
                             GameMode::Zen => "Session Ended!",
@@ -64,7 +71,7 @@ pub fn GameOver(
                             "Winner"
                         </p>
                         <p class="text-2xl font-bold text-gray-900 dark:text-white">
-                            {winner.map(|p| p.name).unwrap_or_else(|| "Unknown".to_string())}
+                            {move || winner.get().map(|p| p.name).unwrap_or_else(|| "Unknown".to_string())}
                         </p>
                     </div>
                 </div>

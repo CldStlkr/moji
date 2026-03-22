@@ -1,10 +1,14 @@
 use leptos::prelude::*;
+use crate::context::{GameContext, InGameContext};
 
 #[component]
-pub fn PromptDisplay(
-    prompt: ReadSignal<String>,
-    is_loading: ReadSignal<bool>,
-) -> impl IntoView {
+pub fn PromptDisplay() -> impl IntoView {
+    let game_context = use_context::<GameContext>().expect("GameContext missing");
+    let in_game_context = use_context::<InGameContext>().expect("InGameContext missing");
+    
+    let prompt = game_context.prompt;
+    let is_loading = in_game_context.is_loading;
+
     view! {
         <div
             class="flex justify-center items-center bg-gray-100 dark:bg-gray-700 rounded-lg border-2 border-gray-300 dark:border-gray-600 transition-colors h-48 sm:h-64 lg:h-80 overflow-hidden p-4"
