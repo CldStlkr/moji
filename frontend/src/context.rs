@@ -28,7 +28,7 @@ pub struct GameContext {
     pub lobby_info: ReadSignal<Option<LobbyInfo>>,
     pub set_lobby_info: WriteSignal<Option<LobbyInfo>>,
     pub is_leader: Memo<bool>,
-    
+
     // Game Specific (Shared via WS)
     pub prompt: ReadSignal<String>,
     pub set_prompt: WriteSignal<String>,
@@ -47,7 +47,7 @@ pub struct InGameContext {
     pub error_message: RwSignal<String>,
     pub shake_trigger: RwSignal<bool>,
     pub on_exit_game: Callback<()>,
-    
+
     // Actions
     pub on_submit: Callback<()>,
     pub on_skip: Callback<()>,

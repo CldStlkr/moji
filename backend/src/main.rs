@@ -3,7 +3,7 @@ use axum::{
     Router,
 };
 use moji::{
-    api::ws_handler,
+    api::{ws_handler, get_global_stats},
     db::init_db_pool,
     state::AppState,
 };
@@ -70,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/ws/{lobby_id}/{player_id}", get(ws_handler))
+        .route("/api/stats", get(get_global_stats))
         .route("/api/{*fn_name}", post(move |req: axum::extract::Request| {
             let ctx = api_context_post.clone();
             leptos_axum::handle_server_fns_with_context(

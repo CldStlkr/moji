@@ -33,9 +33,7 @@ pub fn provide_toast_context() {
 
         // Auto-remove after 3 seconds
         set_timeout(
-            move || {
-                toasts.update(|t| t.retain(|toast| toast.id != id));
-            },
+            move || { toasts.update(|t| t.retain(|toast| toast.id != id)); },
             Duration::from_secs(3),
         );
     });

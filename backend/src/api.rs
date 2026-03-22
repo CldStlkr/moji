@@ -3,7 +3,9 @@ use crate::{
     models::{
         user::User,
         game::{GameAction, GameSession},
+        GlobalStats,
     },
+    error::AppError,
     state::AppState,
     lobby::LobbyState,
 };
@@ -89,7 +91,8 @@ impl ApiContext for AppState {
             Arc::clone(&self.kanji_data),
             Arc::clone(&self.word_data),
             Arc::clone(&self.dict_data),
-            game_session_id
+            game_session_id,
+            self.db_pool.as_deref().cloned()
         ));
 
         let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
@@ -117,6 +120,12 @@ impl ApiContext for AppState {
     async fn start_game(&self, lobby_id: LobbyId, request: StartGameRequest) -> JsonResult {
         let lobby = self.get_lobby(&lobby_id)?;
         lobby.start_game(&request.player_id)?;
+
+        // Increment globally tracked games
+        if let Some(pool) = &self.db_pool {
+            let _ = GlobalStats::increment_games(pool).await;
+        }
+
         Ok(json!({ "message": "Game started successfully" }))
     }
 
@@ -281,7 +290,7 @@ impl ApiContext for AppState {
     async fn leave_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> JsonResult {
         let lobby = match self.get_lobby(&lobby_id) {
             Ok(l) => l,
-            Err(crate::error::AppError::LobbyNotFound(_)) => {
+            Err(AppError::LobbyNotFound(_)) => {
                 // If the lobby is already gone (e.g. WS cleanup finished first), this is fine.
                 return Ok(json!({ "message": "Lobby already cleaned up" }));
             }
@@ -365,25 +374,34 @@ pub async fn ws_handler(
         Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into())
     };
 
-    if let Err(e) = result {
-        let reason = match e.kind() {
-            jsonwebtoken::errors::ErrorKind::ExpiredSignature => "Token expired",
-            jsonwebtoken::errors::ErrorKind::InvalidToken => "Invalid token or missing",
-            jsonwebtoken::errors::ErrorKind::InvalidSignature => "Invalid signature",
-            _ => "Unauthorized",
-        };
-        tracing::warn!("Unauthorized WebSocket connection attempt to lobby {}: {}", lobby_id.0, reason);
-        return (axum::http::StatusCode::UNAUTHORIZED, reason).into_response();
-    }
+    let claims = match result {
+        Ok(token_data) => token_data.claims,
+        Err(e) => {
+            let reason = match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => "Token expired",
+                jsonwebtoken::errors::ErrorKind::InvalidToken => "Invalid token or missing",
+                jsonwebtoken::errors::ErrorKind::InvalidSignature => "Invalid signature",
+                _ => "Unauthorized",
+            };
+            tracing::warn!("Unauthorized WebSocket connection attempt to lobby {}: {}", lobby_id.0, reason);
+            return (axum::http::StatusCode::UNAUTHORIZED, reason).into_response();
+        }
+    };
+
+    let user_db_uuid = uuid::Uuid::parse_str(&claims.sub).ok();
 
     ws.on_upgrade(move |socket| async move {
+        // Update user online heartbeat
+        if let (Some(uid), Some(pool)) = (user_db_uuid, &app_state.db_pool) {
+            let _ = User::update_last_seen_by_id(pool, uid).await;
+        }
+
         // Set player as connected when WS starts
         let _ = app_state.set_player_connected(lobby_id.clone(), player_id.clone(), true).await;
-        handle_socket(socket, app_state, lobby_id, player_id).await
+        handle_socket(socket, app_state, lobby_id, player_id, user_db_uuid).await
     })
 }
-
-async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: LobbyId, player_id: PlayerId) {
+async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: LobbyId, player_id: PlayerId, user_db_uuid: Option<uuid::Uuid>) {
     let conn_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
     tracing::info!("[WS:{}] Connected: player {} in lobby {}", conn_id, player_id.0, lobby_id.0);
     let (mut sender, mut receiver) = socket.split();
@@ -450,6 +468,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
 
     let lobby_ref = lobby.clone();
     let player_id_ref = player_id.clone();
+    let app_state_for_recv = app_state.clone();
     let mut recv_task = tokio::spawn(async move {
         let mut msg_count = 0;
         let mut last_reset = tokio::time::Instant::now();
@@ -460,7 +479,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                 msg_count = 0;
                 last_reset = now;
             }
-            
+
             msg_count += 1;
             if msg_count > 20 { // 20 messages per second limit
                 tracing::warn!("WebSocket rate limit exceeded by player {}", player_id_ref);
@@ -477,8 +496,14 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                             }).unwrap_or_default());
                          },
                          shared::ClientMessage::Submit { input, .. } => {
+                             if let (Some(uid), Some(pool)) = (user_db_uuid, &app_state_for_recv.db_pool) {
+                                 let pool_clone = pool.clone();
+                                 tokio::spawn(async move {
+                                     let _ = User::update_last_seen_by_id(&pool_clone, uid).await;
+                                 });
+                             }
                              if let Err(e) = lobby_ref.process_guess(&player_id_ref, &input) {
-                                 tracing::error!("Error processing guess: {:?}", e);
+                                  tracing::error!("Error processing guess: {:?}", e);
                              }
                          },
                          shared::ClientMessage::Skip => {
@@ -505,4 +530,27 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
     // Mark the player as disconnected instead of removing them immediately
     tracing::info!("[WS:{}] Disconnected: marking player {} in lobby {} as disconnected", conn_id, player_id.0, lobby_id.0);
     let _ = app_state.set_player_connected(lobby_id, player_id, false).await;
+}
+
+pub async fn get_global_stats(
+    State(app_state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if let Some(pool) = &app_state.db_pool {
+        let stats = match GlobalStats::get(pool).await {
+            Ok(s) => s,
+            Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Failed to load stats").into_response(),
+        };
+        let online_count = User::get_online_count(pool).await.unwrap_or_default();
+
+        let response = serde_json::json!({
+            "total_unique_visitors": stats.total_unique_visitors,
+            "total_games_played": stats.total_games_played,
+            "total_words_guessed": stats.total_words_guessed,
+            "current_online_players": online_count,
+        });
+
+        axum::Json(response).into_response()
+    } else {
+        (axum::http::StatusCode::SERVICE_UNAVAILABLE, "Database unavailable").into_response()
+    }
 }

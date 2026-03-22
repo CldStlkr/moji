@@ -1,6 +1,6 @@
 use leptos::prelude::*;
-use shared::{LobbyInfo, LobbyId, PlayerId, ClientMessage, ServerMessage};
-use crate::components::toast::use_toast;
+use shared::{LobbyInfo, LobbyId, PlayerId, ClientMessage, ServerMessage, GameStatus};
+use crate::{persistence, components::toast::{ToastType, use_toast } };
 use wasm_bindgen_futures::spawn_local;
 use futures::{SinkExt, StreamExt};
 use gloo_net::websocket::{futures::WebSocket, Message};
@@ -62,7 +62,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
             let protocol = if location.protocol().unwrap() == "https:" { "wss" } else { "ws" };
             let host = location.host().unwrap();
             let mut ws_url = format!("{}://{}/ws/{}/{}", protocol, host, lobby_id, player_id);
-            if let Some(auth_data) = crate::persistence::load_auth() {
+            if let Some(auth_data) = persistence::load_auth() {
                 if let Some(token) = auth_data.token {
                     ws_url = format!("{}?token={}", ws_url, token);
                 }
@@ -76,7 +76,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                     leptos::logging::error!("Failed to open connection: {:?}", e);
                     toast.push.run((
                         "Could not connect to game server. Your session might be expired or the server is down.".to_string(),
-                        crate::components::toast::ToastType::Error
+                        ToastType::Error
                     ));
                     return;
                 }
@@ -109,7 +109,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                                 *info_opt = Some(info);
                                             });
                                             set_typing_status.update(|m| m.clear());
-                                            if status == shared::GameStatus::Lobby || status == shared::GameStatus::Playing {
+                                            if status == GameStatus::Lobby || status == GameStatus::Playing {
                                                 set_result.set(String::new());
                                             }
                                         },
@@ -149,14 +149,14 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                                     // Find new players
                                                     for p in &new_players {
                                                         if p.id != current_pid && !old_players.iter().any(|old| old.id == p.id) {
-                                                            toast.push.run((format!("{} joined!", p.name), crate::components::toast::ToastType::Info));
+                                                            toast.push.run((format!("{} joined!", p.name), ToastType::Info));
                                                         }
                                                     }
 
                                                     // Find leaving players
                                                     for p in &old_players {
                                                         if p.id != current_pid && !new_players.iter().any(|new| new.id == p.id) {
-                                                            toast.push.run((format!("{} left!", p.name), crate::components::toast::ToastType::Info));
+                                                            toast.push.run((format!("{} left!", p.name), ToastType::Info));
                                                         }
                                                     }
 
@@ -201,10 +201,10 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                             if pid == player_id {
                                                 toast.push.run((
                                                     "You were kicked from the lobby.".to_string(),
-                                                    crate::components::toast::ToastType::Error
+                                                    ToastType::Error
                                                 ));
-                                                
-                                                crate::persistence::clear_session();
+
+                                                persistence::clear_session();
                                                 if let Some(cb) = on_kicked {
                                                     cb.run(());
                                                 } else {

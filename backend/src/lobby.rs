@@ -39,11 +39,12 @@ pub struct LobbyState {
     pub prompt_counter: Shared<u64>,
     pub skip_votes: Shared<HashSet<PlayerId>>,
     pub return_lobby_votes: Shared<HashSet<PlayerId>>,
+    pub db_pool: Option<crate::db::DbPool>,
 }
 
 impl LobbyState {
         pub fn new(kanji_list: Arc<KanjiData>, word_list: Arc<JlptWordData>,
-        dict_list: Arc<DictData>, game_session_id: Option<uuid::Uuid>) -> Self {
+        dict_list: Arc<DictData>, game_session_id: Option<uuid::Uuid>, db_pool: Option<crate::db::DbPool>) -> Self {
         Self {
             kanji_list,
             word_list,
@@ -62,6 +63,7 @@ impl LobbyState {
             prompt_counter: Shared::new(0),
             skip_votes: Shared::new(HashSet::new()),
             return_lobby_votes: Shared::new(HashSet::new()),
+            db_pool,
         }
     }
 
@@ -270,7 +272,7 @@ impl LobbyState {
 
         self.remove_player(target_player_id);
         self.broadcast(shared::ServerMessage::Kicked { player_id: target_player_id.clone() });
-        
+
         Ok(())
     }
 
@@ -278,22 +280,22 @@ impl LobbyState {
         if !self.is_leader(requestor_id) {
             return Err(AppError::AuthError("Only the lobby leader can promote a new leader".to_string()));
         }
-        
+
         let player_exists = self.players.read(|players| {
             players.iter().any(|p| &p.id == target_player_id)
         });
-        
+
         if !player_exists {
             return Err(AppError::InvalidInput("Target player is not in the lobby".to_string()));
         }
-        
+
         self.lobby_leader.write(|leader| {
             *leader = target_player_id.clone();
         });
-        
+
         self.broadcast(shared::ServerMessage::LeaderUpdate { leader_id: target_player_id.clone() });
         self.broadcast(shared::ServerMessage::PlayerListUpdate { players: self.get_all_players() });
-        
+
         Ok(())
     }
 
@@ -311,7 +313,7 @@ impl LobbyState {
                                  *idx = 0;
                              }
                          })
-                    } 
+                    }
                 });
 
                 self.lobby_leader.write(|leader| {
@@ -342,7 +344,7 @@ impl LobbyState {
                         is_turn: false,
                     }).collect()
                 };
-                
+
                 self.broadcast(pl_update);
 
                 true
@@ -369,7 +371,7 @@ impl LobbyState {
             };
             let _ = self.tx.send(serde_json::to_string(&pl_update).unwrap_or_default());
         }
-        
+
         changed
     }
 
@@ -589,9 +591,20 @@ impl LobbyState {
         let mut new_prompt_opt = None;
         let mut game_over = false;
         let mut error_details = None;
-
         if is_correct {
             let new_score = self.increment_player_score(player_id)?;
+
+            // Increment DB global metrics concurrently without blocking
+            let username = self.players.read(|players| {
+                players.iter().find(|p| p.id == *player_id).map(|p| p.name.clone())
+            });
+
+            if let (Some(pool), Some(name)) = (self.db_pool.clone(), username) {
+                tokio::spawn(async move {
+                    let _ = crate::models::GlobalStats::increment_words(&pool).await;
+                    let _ = crate::models::User::increment_words_guessed(&pool, &name, 1).await;
+                });
+            }
 
             if settings.mode == shared::GameMode::Deathmatch {
                 if let Some(target) = settings.target_score {
@@ -699,7 +712,7 @@ impl LobbyState {
              }
              eliminated
         });
-        
+
         let mut msg = String::new();
         if eliminated {
              msg = "Eliminated!".to_string();

@@ -1,10 +1,11 @@
-use crate::db::DbPool;
+
 use shared::GameSettings;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::types::Json;
 use sqlx::FromRow;
 use uuid::Uuid;
+use crate::db::DbPool;
 
 #[derive(Debug, FromRow, Serialize)]
 pub struct GameSession {
@@ -174,7 +175,7 @@ impl PlayerStats {
         sqlx::query_as!(
             PlayerStats,
             r#"
-            SELECT 
+            SELECT
                 u.id as user_id,
                 u.username,
                 COUNT(ga.id) as "total_words_submitted!: i64",
@@ -182,13 +183,13 @@ impl PlayerStats {
                 SUM(CASE WHEN ga.action_data->>'correct' = 'false' THEN 1 ELSE 0 END) as "incorrect_words!: i64",
                 MIN(NULLIF((ga.action_data->>'response_time_ms')::int, 0)) as "fastest_submission_ms: Option<i32>",
                 (AVG(NULLIF((ga.action_data->>'response_time_ms')::int, 0)))::int as "average_time_ms: Option<i32>"
-            FROM 
+            FROM
                 users u
-            LEFT JOIN 
+            LEFT JOIN
                 game_actions ga ON ga.user_id = u.id AND ga.action_type = 'word_submission'
-            WHERE 
+            WHERE
                 u.id = $1
-            GROUP BY 
+            GROUP BY
                 u.id, u.username
             "#,
             user_id
@@ -202,7 +203,7 @@ impl PlayerStats {
         sqlx::query_as!(
             PlayerStats,
             r#"
-            SELECT 
+            SELECT
                 u.id as user_id,
                 u.username,
                 COUNT(ga.id) as "total_words_submitted!: i64",
@@ -210,13 +211,13 @@ impl PlayerStats {
                 SUM(CASE WHEN ga.action_data->>'correct' = 'false' THEN 1 ELSE 0 END) as "incorrect_words!: i64",
                 MIN(NULLIF((ga.action_data->>'response_time_ms')::int, 0)) as "fastest_submission_ms: Option<i32>",
                 (AVG(NULLIF((ga.action_data->>'response_time_ms')::int, 0)))::int as "average_time_ms: Option<i32>"
-            FROM 
+            FROM
                 users u
-            LEFT JOIN 
+            LEFT JOIN
                 game_actions ga ON ga.user_id = u.id AND ga.action_type = 'word_submission'
-            GROUP BY 
+            GROUP BY
                 u.id, u.username
-            ORDER BY 
+            ORDER BY
                 SUM(CASE WHEN ga.action_data->>'correct' = 'true' THEN 1 ELSE 0 END) DESC
             LIMIT $1
             "#,

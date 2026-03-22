@@ -58,7 +58,7 @@ mod tests {
             },
         ]);
 
-        LobbyState::new(test_kanji_list, test_words_list, test_dict_list, None)
+        LobbyState::new(test_kanji_list, test_words_list, test_dict_list, None, None)
     }
 
     #[test]
