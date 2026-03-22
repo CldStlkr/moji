@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO users (username, password_hash, is_guest) \n            VALUES ($1, $2, $3) \n            RETURNING id, username, created_at, last_login, total_games_played, password_hash,\n                is_guest as \"is_guest!: bool\"\n            ",
+  "query": "\n            INSERT INTO users (username, password_hash, is_guest)\n            VALUES ($1, $2, $3) \n            RETURNING id, username, created_at, last_login, total_games_played, password_hash,\n                is_guest as \"is_guest!: bool\",\n                last_seen_at, games_won, words_guessed_correctly, total_score\n            ",
   "describe": {
     "columns": [
       {
@@ -37,6 +37,26 @@
         "ordinal": 6,
         "name": "is_guest!: bool",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "games_won",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "words_guessed_correctly",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "total_score",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -53,8 +73,12 @@
       true,
       false,
       true,
+      false,
+      true,
+      false,
+      false,
       false
     ]
   },
-  "hash": "61cd6e2362fe0204cd67edd33da6fa7c3d304c7ea604263c06fdab71de64525d"
+  "hash": "c4496480c72beca6cecb6271bf6eccb4a8d741765f944b41c5ecb85c8addcb87"
 }

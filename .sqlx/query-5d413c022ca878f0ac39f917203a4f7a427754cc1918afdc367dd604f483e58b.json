@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, username, created_at, last_login, total_games_played, password_hash,\n                is_guest as \"is_guest!: bool\"\n            FROM users \n            WHERE username = $1\n            ",
+  "query": "\n            SELECT id, username, created_at, last_login, total_games_played, password_hash,\n                is_guest as \"is_guest!: bool\",\n                last_seen_at, games_won, words_guessed_correctly, total_score\n            FROM users \n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -37,11 +37,31 @@
         "ordinal": 6,
         "name": "is_guest!: bool",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "games_won",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "words_guessed_correctly",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "total_score",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -51,8 +71,12 @@
       true,
       false,
       true,
+      false,
+      true,
+      false,
+      false,
       false
     ]
   },
-  "hash": "81be0da04da3cbe54d7b9d5605f41896755fac5a80750ef157d618b5430d0d73"
+  "hash": "5d413c022ca878f0ac39f917203a4f7a427754cc1918afdc367dd604f483e58b"
 }

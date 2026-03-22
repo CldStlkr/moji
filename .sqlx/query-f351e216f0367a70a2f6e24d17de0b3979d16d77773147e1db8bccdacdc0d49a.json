@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT total_unique_visitors, total_games_played, total_words_guessed, peak_concurrent_players, updated_at FROM global_stats WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total_unique_visitors",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "total_games_played",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_words_guessed",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "peak_concurrent_players",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f351e216f0367a70a2f6e24d17de0b3979d16d77773147e1db8bccdacdc0d49a"
+}

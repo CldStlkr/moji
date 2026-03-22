@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET words_guessed_correctly = words_guessed_correctly + 1, total_score = total_score + $1 WHERE username = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d10eece21433f923af1023756ca82d52602173b6e05d1f338f923c7158bc6dc3"
+}

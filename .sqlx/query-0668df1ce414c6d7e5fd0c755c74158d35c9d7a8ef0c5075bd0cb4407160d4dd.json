@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE global_stats SET total_words_guessed = total_words_guessed + 1, updated_at = NOW() WHERE id = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "0668df1ce414c6d7e5fd0c755c74158d35c9d7a8ef0c5075bd0cb4407160d4dd"
+}
