@@ -234,15 +234,24 @@ async fn test_ws_leave_lobby_broadcasts_player_removal() {
     // Bob leaves via the API
     state.leave_lobby(lobby_id.clone(), PlayerId(bob_id.clone())).await.unwrap();
 
-    // Alice should receive a PlayerListUpdate with only 1 player (herself)
-    let msg = next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
-    let players = msg["payload"]["players"].as_array().unwrap();
-    assert_eq!(players.len(), 1, "Expected 1 player after Bob left, got {}", players.len());
-    assert_eq!(players[0]["name"].as_str().unwrap(), "Alice");
+    // Alice should eventually receive a PlayerListUpdate with only herself.
+    // There may be intermediate broadcasts (e.g. connection status), so loop
+    // until we find one with exactly 1 player or time out.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let msg = tokio::time::timeout_at(deadline, next_msg_of_type(&mut alice_ws, "PlayerListUpdate"))
+            .await
+            .expect("Timed out waiting for PlayerListUpdate with 1 player");
+        let players = msg["payload"]["players"].as_array().unwrap();
+        if players.len() == 1 {
+            assert_eq!(players[0]["name"].as_str().unwrap(), "Alice");
+            break;
+        }
+    }
 }
 
 #[tokio::test]
-async fn test_ws_disconnect_removes_player() {
+async fn test_ws_disconnect_marks_player_disconnected() {
     let (addr, state) = spawn_server().await;
 
     // Alice creates the lobby
@@ -267,12 +276,20 @@ async fn test_ws_disconnect_removes_player() {
     // Bob disconnects by dropping his WebSocket
     drop(bob_ws);
 
-    // Give the server a moment to process the disconnect
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    // Alice should receive a PlayerListUpdate with only herself
-    let msg = next_msg_of_type(&mut alice_ws, "PlayerListUpdate").await;
-    let players = msg["payload"]["players"].as_array().unwrap();
-    assert_eq!(players.len(), 1, "Expected 1 player after Bob disconnected, got {}", players.len());
-    assert_eq!(players[0]["name"].as_str().unwrap(), "Alice");
+    // Alice should receive a PlayerListUpdate where Bob is still present
+    // but marked as disconnected (is_connected: false)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let msg = tokio::time::timeout_at(deadline, next_msg_of_type(&mut alice_ws, "PlayerListUpdate"))
+            .await
+            .expect("Timed out waiting for PlayerListUpdate with Bob disconnected");
+        let players = msg["payload"]["players"].as_array().unwrap();
+        // Find Bob in the list and check his connection status
+        if let Some(bob) = players.iter().find(|p| p["name"].as_str() == Some("Bob")) {
+            if bob["is_connected"].as_bool() == Some(false) {
+                assert_eq!(players.len(), 2, "Both players should still be in the list");
+                break;
+            }
+        }
+    }
 }

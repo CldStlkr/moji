@@ -78,8 +78,9 @@ impl ApiContext for AppState {
     async fn create_lobby(&self, request: JoinLobbyRequest) -> JsonResult {
         let lobby_id: LobbyId = generate_lobby_id();
         let player_id: PlayerId = generate_player_id();
+        let pool_guard = self.db_pool.read().await;
 
-        let game_session_id = if let Some(db_pool) = &self.db_pool {
+        let game_session_id = if let Some(db_pool) = pool_guard.as_ref() {
             let default_settings = shared::GameSettings::default();
             let session = GameSession::create(db_pool, &lobby_id, 1, default_settings).await?;
             Some(session.id)
@@ -92,7 +93,7 @@ impl ApiContext for AppState {
             Arc::clone(&self.word_data),
             Arc::clone(&self.dict_data),
             game_session_id,
-            self.db_pool.as_deref().cloned()
+            self.db_pool.read().await.clone()
         ));
 
         let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
@@ -121,8 +122,8 @@ impl ApiContext for AppState {
         let lobby = self.get_lobby(&lobby_id)?;
         lobby.start_game(&request.player_id)?;
 
-        // Increment globally tracked games
-        if let Some(pool) = &self.db_pool {
+        let pool_guard = self.db_pool.read().await;
+        if let Some(pool) = pool_guard.as_ref() {
             let _ = GlobalStats::increment_games(pool).await;
         }
 
@@ -160,7 +161,8 @@ impl ApiContext for AppState {
         let _ = lobby.add_player(player_id.clone(), request.player_name.clone())?;
 
         if let Some(game_id) = lobby.game_session_id {
-            if let Some(db_pool) = &self.db_pool {
+            let pool_guard = self.db_pool.read().await;
+            if let Some(db_pool) = pool_guard.as_ref() {
                 let db = Arc::clone(db_pool);
                 let name = request.player_name.clone();
                 let pid = player_id.to_string();
@@ -205,7 +207,8 @@ impl ApiContext for AppState {
     async fn check_username(&self, username: String) -> JsonResult {
         validate_username(&username)?;
 
-        let db_pool = self.db_pool.as_ref()
+        let pool_guard = self.db_pool.read().await;
+        let db_pool = pool_guard.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
 
         let user = User::find_by_username(db_pool, &username).await?;
@@ -226,7 +229,8 @@ impl ApiContext for AppState {
     async fn authenticate(&self, request: shared::AuthRequest) -> JsonResult {
         validate_username(&request.username)?;
 
-        let db_pool = self.db_pool.as_ref()
+        let pool_guard = self.db_pool.read().await;
+        let db_pool = pool_guard.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
         let existing_user = User::find_by_username(db_pool, &request.username).await
             ?;
@@ -310,7 +314,8 @@ impl ApiContext for AppState {
 
         if actually_removed {
             if let Some(game_id) = lobby.game_session_id {
-                if let Some(db_pool) = &self.db_pool {
+                let pool_guard = self.db_pool.read().await;
+                if let Some(db_pool) = pool_guard.as_ref() {
                     let pool = Arc::clone(db_pool);
                     tokio::spawn(async move {
                         let _ = GameSession::end_session(&pool, game_id).await;
@@ -323,7 +328,8 @@ impl ApiContext for AppState {
     }
 
     async fn logout(&self, username: String) -> JsonResult {
-        let db_pool = self.db_pool.as_ref()
+        let pool_guard = self.db_pool.read().await;
+        let db_pool = pool_guard.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
 
         User::delete_guest_by_username(db_pool, &username).await?;
@@ -334,12 +340,50 @@ impl ApiContext for AppState {
     async fn set_player_connected(&self, lobby_id: LobbyId, player_id: PlayerId, is_connected: bool) -> JsonResult {
         let lobby = self.get_lobby(&lobby_id)?;
         lobby.set_player_connected(&player_id, is_connected);
+
+        if !is_connected && lobby.all_disconnected() {
+            let generation = lobby.cleanup_generation.read(|g| *g);
+            let lobbies = self.lobbies.clone();
+            let lobby_ref = lobby.clone();
+            let lid = lobby_id.clone();
+            let db_pool = self.db_pool.read().await.clone();
+
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+
+                let current_gen = lobby_ref.cleanup_generation.read(|g| *g);
+                if current_gen != generation {
+                    tracing::info!("Lobby {} cleanup cancelled: player reconnected", lid.0);
+                    return;
+                }
+
+                if !lobby_ref.all_disconnected() {
+                    return;
+                }
+
+                tracing::info!("Lobby {} inactive for 60s with all players disconnected, cleaning up", lid.0);
+                lobbies.write(|l| { l.remove(&lid); });
+
+                if let Some(game_id) = lobby_ref.game_session_id {
+                    if let Some(pool) = db_pool.as_ref() {
+                        let _ = crate::models::game::GameSession::end_session(pool, game_id).await;
+                    }
+                }
+            });
+        }
+
         Ok(json!({ "message": "Connection status updated" }))
     }
 
     async fn kick_player(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
         let lobby = self.get_lobby(&lobby_id)?;
         lobby.kick_player(&requestor_id, &target_player_id)?;
+
+        let is_empty = lobby.players.read(|players| players.is_empty());
+        if is_empty {
+            self.lobbies.write(|lobbies| { lobbies.remove(&lobby_id); });
+        }
+
         Ok(json!({ "message": "Player kicked" }))
     }
 
@@ -363,7 +407,7 @@ pub async fn ws_handler(
     State(app_state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "INSECURE_DEFAULT_SECRET".to_string());
-    
+
     let result = if let Some(t) = params.token {
         jsonwebtoken::decode::<Claims>(
             &t,
@@ -391,12 +435,13 @@ pub async fn ws_handler(
     let user_db_uuid = uuid::Uuid::parse_str(&claims.sub).ok();
 
     ws.on_upgrade(move |socket| async move {
-        // Update user online heartbeat
-        if let (Some(uid), Some(pool)) = (user_db_uuid, &app_state.db_pool) {
-            let _ = User::update_last_seen_by_id(pool, uid).await;
+        {
+            let pool_guard = app_state.db_pool.read().await;
+            if let (Some(uid), Some(pool)) = (user_db_uuid, pool_guard.as_ref()) {
+                let _ = User::update_last_seen_by_id(pool, uid).await;
+            }
         }
 
-        // Set player as connected when WS starts
         let _ = app_state.set_player_connected(lobby_id.clone(), player_id.clone(), true).await;
         handle_socket(socket, app_state, lobby_id, player_id, user_db_uuid).await
     })
@@ -496,7 +541,8 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                             }).unwrap_or_default());
                          },
                          shared::ClientMessage::Submit { input, .. } => {
-                             if let (Some(uid), Some(pool)) = (user_db_uuid, &app_state_for_recv.db_pool) {
+                             let pool_guard = app_state_for_recv.db_pool.read().await;
+                             if let (Some(uid), Some(pool)) = (user_db_uuid, pool_guard.as_ref()) {
                                  let pool_clone = pool.clone();
                                  tokio::spawn(async move {
                                      let _ = User::update_last_seen_by_id(&pool_clone, uid).await;
@@ -527,7 +573,6 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
         _ = (&mut recv_task) => send_task.abort(),
     }
 
-    // Mark the player as disconnected instead of removing them immediately
     tracing::info!("[WS:{}] Disconnected: marking player {} in lobby {} as disconnected", conn_id, player_id.0, lobby_id.0);
     let _ = app_state.set_player_connected(lobby_id, player_id, false).await;
 }
@@ -535,7 +580,8 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
 pub async fn get_global_stats(
     State(app_state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Some(pool) = &app_state.db_pool {
+    let pool_guard = app_state.db_pool.read().await;
+    if let Some(pool) = pool_guard.as_ref() {
         let stats = match GlobalStats::get(pool).await {
             Ok(s) => s,
             Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Failed to load stats").into_response(),

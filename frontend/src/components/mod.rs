@@ -1,4 +1,3 @@
-// components/mod.rs
 pub mod shared_socket;
 pub mod auth_modal;
 pub mod game;

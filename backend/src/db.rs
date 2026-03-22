@@ -12,18 +12,14 @@ pub async fn init_db_pool(database_url: &str) -> Result<Arc<DbPool>, sqlx::Error
         .connect(database_url)
         .await?;
 
-    // Run migrations to ensure the database is up-to-date
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    // Log successful connection
     tracing::info!("Connected to PostgreSQL database");
 
     Ok(Arc::new(pool))
 }
 
-/// Health check function to verify database connectivity
 pub async fn check_database_connection(pool: &DbPool) -> Result<(), sqlx::Error> {
-    // Simple query to verify the connection is working
     sqlx::query("SELECT 1").execute(pool).await?;
     Ok(())
 }

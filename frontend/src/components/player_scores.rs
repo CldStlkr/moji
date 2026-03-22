@@ -1,4 +1,4 @@
-// Component for displaying player scores
+
 use leptos::prelude::*;
 use shared::{PlayerData, PlayerId, GameMode};
 use crate::context::GameContext;
