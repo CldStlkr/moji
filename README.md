@@ -1,150 +1,152 @@
-# 文字 (Moji) - Kanji Learning Game
+# 文字 (Moji)
 
-A real-time multiplayer web application for learning Japanese kanji through interactive gameplay. Built with Rust using Axum for the backend API and Leptos for the WebAssembly frontend.
+A real-time multiplayer kanji and vocabulary game built entirely in Rust. Players get a kanji character (or vocab word) and race to type valid Japanese words containing it. Inspired by Bomb Party on [jklm.fun](https://jklm.fun).
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)
+**Live at [moji.fly.dev](https://moji.fly.dev)**
 
-## Overview
+## What It Does
 
-文字 (Moji) is a web-based game designed to help users learn Japanese kanji characters through active recognition. Players are presented with a kanji character and must submit valid Japanese words containing that character. The game supports multiplayer lobbies where players can compete and learn together.
+You join a lobby, the game shows you a kanji like **日**, and you type a word that uses it — like **日本** (にほん). If the word exists in the dictionary and contains the right kanji, you score. First to target score (or last man standing) wins.
 
-## Features
+There are three game modes:
+- **Deathmatch** — Race to a target score. Fastest fingers win.
+- **Duel** — Turn-based with lives. Miss a word and you lose a life. Last one standing wins.
+- **Zen** — No pressure, no scores. Just practice at your own pace.
 
-- **Real-time gameplay**: Test your knowledge of Japanese kanji characters
-- **Multiplayer support**: Create and join game lobbies with friends
-- **Word validation**: Automatic validation against a dictionary of Japanese words
-- **Score tracking**: Keep track of correct answers and compete with other players
-- **Responsive design**: Play on desktop or mobile devices
+It also supports a **Vocab** content mode where instead of finding words with a kanji, you're given a word and need to type its correct hiragana reading.
 
-## Technology Stack
+Difficulty is configurable across all five JLPT levels (N5–N1), and the lobby leader can mix and match levels, set time limits, and toggle weighted kanji distribution based on frequency.
 
-- **Backend**: Rust + Axum web framework
-- **Frontend**: Rust + Leptos (WebAssembly)
-- **Database**: PostgreSQL with SQLx
-- **Containerization**: Docker support for easy deployment
+## Tech Stack
 
-## Getting Started
+This is a Rust monorepo with four crates:
 
-### Prerequisites
+| Crate | What it does |
+|-------|-------------|
+| `backend` | Axum HTTP server + WebSocket handler, PostgreSQL via SQLx, JWT auth |
+| `frontend` | Leptos SPA compiled to WebAssembly, runs entirely in the browser |
+| `shared` | Types, messages, and server function definitions shared across both sides |
+| `macros` | Procedural macros for reducing boilerplate |
 
-- Rust toolchain (1.70 or newer)
-- PostgreSQL database
-- Wasm target: `rustup target add wasm32-unknown-unknown`
-- Trunk: `cargo install trunk`
-
-### Local Development
-
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/kanji-guesser.git
-   cd kanji-guesser
-   ```
-
-2. Set up the database:
-   ```
-   export DATABASE_URL=postgres://user:password@localhost/kanji_guesser
-   ```
-
-3. Run database migrations:
-   ```
-   cd backend
-   cargo run --bin migrate
-   ```
-
-4. Start the backend server:
-   ```
-   cd backend
-   cargo run
-   ```
-
-5. In a separate terminal, start the frontend development server:
-   ```
-   cd frontend
-   trunk serve
-   ```
-
-6. Visit `http://localhost:8080` in your browser to use the application
-
-### Docker Deployment
-
-```
-docker-compose up -d
-```
-
-## Game Rules
-
-1. Join or create a game lobby
-2. When it's your turn, you'll be presented with a kanji character
-3. Type a Japanese word containing that kanji character
-4. Submit your answer to earn points if correct
-5. Challenge other players and learn new vocabulary together
+Some other notable pieces:
+- **WebSockets** for all real-time game communication (typing indicators, score updates, prompt changes)
+- **JWT authentication** with support for both registered accounts and anonymous guest sessions
+- **Argon2** password hashing
+- **Rate limiting** via `tower-governor` to prevent WebSocket spam
+- **Profanity filtering** on usernames via `rustrict`
+- **SQLx compile-time checked queries** with offline mode for Docker builds
+- **Telemetry tracking** — the backend silently tracks games played, words guessed, and online presence for analytics
 
 ## Project Structure
 
-- `/backend` - Axum API server
-  - `/src/models` - Database models and business logic
-  - `/src/api` - API endpoint handlers
-  - `/src/db` - Database connection and utilities
-  - `/src/error` - Error handling
-  - `/src/data` - Data loading and processing
+```
+moji/
+├── backend/
+│   ├── src/
+│   │   ├── main.rs          # Server entrypoint, routing, middleware
+│   │   ├── api.rs           # HTTP + WebSocket handlers
+│   │   ├── lobby.rs         # Game state machine (scoring, turns, prompts)
+│   │   ├── state.rs         # Shared application state
+│   │   ├── models/          # SQLx database models (users, sessions, stats)
+│   │   ├── data.rs          # CSV data loading (kanji lists, word lists)
+│   │   └── error.rs         # Error types
+│   └── migrations/          # PostgreSQL schema migrations
+├── frontend/
+│   ├── src/
+│   │   ├── main.rs          # App shell, routing, theme init
+│   │   ├── components/      # Leptos components (home, lobby, game, etc.)
+│   │   ├── context.rs       # Reactive contexts (auth, game state)
+│   │   └── persistence.rs   # LocalStorage session management
+│   ├── index.html           # Trunk entrypoint
+│   └── input.css            # Tailwind v4 styles
+├── shared/                  # Cross-crate types and server functions
+├── macros/                  # Proc macros
+├── data/                    # JLPT kanji + vocabulary CSVs (N1–N5)
+├── Dockerfile               # Multi-stage build (cargo-chef + Trunk + Bun)
+```
 
-- `/frontend` - Leptos WebAssembly application
-  - `/src/components` - UI components
-  - `/src/api` - API client code
-  - `/src/error` - Error handling
+## Running Locally
 
-## Roadmap
+### Prerequisites
+- Rust (stable)
+- PostgreSQL running locally
+- `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
+- [Trunk](https://trunkrs.dev): `cargo install trunk`
+- [Bun](https://bun.sh) (for Tailwind CSS processing)
+- SQLx CLI (optional, for migrations): `cargo install sqlx-cli`
 
-### In Progress
+### Setup
 
-- **Pre-game Lobby Enhancements**:
-  - Lobby leader controls for game settings
-  - Configurable kanji difficulty levels (N5-N1)
-  - Customizable time limits for guesses
-  - Player queue system with turn-based gameplay
-  - Option to attempt previous player's missed kanji
+1. **Clone and enter the repo:**
+   ```bash
+   git clone https://github.com/CldStlkr/moji.git
+   cd moji
+   ```
 
-- **Real-time Features**:
-  - WebSocket integration for live player updates
-  - Real-time typing indicators
-  - Instant score updates
+2. **Create a PostgreSQL database and set the connection URL:**
+   ```bash
+   createdb moji
+   export DATABASE_URL=postgres://localhost/moji
+   ```
 
-### Planned
+3. **Run migrations:**
+   ```bash
+   sqlx migrate run --source backend/migrations
+   ```
 
-- **Authentication & Accounts**:
-  - User registration and login
-  - Persistent player statistics
-  - Achievement system
+4. **Start the backend** (from the repo root):
+   ```bash
+   cargo run --bin moji-server
+   ```
 
-- **Enhanced Gameplay**:
-  - Global leaderboards
-  - Different game modes
-  - Kanji information and learning resources
+5. **In another terminal, build and serve the frontend:**
+   ```bash
+   cd frontend
+   bunx tailwindcss -i ./input.css -o ./styles.css
+   trunk serve
+   ```
 
-- **UI Improvements**:
-  - Dark mode toggle
-  - Language switching between Japanese and English
-  - Mobile optimizations
-  - Accessibility enhancements
+6. **Open `http://localhost:8080`** — create a guest account and start a lobby.
 
-## Contributing
+### Environment Variables
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | *(required)* | PostgreSQL connection string |
+| `JWT_SECRET` | `INSECURE_DEFAULT_SECRET` | Secret for signing auth tokens |
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `8080` | Server port |
+| `PRODUCTION` | *(unset)* | Set to `1` for production mode (stricter CORS, different asset paths) |
+| `FRONTEND_URL` | `https://moji.fly.dev` | Allowed origin in production CORS |
 
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## Deployment
+
+The project deploys to [Fly.io](https://fly.io) with a single command:
+
+```bash
+fly deploy
+```
+
+The Dockerfile uses a multi-stage build:
+1. **cargo-chef** for dependency caching
+2. **Backend build** with `SQLX_OFFLINE=true` (requires running `cargo sqlx prepare --workspace` locally first)
+3. **Frontend build** with Trunk + Bun (Tailwind v4)
+4. **Final image** based on `debian:bookworm-slim` (~minimal footprint)
+
+If you modify any SQLx queries, you need to regenerate the offline cache before deploying:
+```bash
+cargo sqlx prepare --workspace
+git add .sqlx/ && git commit -m "update sqlx cache"
+```
+
+## Data Sources
+
+The kanji and vocabulary data comes from:
+- [Jōyō Kanji List](https://www.bunka.go.jp/kokugo_nihongo/sisaku/joho/joho/kijun/naikaku/kanji/) — the official list of kanji for everyday use
+- [JMdict](https://www.edrdg.org/jmdict/j_jmdict.html) — comprehensive Japanese-English dictionary project
+
+All data is loaded from CSV files in the `data/` directory at server startup.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgements
-
-- [Joyo Kanji List](https://www.bunka.go.jp/kokugo_nihongo/sisaku/joho/joho/kijun/naikaku/kanji/)
-- [Japanese Word Dictionary](https://www.edrdg.org/jmdict/j_jmdict.html)
-- [Leptos Framework](https://github.com/leptos-rs/leptos)
-- [Axum Framework](https://github.com/tokio-rs/axum)
+MIT
