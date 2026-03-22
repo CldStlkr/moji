@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT \n                u.id as user_id,\n                u.username,\n                COUNT(ga.id) as \"total_words_submitted!: i64\",\n                SUM(CASE WHEN ga.action_data->>'correct' = 'true' THEN 1 ELSE 0 END) as \"correct_words!: i64\",\n                SUM(CASE WHEN ga.action_data->>'correct' = 'false' THEN 1 ELSE 0 END) as \"incorrect_words!: i64\",\n                MIN(NULLIF((ga.action_data->>'response_time_ms')::int, 0)) as \"fastest_submission_ms: Option<i32>\",\n                (AVG(NULLIF((ga.action_data->>'response_time_ms')::int, 0)))::int as \"average_time_ms: Option<i32>\"\n            FROM \n                users u\n            LEFT JOIN \n                game_actions ga ON ga.user_id = u.id AND ga.action_type = 'word_submission'\n            WHERE \n                u.id = $1\n            GROUP BY \n                u.id, u.username\n            ",
+  "query": "\n            SELECT\n                u.id as user_id,\n                u.username,\n                COUNT(ga.id) as \"total_words_submitted!: i64\",\n                SUM(CASE WHEN ga.action_data->>'correct' = 'true' THEN 1 ELSE 0 END) as \"correct_words!: i64\",\n                SUM(CASE WHEN ga.action_data->>'correct' = 'false' THEN 1 ELSE 0 END) as \"incorrect_words!: i64\",\n                MIN(NULLIF((ga.action_data->>'response_time_ms')::int, 0)) as \"fastest_submission_ms: Option<i32>\",\n                (AVG(NULLIF((ga.action_data->>'response_time_ms')::int, 0)))::int as \"average_time_ms: Option<i32>\"\n            FROM\n                users u\n            LEFT JOIN\n                game_actions ga ON ga.user_id = u.id AND ga.action_type = 'word_submission'\n            WHERE\n                u.id = $1\n            GROUP BY\n                u.id, u.username\n            ",
   "describe": {
     "columns": [
       {
@@ -54,5 +54,5 @@
       null
     ]
   },
-  "hash": "0b6c612dc6a74c5dfeddb58d63d035e5381d4053dde7625c7f8ec5804f50d37f"
+  "hash": "234730396f88aebbe36ac715f9a4113681d1bafec39908bcf2b892e51af5f6e0"
 }
