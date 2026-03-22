@@ -26,10 +26,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    wait_for_db(&database_url).await?;
-    let db_pool = init_db_pool(&database_url).await?;
-
     let governor_conf = GovernorConfigBuilder::default()
         .per_millisecond(50)
         .burst_size(20)
@@ -37,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish()
         .unwrap();
 
-    let app_state = Arc::new(AppState::create_with_db(db_pool).await?);
+    let app_state = Arc::new(AppState::create()?);
 
     let is_prod = env::var("PRODUCTION").is_ok();
     let cors = if is_prod {
@@ -54,10 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let frontend_dir = if env::var("PRODUCTION").is_ok() {
-        // In production (Docker), the frontend is in /usr/local/dist
         PathBuf::from("/usr/local/dist")
     } else {
-        // In development, relative to the backend directory
         PathBuf::from("../frontend/dist")
     };
 
@@ -89,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 req,
             )
         }))
-        .with_state(app_state)
+        .with_state(app_state.clone())
         .route_layer(tower_governor::GovernorLayer::new(governor_conf))
         .layer(
             ServiceBuilder::new()
@@ -100,28 +94,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ServeDir::new(&frontend_dir).not_found_service(ServeFile::new(&index_path)),
         );
 
-    // Get host and port from environment variables or use defaults
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse::<u16>()?;
 
-    // Parse the host string to determine the bind address
     let addr = if host == "0.0.0.0" {
-        // For Docker, bind to all interfaces
         SocketAddr::from(([0, 0, 0, 0], port))
     } else if host == "127.0.0.1" {
-        // For local development
         SocketAddr::from(([127, 0, 0, 1], port))
     } else {
-        // Try to parse as a general address
         format!("{}:{}", host, port).parse::<SocketAddr>()?
     };
 
-    // Start the server
     tracing::info!("Server running on {}", addr);
     tracing::info!("Frontend available at http://{}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    let app_state_for_db = app_state.clone();
+    tokio::spawn(async move {
+        let database_url = match env::var("DATABASE_URL") {
+            Ok(url) => url,
+            Err(_) => {
+                tracing::warn!("DATABASE_URL not set, running without database");
+                return;
+            }
+        };
+
+        if let Err(e) = wait_for_db(&database_url).await {
+            tracing::error!("Failed to connect to database: {:?}", e);
+            return;
+        }
+
+        match init_db_pool(&database_url).await {
+            Ok(pool) => {
+                app_state_for_db.set_db(pool).await;
+                tracing::info!("Database pool initialized successfully");
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialize database pool: {:?}", e);
+            }
+        }
+    });
+
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())

@@ -39,12 +39,14 @@ pub struct LobbyState {
     pub prompt_counter: Shared<u64>,
     pub skip_votes: Shared<HashSet<PlayerId>>,
     pub return_lobby_votes: Shared<HashSet<PlayerId>>,
-    pub db_pool: Option<crate::db::DbPool>,
+    pub db_pool: Option<Arc<crate::db::DbPool>>,
+    pub reuse_prompt: Shared<bool>,
+    pub cleanup_generation: Shared<u64>,
 }
 
 impl LobbyState {
         pub fn new(kanji_list: Arc<KanjiData>, word_list: Arc<JlptWordData>,
-        dict_list: Arc<DictData>, game_session_id: Option<uuid::Uuid>, db_pool: Option<crate::db::DbPool>) -> Self {
+        dict_list: Arc<DictData>, game_session_id: Option<uuid::Uuid>, db_pool: Option<Arc<crate::db::DbPool>>) -> Self {
         Self {
             kanji_list,
             word_list,
@@ -64,6 +66,8 @@ impl LobbyState {
             skip_votes: Shared::new(HashSet::new()),
             return_lobby_votes: Shared::new(HashSet::new()),
             db_pool,
+            reuse_prompt: Shared::new(false),
+            cleanup_generation: Shared::new(0),
         }
     }
 
@@ -366,6 +370,10 @@ impl LobbyState {
         });
 
         if changed {
+            if is_connected {
+                self.cleanup_generation.write(|g| *g += 1);
+            }
+
             let pl_update = shared::ServerMessage::PlayerListUpdate {
                 players: self.get_all_players()
             };
@@ -373,6 +381,12 @@ impl LobbyState {
         }
 
         changed
+    }
+
+    pub fn all_disconnected(&self) -> bool {
+        self.players.read(|players| {
+            !players.is_empty() && players.iter().all(|p| !p.is_connected)
+        })
     }
 
     pub fn get_player_score(&self, player_id: &PlayerId) -> Result<u32> {
@@ -407,12 +421,10 @@ impl LobbyState {
         })
     }
 
-    // Get all players and scores (for a leaderboard)
     pub fn get_all_players(&self) -> Vec<shared::PlayerData> {
         let status = self.game_status.read(|s| *s);
         let settings = self.settings.read(|s| s.clone());
 
-        // Lock players and potentially turn_order/current_turn_index
         self.players.read(|players| {
              let mut shared_players: Vec<shared::PlayerData> = players.iter().map(|p| shared::PlayerData {
                 id: p.id.clone(),
@@ -594,7 +606,6 @@ impl LobbyState {
         if is_correct {
             let new_score = self.increment_player_score(player_id)?;
 
-            // Increment DB global metrics concurrently without blocking
             let username = self.players.read(|players| {
                 players.iter().find(|p| p.id == *player_id).map(|p| p.name.clone())
             });
@@ -621,6 +632,7 @@ impl LobbyState {
                 message = "Good guess!".to_string();
                 let _ = self.generate_random_prompt(true);
                 new_prompt_opt = self.get_current_prompt_text();
+                self.reuse_prompt.write(|r| *r = false);
                 let _ = self.advance_turn();
             } else if settings.mode == shared::GameMode::Zen {
                 message = "Good guess!".to_string();
@@ -719,7 +731,16 @@ impl LobbyState {
         }
 
         let settings = self.settings.read(|s| s.clone());
-        if !settings.duel_allow_kanji_reuse {
+        if settings.duel_allow_kanji_reuse {
+            let already_reused = self.reuse_prompt.read(|r| *r);
+            if already_reused {
+                let _ = self.generate_random_prompt(true);
+                *new_prompt_opt = self.get_current_prompt_text();
+                self.reuse_prompt.write(|r| *r = false);
+            } else {
+                self.reuse_prompt.write(|r| *r = true);
+            }
+        } else {
             let _ = self.generate_random_prompt(true);
             *new_prompt_opt = self.get_current_prompt_text();
         }
@@ -754,7 +775,6 @@ impl LobbyState {
             return; // Prompt has already advanced
         }
 
-        // Ensure game is still active
         let status = self.game_status.read(|s| *s);
         if status != GameStatus::Playing {
             return;

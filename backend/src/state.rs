@@ -18,7 +18,7 @@ pub use shared::{
 
 pub struct AppState {
     pub lobbies: Shared<HashMap<LobbyId, Arc<LobbyState>>>,
-    pub db_pool: Option<Arc<DbPool>>,
+    pub db_pool: tokio::sync::RwLock<Option<Arc<DbPool>>>,
     pub kanji_data: Arc<KanjiData>,
     pub word_data: Arc<JlptWordData>,
     pub dict_data: Arc<DictData>,
@@ -35,7 +35,6 @@ impl AppState {
         let data_dir = if is_production {
             "/usr/local/data"
         } else {
-            // In development, relative to the backend directory
             "../data"
         };
 
@@ -67,7 +66,7 @@ impl AppState {
         let (kanji_data, word_data, dict_data) = Self::load_data()?;
         Ok(Self {
             lobbies: Shared::new(HashMap::new()),
-            db_pool: None,
+            db_pool: tokio::sync::RwLock::new(None),
             kanji_data,
             word_data,
             dict_data
@@ -82,15 +81,7 @@ impl AppState {
         })
     }
 
-    pub async fn create_with_db(db_pool: Arc<DbPool>) -> Result<Self> {
-
-        let (kanji_data, word_data, dict_data) = Self::load_data()?;
-        Ok(Self {
-            lobbies: Shared::new(HashMap::new()),
-            db_pool: Some(db_pool),
-            kanji_data,
-            word_data,
-            dict_data
-        })
+    pub async fn set_db(&self, pool: Arc<DbPool>) {
+        *self.db_pool.write().await = Some(pool);
     }
 }
