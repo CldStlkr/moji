@@ -1,0 +1,17 @@
+# Ignore data files
+data/*.csv linguist-vendored
+
+# Ignore frontend config/styling
+frontend/input.css linguist-vendored
+frontend/tailwind.config.ts linguist-vendored
+frontend/nginx.conf linguist-vendored
+frontend/index.html linguist-vendored
+frontend/package.json linguist-vendored
+frontend/Trunk.toml linguist-vendored
+
+# Ignore Docker/infra
+Dockerfile linguist-vendored
+docker-compose.yml linguist-vendored
+
+# Ignore SQL migrations
+**/*.sql linguist-vendored
