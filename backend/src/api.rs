@@ -485,6 +485,11 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                              if let Err(e) = lobby_ref.process_skip(&player_id_ref) {
                                  tracing::error!("Error processing skip: {:?}", e);
                              }
+                         },
+                         shared::ClientMessage::ReturnLobbyVote => {
+                             if let Err(e) = lobby_ref.process_return_lobby_vote(&player_id_ref) {
+                                 tracing::error!("Error processing return to lobby vote: {:?}", e);
+                             }
                          }
                      }
                  }

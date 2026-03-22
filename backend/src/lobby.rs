@@ -38,6 +38,7 @@ pub struct LobbyState {
     pub current_turn_index: Shared<usize>,
     pub prompt_counter: Shared<u64>,
     pub skip_votes: Shared<HashSet<PlayerId>>,
+    pub return_lobby_votes: Shared<HashSet<PlayerId>>,
 }
 
 impl LobbyState {
@@ -60,6 +61,7 @@ impl LobbyState {
             current_turn_index: Shared::new(0),
             prompt_counter: Shared::new(0),
             skip_votes: Shared::new(HashSet::new()),
+            return_lobby_votes: Shared::new(HashSet::new()),
         }
     }
 
@@ -113,6 +115,7 @@ impl LobbyState {
                 lives: p.lives,
                 is_eliminated: p.is_eliminated,
                 is_connected: p.is_connected,
+                is_spectator: p.is_spectator,
                 is_turn: current_turn.as_ref() == Some(&p.id) && status == GameStatus::Playing && settings.mode == shared::GameMode::Duel,
             })
             .collect::<Vec<_>>()
@@ -186,6 +189,7 @@ impl LobbyState {
                         for p in players.iter_mut() {
                             p.score = 0;
                             p.is_eliminated = false;
+                            p.is_spectator = false;
                             if settings.mode == shared::GameMode::Duel {
                                 p.lives = settings.initial_lives;
                                 turn_order.push(p.id.clone());
@@ -234,6 +238,8 @@ impl LobbyState {
             // Remove any lingering duplicates (same ID or same name)
             players.retain(|p| p.id != player_id && p.name != normalized_name);
 
+            let is_spectator = self.game_status.read(|s| *s) != shared::GameStatus::Lobby;
+
             players.push(PlayerData {
                 id: player_id.clone(),
                 name: normalized_name,
@@ -242,6 +248,7 @@ impl LobbyState {
                 lives: None,
                 is_eliminated: false,
                 is_connected: true,
+                is_spectator,
             });
             Ok(is_leader)
         })?;
@@ -331,6 +338,7 @@ impl LobbyState {
                         lives: p.lives,
                         is_eliminated: p.is_eliminated,
                         is_connected: p.is_connected,
+                        is_spectator: p.is_spectator,
                         is_turn: false,
                     }).collect()
                 };
@@ -412,6 +420,7 @@ impl LobbyState {
                 lives: p.lives,
                 is_eliminated: p.is_eliminated,
                 is_connected: p.is_connected,
+                is_spectator: p.is_spectator,
                 is_turn: false, // Default to false here
             }).collect();
 
@@ -546,6 +555,11 @@ impl LobbyState {
     }
 
     pub fn process_guess(&self, player_id: &PlayerId, input: &str) -> Result<()> {
+        let is_spectator = self.players.read(|players| players.iter().any(|p| p.id == *player_id && p.is_spectator));
+        if is_spectator {
+            return Err(AppError::InvalidInput("Spectators cannot participate".to_string()));
+        }
+
         let (settings, status) = {
              let st = self.game_status.read(|s| *s);
              let s = self.settings.read(|s| s.clone());
@@ -726,7 +740,7 @@ impl LobbyState {
         if current_counter != expected_counter {
             return; // Prompt has already advanced
         }
-        
+
         // Ensure game is still active
         let status = self.game_status.read(|s| *s);
         if status != GameStatus::Playing {
@@ -735,19 +749,19 @@ impl LobbyState {
 
         let settings = self.settings.read(|s| s.clone());
         let error_details = self.get_error_details();
-        
+
         if settings.mode == shared::GameMode::Duel {
             if let Some(player_id) = self.get_current_turn_player() {
                 let mut new_prompt_opt = None;
                 let mut game_over = false;
-                
+
                 let (eliminated, duel_msg) = self.apply_duel_penalty(&player_id, &mut new_prompt_opt, &mut game_over);
                 let message = if eliminated { format!("Time's up!\n{}", duel_msg) } else { "Time's up!".to_string() };
  
                 self.broadcast(shared::ServerMessage::PlayerListUpdate {
                     players: self.get_all_players()
                 });
-            
+
                 let score = self.get_player_score(&player_id).unwrap_or(0);
                 self.broadcast(shared::ServerMessage::WordChecked {
                     player_id,
@@ -759,7 +773,7 @@ impl LobbyState {
                         prompt: new_prompt_opt.clone(),
                     },
                 });
-            
+
                 if game_over {
                     self.game_status.write(|st| *st = GameStatus::Finished);
                     self.broadcast(shared::ServerMessage::GameState {
@@ -786,6 +800,11 @@ impl LobbyState {
     }
 
     pub fn process_skip(&self, player_id: &PlayerId) -> Result<()> {
+        let is_spectator = self.players.read(|players| players.iter().any(|p| p.id == *player_id && p.is_spectator));
+        if is_spectator {
+            return Err(AppError::InvalidInput("Spectators cannot participate".to_string()));
+        }
+
         let status = self.game_status.read(|s| *s);
         if status != GameStatus::Playing {
             return Ok(());
@@ -802,14 +821,14 @@ impl LobbyState {
 
             let mut new_prompt_opt = None;
             let mut game_over = false;
-            
+
             let (eliminated, duel_msg) = self.apply_duel_penalty(player_id, &mut new_prompt_opt, &mut game_over);
             let message = if eliminated { format!("Skipped!\n{}", duel_msg) } else { "Skipped!".to_string() };
  
             self.broadcast(shared::ServerMessage::PlayerListUpdate {
                 players: self.get_all_players()
             });
-        
+
             let score = self.get_player_score(player_id).unwrap_or(0);
             self.broadcast(shared::ServerMessage::WordChecked {
                 player_id: player_id.clone(),
@@ -821,7 +840,7 @@ impl LobbyState {
                     prompt: new_prompt_opt,
                 },
             });
-        
+
             if game_over {
                 self.game_status.write(|st| *st = GameStatus::Finished);
                 self.broadcast(shared::ServerMessage::GameState {
@@ -836,7 +855,7 @@ impl LobbyState {
             let mut skip_passed = false;
             let (votes, required) = self.skip_votes.write(|votes| {
                 votes.insert(player_id.clone());
-                let total_players = self.get_all_players().iter().filter(|p| !p.is_eliminated).count();
+                let total_players = self.get_all_players().iter().filter(|p| !p.is_eliminated && !p.is_spectator).count();
                 // Majority > 50%
                 let required = (total_players / 2) + 1;
                 if votes.len() >= required {
@@ -865,6 +884,53 @@ impl LobbyState {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn process_return_lobby_vote(&self, player_id: &PlayerId) -> Result<()> {
+        let is_spectator = self.players.read(|players| players.iter().any(|p| p.id == *player_id && p.is_spectator));
+        if is_spectator {
+            return Err(AppError::InvalidInput("Spectators cannot participate".to_string()));
+        }
+
+        let status = self.game_status.read(|s| *s);
+        if status != GameStatus::Playing {
+            return Ok(());
+        }
+
+        let mut vote_passed = false;
+        let (votes, required) = self.return_lobby_votes.write(|votes| {
+            votes.insert(player_id.clone());
+            let total_players = self.get_all_players().iter().filter(|p| !p.is_eliminated && !p.is_spectator).count();
+            let required = (total_players / 2) + 1;
+            if votes.len() >= required {
+                vote_passed = true;
+            }
+            (votes.len(), required)
+        });
+
+        if vote_passed {
+            self.return_lobby_votes.write(|v| v.clear());
+            self.skip_votes.write(|v| v.clear());
+            self.game_status.write(|st| *st = GameStatus::Lobby);
+            self.broadcast(shared::ServerMessage::GameState {
+                prompt: "".to_string(),
+                status: GameStatus::Lobby,
+                scores: self.get_all_players(),
+            });
+        } else {
+            let score = self.get_player_score(player_id).unwrap_or(0);
+            self.broadcast(shared::ServerMessage::WordChecked {
+                player_id: PlayerId::default(),
+                result: shared::CheckWordResponse {
+                    message: format!("Return to Lobby vote registered ({}/{})", votes, required),
+                    score,
+                    error: Some(format!("Return to Lobby vote registered ({}/{})", votes, required)),
+                    error_details: None,
+                    prompt: None,
+                },
+            });
+        }
         Ok(())
     }
 }

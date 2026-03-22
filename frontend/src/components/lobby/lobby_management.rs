@@ -3,6 +3,7 @@ use crate::{
     components::lobby::settings::{LobbySettingsPanel, use_lobby_settings},
     styled_view,
     context::GameContext,
+    components::toast::{use_toast, ToastType},
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -15,7 +16,6 @@ styled_view!(header_container, "flex justify-between items-center mb-6 relative"
 styled_view!(header_title, "text-2xl font-bold text-gray-800 dark:text-gray-100");
 styled_view!(lobby_id_span, "font-mono font-bold tracking-wider text-blue-600 dark:text-blue-400");
 styled_view!(copy_button, "px-2 py-1 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-gray-800 dark:text-gray-200");
-styled_view!(copied_toast, "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none");
 
 styled_view!(player_list_title, "text-xl font-semibold text-blue-600 dark:text-blue-400 border-b border-gray-200 dark:border-gray-700 pb-2");
 styled_view!(player_item, is_current: bool, 
@@ -34,7 +34,6 @@ pub fn LobbyManagementComponent(
 ) -> impl IntoView
 {
     let game_context = use_context::<GameContext>().expect("GameContext missing");
-    let is_copied = RwSignal::new(false);
     
     let start_game_action = {
         let lobby_id = game_context.lobby_id;
@@ -57,6 +56,7 @@ pub fn LobbyManagementComponent(
     };
 
     let copy_lobby_id = move |_: ev::MouseEvent| {
+        let toast = use_toast();
         let lobby_id = game_context.lobby_id.get();
         spawn_local(async move {
             let window = web_sys::window().expect("global window");
@@ -64,14 +64,10 @@ pub fn LobbyManagementComponent(
             let clipboard = navigator.clipboard();
             match wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&lobby_id)).await {
                 Ok(_) => {
-                    is_copied.set(true);
-                    set_timeout(
-                        move || { is_copied.set(false); },
-                        std::time::Duration::from_millis(1000),
-                    );
+                    toast.push.run(("Lobby ID copied to clipboard!".to_string(), ToastType::Success));
                 }
                 Err(_) => {
-                    leptos::logging::log!("Failed to copy to clipboard")
+                    leptos::logging::log!("Failed to copy to clipboard");
                 }
             }
         });
@@ -79,7 +75,7 @@ pub fn LobbyManagementComponent(
 
     view! {
         <div class=lobby_container()>
-            <LobbyHeader on_copy_id=copy_lobby_id is_copied=is_copied.read_only() />
+            <LobbyHeader on_copy_id=copy_lobby_id />
             <LobbyDetails
                 on_start_game=Callback::new(start_game_action)
                 on_leave_lobby=on_leave_lobby
@@ -93,7 +89,6 @@ pub fn LobbyManagementComponent(
 #[component]
 fn LobbyHeader(
     #[prop(into)] on_copy_id: Callback<ev::MouseEvent>,
-    is_copied: ReadSignal<bool>,
 ) -> impl IntoView
 {
     let game_context = use_context::<GameContext>().expect("GameContext missing");
@@ -115,13 +110,6 @@ fn LobbyHeader(
                 "Copy"
             </button>
         </div>
-
-        // Floating "Copied!" text using Show
-        <Show when=move || is_copied.get()>
-            <div class=copied_toast()>
-                "Copied!"
-            </div>
-        </Show>
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::styled_view;
-use crate::{components::player_scores::CompactPlayerScoresComponent, context::{GameContext, InGameContext}};
+use crate::{components::player_scores::CompactPlayerScoresComponent, context::{GameContext, InGameContext}, components::toast::{use_toast, ToastType}};
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
@@ -25,7 +25,6 @@ styled_view!(lobby_info_bar, "flex items-center gap-2 mb-6 p-2 bg-gray-100 dark:
 styled_view!(lobby_id_label, "text-gray-700 dark:text-gray-300");
 styled_view!(lobby_id_value, "font-bold tracking-wider text-blue-600 dark:text-blue-400");
 styled_view!(copy_btn, "ml-2 px-1 py-0.5 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 rounded transition-all duration-200 hover:bg-blue-50 dark:hover:bg-gray-500 hover:border-blue-400 hover:shadow-sm active:scale-95 active:bg-blue-100 dark:text-gray-200");
-styled_view!(copied_msg, "absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg animate-fade-in pointer-events-none");
 
 #[component]
 pub fn GameComponent(
@@ -44,7 +43,6 @@ pub fn GameComponent(
     // Local Game State
     let word = RwSignal::new(String::new());
     let is_loading = RwSignal::new(false);
-    let is_copied = RwSignal::new(false);
     let error_message = RwSignal::new(String::new());
     let shake_trigger = RwSignal::new(false);
     let input_ref = NodeRef::<html::Input>::new();
@@ -113,6 +111,8 @@ pub fn GameComponent(
         }
     });
 
+    let toast = use_toast();
+
     let copy_lobby_id = move |_: ev::MouseEvent| {
         let id_str = lobby_id.get().to_string();
         spawn_local(async move {
@@ -121,17 +121,10 @@ pub fn GameComponent(
             let clipboard = navigator.clipboard();
             match wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&id_str)).await {
                 Ok(_) => {
-                    is_copied.set(true);
-
-                    set_timeout(
-                        move || {
-                            is_copied.set(false);
-                        },
-                        std::time::Duration::from_millis(1000),
-                    );
+                    toast.push.run(("Lobby ID copied to clipboard!".to_string(), ToastType::Success));
                 }
                 Err(_) => {
-                    leptos::logging::log!("Failed to copy to clipboard")
+                    leptos::logging::log!("Failed to copy to clipboard");
                 }
             }
         });
@@ -153,13 +146,6 @@ pub fn GameComponent(
                 >
                     "Copy"
                 </button>
-
-                // Floating "Copied!" text using Show
-                <Show when=move || is_copied.get()>
-                    <div class=copied_msg()>
-                        "Copied!"
-                    </div>
-                </Show>
             </div>
 
             // Game Layout with Sidebar

@@ -8,6 +8,7 @@ pub fn GameHeader() -> impl IntoView {
     
     let lobby_info = game_context.lobby_info;
     let player_id = game_context.player_id;
+    let send_message = game_context.send_message;
     let on_exit = in_game_context.on_exit_game;
 
     let content_mode = Signal::derive(move || {
@@ -28,6 +29,13 @@ pub fn GameHeader() -> impl IntoView {
             .unwrap_or_default()
     });
 
+    let is_spectator = Signal::derive(move || {
+        lobby_info.get()
+            .and_then(|info| info.players.into_iter().find(|p| p.id == player_id.get()))
+            .map(|p| p.is_spectator)
+            .unwrap_or(false)
+    });
+
     view! {
         <div class="flex justify-between items-center mb-4 sm:mb-6 flex-wrap gap-2 sm:gap-4">
             <h2 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100">{
@@ -46,6 +54,15 @@ pub fn GameHeader() -> impl IntoView {
                 <div class="text-xl font-bold text-blue-500 dark:text-blue-400">
                     "Score: " {move || score.get()}
                 </div>
+                <Show when=move || !is_spectator.get()>
+                    <button
+                        on:click=move |_| send_message.run(shared::ClientMessage::ReturnLobbyVote)
+                        class="bg-transparent hover:bg-yellow-50 dark:hover:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 border border-yellow-400 dark:border-yellow-500 font-medium py-2 px-4 rounded transition-all hover:-translate-y-0.5 active:translate-y-0.5"
+                        title="Vote to return all players to the lobby"
+                    >
+                        "Return to Lobby"
+                    </button>
+                </Show>
                 <button
                     on:click=move |_| on_exit.run(())
                     class="bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-400 dark:border-gray-500 font-medium py-2 px-4 rounded transition-all hover:-translate-y-0.5 active:translate-y-0.5"

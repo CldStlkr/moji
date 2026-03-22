@@ -109,6 +109,9 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                                 *info_opt = Some(info);
                                             });
                                             set_typing_status.update(|m| m.clear());
+                                            if status == shared::GameStatus::Lobby || status == shared::GameStatus::Playing {
+                                                set_result.set(String::new());
+                                            }
                                         },
                                         ServerMessage::WordChecked { player_id: pid, result: res } => {
                                             if pid == player_id || pid.to_string().is_empty() || pid.to_string() == "null" || pid.to_string() == "" {

@@ -35,7 +35,6 @@ impl<T> Shared<T> {
 
 }
 
-
 #[derive(Clone, Debug)]
 pub struct PlayerData {
     pub id: PlayerId,
@@ -45,11 +44,12 @@ pub struct PlayerData {
     pub lives: Option<u32>,
     pub is_eliminated: bool,
     pub is_connected: bool,
+    pub is_spectator: bool,
 }
 
 
 /// PostgreSQL connection pool
 pub type DbPool = Pool<Postgres>;
 
-/// Standard Result type with our AppError
+/// Standard Result type with custom AppError
 pub type Result<T> = std::result::Result<T, AppError>;

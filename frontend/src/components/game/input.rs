@@ -43,7 +43,16 @@ pub fn GameInput() -> impl IntoView {
         lobby_info.get().map(|i| i.settings.content_mode).unwrap_or_default()
     });
 
+    let is_spectator = Signal::derive(move || {
+        lobby_info.get().map(|i| {
+            i.players.iter().any(|p| p.id == player_id.get() && p.is_spectator)
+        }).unwrap_or(false)
+    });
+
     let disabled = Signal::derive(move || {
+         if is_spectator.get() {
+             return true;
+         }
          if let Some(info) = lobby_info.get() {
              if info.settings.mode == shared::GameMode::Duel {
                  let me = info.players.into_iter().find(|p| p.id == player_id.get());
@@ -57,6 +66,8 @@ pub fn GameInput() -> impl IntoView {
     });
 
     let handle = window_event_listener(ev::keydown, move |e: ev::KeyboardEvent| {
+        if is_spectator.get() { return; }
+
         let key = e.key();
         if e.meta_key() || e.ctrl_key() || e.alt_key()
             || key == "Tab" || key == "Escape" || key.starts_with('F')
@@ -104,7 +115,9 @@ pub fn GameInput() -> impl IntoView {
                 on:keydown=handle_keydown
 
                 placeholder=move || {
-                    if content_mode.get() == shared::ContentMode::Vocab {
+                    if is_spectator.get() {
+                        "Spectating match in progress..."
+                    } else if content_mode.get() == shared::ContentMode::Vocab {
                         "Enter the reading in hiragana"
                     } else {
                         "Enter a Japanese word with this kanji"

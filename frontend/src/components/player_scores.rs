@@ -11,10 +11,12 @@ pub fn PlayerScoresComponent(
     show_leader_badge: bool,
 ) -> impl IntoView {
     // Sort players by score (highest first), then by name for ties
-    let mut sorted_players = players;
+    let mut sorted_players: Vec<PlayerData> = players.iter().filter(|p| !p.is_spectator).cloned().collect();
+    let spectators: Vec<PlayerData> = players.into_iter().filter(|p| p.is_spectator).collect();
     sorted_players.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
 
     let ranked_players: Vec<(usize, PlayerData)> = sorted_players.into_iter().enumerate().map(|(i, p)| (i + 1, p)).collect();
+    let spectators_val = StoredValue::new(spectators);
 
     view! {
         <div class="mt-6 p-4 bg-gray-50 rounded-lg">
@@ -63,6 +65,27 @@ pub fn PlayerScoresComponent(
                     }
                 />
             </div>
+
+            <Show when=move || spectators_val.with_value(|s| !s.is_empty())>
+                <div class="mt-6 border-t border-gray-200 pt-4">
+                    <h4 class="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">
+                        "Spectators"
+                    </h4>
+                    <div class="flex flex-wrap gap-2">
+                        <For
+                            each=move || spectators_val.get_value()
+                            key=|p| p.id.clone()
+                            children=move |p| {
+                                view! {
+                                    <span class="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm font-medium">
+                                        {p.name}
+                                    </span>
+                                }
+                            }
+                        />
+                    </div>
+                </div>
+            </Show>
         </div>
     }
 }
@@ -70,21 +93,25 @@ pub fn PlayerScoresComponent(
 #[component]
 pub fn CompactPlayerScoresComponent() -> impl IntoView {
     let game_context = use_context::<GameContext>().expect("GameContext missing");
-    
+
     let lobby_info = game_context.lobby_info;
     let current_player_id = game_context.player_id;
     let typing_status = game_context.typing_status;
 
     let sorted_players = Signal::derive(move || {
-        let mut p = lobby_info.get().map(|i| i.players).unwrap_or_default();
+        let mut p: Vec<PlayerData> = lobby_info.get().map(|i| i.players.into_iter().filter(|p| !p.is_spectator).collect()).unwrap_or_default();
         p.sort_by(|a, b| b.score.cmp(&a.score));
         p
     });
-    
+
+    let spectators = Signal::derive(move || {
+        lobby_info.get().map(|i| i.players.into_iter().filter(|p| p.is_spectator).collect::<Vec<PlayerData>>()).unwrap_or_default()
+    });
+
     let game_mode = Signal::derive(move || {
         lobby_info.get().map(|i| i.settings.mode).unwrap_or_default()
     });
-    
+
     let initial_lives = Signal::derive(move || {
         lobby_info.get().map(|i| i.settings.initial_lives.unwrap_or(3)).unwrap_or(3)
     });
@@ -161,11 +188,11 @@ pub fn CompactPlayerScoresComponent() -> impl IntoView {
                                                     let p = player_sig.get();
                                                     let current_lives = p.lives.unwrap_or(0);
                                                     let initial_lives_val = initial_lives.get();
-                                                    
+
                                                     (0..initial_lives_val).map(|i| {
                                                         let is_lost = i >= current_lives;
                                                         let is_last = !is_lost && current_lives == 1;
-                                                        
+
                                                         let heart_class = if is_last {
                                                             "text-xl leading-none animate-vibrate inline-block"
                                                         } else if is_lost {
@@ -212,6 +239,27 @@ pub fn CompactPlayerScoresComponent() -> impl IntoView {
                     }
                 />
             </div>
+
+            <Show when=move || !spectators.get().is_empty()>
+                <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600">
+                    <h5 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                        "Spectators"
+                    </h5>
+                    <div class="flex flex-wrap gap-2">
+                        <For
+                            each=move || spectators.get()
+                            key=|p| p.id.clone()
+                            children=move |p| {
+                                view! {
+                                    <span class="text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-0.5 rounded-md shadow-sm">
+                                        {p.name.clone()}
+                                    </span>
+                                }
+                            }
+                        />
+                    </div>
+                </div>
+            </Show>
         </div>
     }
 }

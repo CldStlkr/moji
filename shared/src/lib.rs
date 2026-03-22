@@ -63,6 +63,8 @@ pub enum ClientMessage {
     Typing { input: String },
     /// User submits a guess
     Submit { input: String, prompt: String },
+    // Return to lobby vote
+    ReturnLobbyVote,
     /// User votes to skip or skips their turn
     Skip,
 }
@@ -133,6 +135,8 @@ pub struct PlayerData {
     pub is_eliminated: bool,
     pub is_turn: bool,
     pub is_connected: bool,
+    #[serde(default)]
+    pub is_spectator: bool,
 }
 
 /// Full lobby state, sent to all clients every poll / push.
