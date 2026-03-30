@@ -16,7 +16,7 @@ mod tests {
     use std::sync::Arc;
     use error::AppError;
     use crate::{lobby::LobbyState, state::AppState};
-    use shared::{ActivePrompt, LobbyId, PlayerId, GameStatus, GameSettings};
+    use shared::{ActivePrompt, LobbyId, PlayerId, GameStatus, GameSettings, ApiContext};
     use utils::generate_lobby_id;
 
     fn create_test_lobby() -> LobbyState {
@@ -474,5 +474,68 @@ mod tests {
         // p2 submits on p1's turn — should be silently ignored
         lobby.process_guess(&p2, "日本").unwrap();
         assert_eq!(lobby.get_player_score(&p2).unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_public_lobbies() {
+        let app_state = AppState::create().expect("Failed to create AppState");
+        
+        // Create 3 lobbies: 1 private, 2 public
+        let id1 = LobbyId::from("LOBBY1");
+        let id2 = LobbyId::from("LOBBY2");
+        let id3 = LobbyId::from("LOBBY3");
+        
+        let lobby1 = Arc::new(create_test_lobby()); // Private by default
+        let lobby2 = Arc::new(create_test_lobby());
+        lobby2.settings.write(|s| s.is_public = true);
+        lobby2.add_player(PlayerId::from("leader2"), "Leader 2".to_string()).unwrap();
+        
+        let lobby3 = Arc::new(create_test_lobby());
+        lobby3.settings.write(|s| s.is_public = true);
+        lobby3.add_player(PlayerId::from("leader3"), "Leader 3".to_string()).unwrap();
+        
+        app_state.lobbies.write(|lobbies| {
+            lobbies.insert(id1, lobby1);
+            lobbies.insert(id2.clone(), lobby2);
+            lobbies.insert(id3.clone(), lobby3);
+        });
+        
+        let public_lobbies: Vec<shared::LobbySummary> = app_state.get_public_lobbies().await.unwrap();
+        assert_eq!(public_lobbies.len(), 2);
+        
+        let ids: HashSet<LobbyId> = public_lobbies.into_iter().map(|l| l.id).collect();
+        assert!(ids.contains(&id2));
+        assert!(ids.contains(&id3));
+        assert!(!ids.contains(&LobbyId::from("LOBBY1")));
+    }
+
+    #[tokio::test]
+    async fn test_join_visibility_logic() {
+        let app_state = AppState::create().expect("Failed to create AppState");
+        let lobby_id = LobbyId::from("PRIVATE");
+        let lobby = Arc::new(create_test_lobby());
+        lobby.settings.write(|s| s.is_public = false);
+        
+        app_state.lobbies.write(|lobbies| {
+            lobbies.insert(lobby_id.clone(), lobby);
+        });
+        
+        // 1. Join from public list should FAIL
+        let req_public = shared::JoinLobbyRequest {
+            player_name: "Attacker".to_string(),
+            player_id: None,
+            joining_from_public_list: true,
+        };
+        let res_public: shared::api_fns::JsonResult = app_state.join_lobby(lobby_id.clone(), req_public).await;
+        assert!(res_public.is_err());
+        
+        // 2. Join via manual code should SUCCEED
+        let req_manual = shared::JoinLobbyRequest {
+            player_name: "Friend".to_string(),
+            player_id: None,
+            joining_from_public_list: false,
+        };
+        let res_manual: shared::api_fns::JsonResult = app_state.join_lobby(lobby_id, req_manual).await;
+        assert!(res_manual.is_ok());
     }
 }

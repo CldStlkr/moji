@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
 use crate::{
-    components::lobby::LobbyJoinComponent,
+    components::lobby::{LobbyJoinComponent, PublicLobbiesList},
     persistence::{load_session, clear_session},
 };
 use shared::{LobbyId, PlayerId};
@@ -42,6 +42,12 @@ pub fn Home() -> impl IntoView {
                 status=status
                 set_status=set_status
                 on_lobby_joined=handle_lobby_joined
+            />
+            
+            <PublicLobbiesList
+                on_lobby_joined=handle_lobby_joined
+                set_is_loading=set_is_loading
+                set_status=set_status
             />
         </div>
     }

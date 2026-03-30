@@ -157,6 +157,14 @@ impl ApiContext for AppState {
     async fn join_lobby(&self, lobby_id: LobbyId, request: JoinLobbyRequest) -> JsonResult {
         let lobby = self.get_lobby(&lobby_id)?;
 
+        // If joining from the public list, verify visibility
+        if request.joining_from_public_list {
+            let is_public = lobby.settings.read(|s| s.is_public);
+            if !is_public {
+                return Err(AppError::InvalidInput("This lobby is now private".into()).into());
+            }
+        }
+
         let player_id = request.player_id.unwrap_or_else(generate_player_id);
         let _ = lobby.add_player(player_id.clone(), request.player_name.clone())?;
 
@@ -392,6 +400,31 @@ impl ApiContext for AppState {
         lobby.promote_leader(&requestor_id, &target_player_id)?;
         Ok(json!({ "message": "Leader promoted" }))
     }
+
+    async fn get_public_lobbies(&self) -> Result<Vec<shared::LobbySummary>, leptos::server_fn::error::ServerFnError> {
+        let mut summaries = Vec::new();
+        
+        self.lobbies.read(|lobbies| {
+            for (id, state) in lobbies.iter() {
+                let (is_public, mode, max_players) = state.settings.read(|s| (s.is_public, s.mode, s.max_players));
+                if is_public {
+                    let leader_id = state.lobby_leader.read(|l| l.clone());
+                    let leader_name = state.get_player_name(&leader_id).unwrap_or_else(|_| "Unknown".to_string());
+                    let player_count = state.players.read(|p| p.len());
+                    
+                    summaries.push(shared::LobbySummary {
+                        id: id.clone(),
+                        leader_name,
+                        player_count,
+                        max_players,
+                        mode,
+                    });
+                }
+            }
+        });
+        
+        Ok(summaries)
+    }
 }
 
 #[derive(Deserialize)]
@@ -561,6 +594,16 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                              if let Err(e) = lobby_ref.process_return_lobby_vote(&player_id_ref) {
                                  tracing::error!("Error processing return to lobby vote: {:?}", e);
                              }
+                         },
+                         shared::ClientMessage::Chat { message } => {
+                             let name = lobby_ref.get_player_name(&player_id_ref).unwrap_or_else(|_| "Unknown".to_string());
+                             // Apply profanity filter
+                             let clean_message = message.censor();
+                             lobby_ref.broadcast(shared::ServerMessage::ChatMessage(shared::ChatMessage {
+                                 player_id: player_id_ref.clone(),
+                                 player_name: name,
+                                 message: clean_message,
+                             }));
                          }
                      }
                  }

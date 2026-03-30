@@ -73,6 +73,14 @@ pub fn GameInput() -> impl IntoView {
             || key == "Tab" || key == "Escape" || key.starts_with('F')
             { return; }
 
+        // If the user is already focused on an input or textarea (like chat), don't steal focus
+        if let Some(active) = document().active_element() {
+            let tag = active.tag_name().to_uppercase();
+            if tag == "INPUT" || tag == "TEXTAREA" {
+                return;
+            }
+        }
+
         if let Some(input) = input_ref.get() {
             if !input.is_same_node(document()
                 .active_element().as_ref()

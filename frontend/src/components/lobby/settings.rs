@@ -224,6 +224,27 @@ pub fn LobbySettingsPanel(
                     </div>
                 </SettingsItem>
 
+                <SettingsItem label="Visibility">
+                    <div class="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600">
+                        <div class="flex flex-col">
+                            <span class="text-xs text-gray-600 dark:text-gray-300 font-medium">"Public Lobby"</span>
+                            <span class="text-[10px] text-gray-400">"Show on home page"</span>
+                        </div>
+                        <button
+                            on:click=move |_| {
+                                if !is_leader.get() { return; }
+                                let mut new_settings = settings.get();
+                                new_settings.is_public = !new_settings.is_public;
+                                on_update.run(new_settings);
+                            }
+                            disabled=move || !is_leader.get()
+                            class=move || toggle_switch(settings.get().is_public)
+                        >
+                            <span class=move || toggle_knob(settings.get().is_public) />
+                        </button>
+                    </div>
+                </SettingsItem>
+
                 <SettingsItem label="Timing">
                     <div class="space-y-2">
                         <div class="flex items-center gap-2">
