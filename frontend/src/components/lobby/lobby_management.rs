@@ -1,6 +1,6 @@
 // Component for managing lobby state
 use crate::{
-    components::lobby::settings::{LobbySettingsPanel, use_lobby_settings},
+    components::lobby::{settings::{LobbySettingsPanel, use_lobby_settings}, ChatComponent},
     styled_view,
     context::GameContext,
     components::toast::{use_toast, ToastType},
@@ -155,6 +155,7 @@ fn LobbyDetails(
         >
             <div class="space-y-6">
                 <PlayersList set_is_loading=set_is_loading set_status=set_status />
+                <ChatComponent />
                 <LobbySettingsPanel settings=settings on_update=on_update />
                 <LobbyActions on_start_game=on_start_game on_leave_lobby=on_leave_lobby />
             </div>

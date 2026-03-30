@@ -1,5 +1,5 @@
 use crate::styled_view;
-use crate::{components::player_scores::CompactPlayerScoresComponent, context::{GameContext, InGameContext}, components::toast::{use_toast, ToastType}};
+use crate::{components::player_scores::CompactPlayerScoresComponent, context::{GameContext, InGameContext}, components::toast::{use_toast, ToastType}, components::lobby::ChatComponent};
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
@@ -163,11 +163,13 @@ pub fn GameComponent(
 
                 </div>
 
-                // Scores Sidebar
-                <div class="w-full lg:w-64 flex-shrink-0">
+                // Scores & Chat Sidebar
+                <div class="w-full lg:w-64 flex-shrink-0 space-y-8">
                     <Show when=move || lobby_info.get().map(|i| !i.players.is_empty()).unwrap_or(false)>
                         <CompactPlayerScoresComponent />
                     </Show>
+                    
+                    <ChatComponent />
                 </div>
             </div>
 

@@ -67,6 +67,8 @@ pub enum ClientMessage {
     ReturnLobbyVote,
     /// User votes to skip or skips their turn
     Skip,
+    /// Chat message
+    Chat { message: String },
 }
 
 
@@ -101,6 +103,14 @@ pub enum ServerMessage {
     LeaderUpdate { leader_id: PlayerId },
     SkipVoteUpdate { votes: usize, required: usize },
     Kicked { player_id: PlayerId },
+    ChatMessage(ChatMessage),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub player_id: PlayerId,
+    pub player_name: String,
+    pub message: String,
 }
 
 /// A prompt sent from the server to each client at the start of a round.
@@ -114,6 +124,16 @@ pub struct PromptResponse {
 pub struct JoinLobbyRequest {
     pub player_name: String,
     pub player_id: Option<PlayerId>,
+    pub joining_from_public_list: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LobbySummary {
+    pub id: LobbyId,
+    pub leader_name: String,
+    pub player_count: usize,
+    pub max_players: u32,
+    pub mode: GameMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +182,7 @@ pub struct GameSettings {
     pub target_score: Option<u32>,
     pub initial_lives: Option<u32>,
     pub duel_allow_kanji_reuse: bool,
+    pub is_public: bool,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +212,7 @@ impl Default for GameSettings {
             target_score: Some(5), // Default target score for Deathmatch
             initial_lives: Some(3), // Default lives for Duel
             duel_allow_kanji_reuse: false,
+            is_public: false,
         }
     }
 }

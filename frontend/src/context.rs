@@ -1,7 +1,6 @@
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use shared::{ClientMessage, PlayerId, LobbyId, LobbyInfo};
+use shared::{PlayerId, LobbyId, LobbyInfo};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct User {
@@ -34,9 +33,10 @@ pub struct GameContext {
     pub set_prompt: WriteSignal<String>,
     pub result: ReadSignal<String>,
     pub set_result: WriteSignal<String>,
-    pub typing_status: ReadSignal<HashMap<PlayerId, String>>,
-    pub set_typing_status: WriteSignal<HashMap<PlayerId, String>>,
-    pub send_message: Callback<ClientMessage>,
+    pub typing_status: ReadSignal<std::collections::HashMap<shared::PlayerId, String>>,
+    pub set_typing_status: WriteSignal<std::collections::HashMap<shared::PlayerId, String>>,
+    pub chat_messages: RwSignal<Vec<shared::ChatMessage>>,
+    pub send_message: Callback<shared::ClientMessage>,
 }
 
 #[derive(Clone, Copy, Debug)]

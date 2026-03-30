@@ -1,6 +1,5 @@
 use leptos::prelude::*;
 use leptos_router::hooks::{use_navigate, use_params_map};
-use std::collections::HashMap;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
@@ -39,7 +38,8 @@ pub fn LobbyPage() -> impl IntoView {
 
     let prompt = RwSignal::new(String::new());
     let result = RwSignal::new(String::new());
-    let typing_status = RwSignal::new(HashMap::<PlayerId, String>::new());
+    let typing_status = RwSignal::new(std::collections::HashMap::<shared::PlayerId, String>::new());
+    let chat_messages = RwSignal::new(Vec::<shared::ChatMessage>::new());
 
     let navigate_kick = navigate.clone();
     let send_message = use_shared_socket(UseSharedSocketConfig {
@@ -49,6 +49,7 @@ pub fn LobbyPage() -> impl IntoView {
         set_prompt: prompt.write_only(),
         set_result: result.write_only(),
         set_typing_status: typing_status.write_only(),
+        chat_messages,
         on_kicked: Some(Callback::new(move |_| {
             navigate_kick("/", Default::default());
         })),
@@ -70,6 +71,7 @@ pub fn LobbyPage() -> impl IntoView {
         set_result: result.write_only(),
         typing_status: typing_status.read_only(),
         set_typing_status: typing_status.write_only(),
+        chat_messages,
         send_message: Callback::new(send_message),
     });
 
@@ -210,6 +212,7 @@ pub fn LobbyPage() -> impl IntoView {
                     let request = JoinLobbyRequest {
                         player_name: u_name.clone(),
                         player_id: load_session().map(|s| s.player_id),
+                        joining_from_public_list: false,
                     };
                     let join_lobby_id = LobbyId::from(l_id_str);
 

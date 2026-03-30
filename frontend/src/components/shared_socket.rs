@@ -21,6 +21,7 @@ pub struct UseSharedSocketConfig {
     pub set_prompt: WriteSignal<String>,
     pub set_result: WriteSignal<String>,
     pub set_typing_status: WriteSignal<HashMap<PlayerId, String>>,
+    pub chat_messages: RwSignal<Vec<shared::ChatMessage>>,
     pub on_kicked: Option<Callback<()>>,
 }
 
@@ -33,6 +34,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
     let set_prompt = config.set_prompt;
     let set_result = config.set_result;
     let set_typing_status = config.set_typing_status;
+    let chat_messages = config.chat_messages;
     let on_kicked = config.on_kicked;
 
     Effect::new(move |_| {
@@ -212,6 +214,15 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                                     let _ = window.location().set_href("/");
                                                 }
                                             }
+                                        },
+                                        ServerMessage::ChatMessage(msg) => {
+                                            chat_messages.update(|msgs| {
+                                                msgs.push(msg);
+                                                // Keep only last 100 messages to prevent infinite memory growth
+                                                if msgs.len() > 100 {
+                                                    msgs.remove(0);
+                                                }
+                                            });
                                         },
                                     }
                                     },

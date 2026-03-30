@@ -46,6 +46,7 @@ where
             let request = JoinLobbyRequest {
                 player_name: username.clone(),
                 player_id: None,
+                joining_from_public_list: false,
             };
 
             async move {
@@ -109,6 +110,7 @@ where
                 let request = JoinLobbyRequest {
                     player_name: username.clone(),
                     player_id: player_id_opt,
+                    joining_from_public_list: false,
                 };
 
                 let response = join_lobby(l_id.clone(), request).await?;

@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use crate::{
     LobbyId, PlayerId, LobbyInfo, JoinLobbyRequest, StartGameRequest,
-    UpdateSettingsRequest, PlayerData, PromptResponse
+    UpdateSettingsRequest, PlayerData, PromptResponse, LobbySummary
 };
 
 #[cfg(feature = "ssr")]
@@ -35,6 +35,7 @@ pub trait ApiContext: Send + Sync {
     async fn set_player_connected(&self, lobby_id: LobbyId, player_id: PlayerId, is_connected: bool) -> JsonResult;
     async fn kick_player(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult;
     async fn promote_leader(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult;
+    async fn get_public_lobbies(&self) -> Result<Vec<LobbySummary>, ServerFnError>;
 }
 
 #[cfg(feature = "ssr")]
@@ -121,4 +122,9 @@ pub async fn kick_player(lobby_id: LobbyId, requestor_id: PlayerId, target_playe
 #[server(endpoint = "/api/promote_leader")]
 pub async fn promote_leader(lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
     get_api_context()?.promote_leader(lobby_id, requestor_id, target_player_id).await
+}
+
+#[server(endpoint = "/api/get_public_lobbies")]
+pub async fn get_public_lobbies() -> Result<Vec<LobbySummary>, ServerFnError> {
+    get_api_context()?.get_public_lobbies().await
 }
