@@ -1,10 +1,22 @@
+<p align="center">
+
+<img width="192" height="192" alt="android-chrome-192x192" src="https://github.com/user-attachments/assets/125d883d-3c41-434d-a54a-54f9b8c29eaf" />
+
+
+</p>
+
+
 # 文字 (Moji)
 
 A high-performance, real-time multiplayer Japanese vocabulary and kanji engine built entirely in Rust. The application leverages a WebAssembly single-page application frontend interacting with a concurrent, lock-optimized Axum WebSocket backend to deliver low-latency game state synchronization.
 
+If you have even basic knowledge of Japanese Kanji, you can try out the [live site](https://moji.fly.dev)!
+There are various kanji difficulty lists ranging from the lowest JLPT level (N5) all the way to the highest (N1). You can even mix and match them!
+
 <div align="center">
-  <!-- Visual Hook Placeholder -->
-  <img src="docs/demo.gif" alt="Moji Gameplay Demo" width="800"/>
+
+https://github.com/user-attachments/assets/009cf7c9-29d6-4b95-8100-326a5fe0f7ef
+
 </div>
 
 ## Architecture & Technical Implementation
