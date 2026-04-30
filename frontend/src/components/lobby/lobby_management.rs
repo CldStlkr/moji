@@ -19,7 +19,7 @@ styled_view!(copy_button, "px-2 py-1 text-xs font-medium bg-white dark:bg-gray-7
 
 styled_view!(player_list_title, "text-xl font-semibold text-blue-600 dark:text-blue-400 border-b border-gray-200 dark:border-gray-700 pb-2");
 styled_view!(player_item, is_current: bool, 
-    "flex justify-between items-center p-3 rounded border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200", 
+    "flex justify-between items-center p-3 rounded border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200",
     if is_current { "bg-blue-50 dark:bg-blue-900/30 font-semibold" } else { "" }
 );
 
@@ -34,7 +34,7 @@ pub fn LobbyManagementComponent(
 ) -> impl IntoView
 {
     let game_context = use_context::<GameContext>().expect("GameContext missing");
-    
+
     let start_game_action = {
         let lobby_id = game_context.lobby_id;
         let player_id = game_context.player_id;
