@@ -8,7 +8,7 @@
 
 # 文字 (Moji)
 
-![Build](https://github.com/CldStlkr/morph-rt/actions/workflows/build.yml/badge.svg)
+![Build](https://github.com/CldStlkr/moji/actions/workflows/build.yml/badge.svg)
 ![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)
 ![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=flat&logo=webassembly&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat)
@@ -85,7 +85,6 @@ Each client connection spawns isolated Tokio `send` and `receive` tasks bridged 
 *   **Configurable JLPT Difficulty**: Dynamic dictionary subsets and kanji weighting algorithms based on Japanese Language Proficiency Test levels (N5-N1).
 *   **Persistent Telemetry**: Asynchronous database writes using compile-time validated `sqlx` queries (with offline cache support) to track global metrics without blocking the game loop.
 *   **Argon2 Auth & Guest Sessions**: JSON Web Token (JWT) based authentication supporting both permanent, securely hashed accounts and ephemeral guest sessions.
-*   **Profanity Filtering**: Real-time username sanitization using the `rustrict` crate.
 
 
 ## Build & Run Instructions
