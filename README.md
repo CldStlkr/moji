@@ -8,12 +8,11 @@
 
 # 文字 (Moji)
 
+![Build](https://github.com/CldStlkr/morph-rt/actions/workflows/build.yml/badge.svg)
 ![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)
 ![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=flat&logo=webassembly&logoColor=white)
-![Axum](https://img.shields.io/badge/Axum-000000?style=flat&logo=rust&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
-![Fly.io](https://img.shields.io/badge/Fly.io-7B3BE2?style=flat&logo=flydotio&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat)
+
 
 A high-performance, real-time multiplayer Japanese vocabulary and kanji engine built entirely in Rust. The application leverages a WebAssembly single-page application frontend interacting with a concurrent, lock-optimized Axum WebSocket backend to deliver low-latency game state synchronization.
 
