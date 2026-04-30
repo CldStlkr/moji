@@ -13,10 +13,11 @@
 ![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=flat&logo=webassembly&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat)
 
+### Live Site: [moji.fly.dev](https://moji.fly.dev)
 
 A high-performance, real-time multiplayer Japanese vocabulary and kanji engine built entirely in Rust. The application leverages a WebAssembly single-page application frontend interacting with a concurrent, lock-optimized Axum WebSocket backend to deliver low-latency game state synchronization.
 
-If you have even basic knowledge of Japanese Kanji, you can try out the [live site](https://moji.fly.dev)!
+If you have even basic knowledge of Japanese Kanji, you can try it out [here](https://moji.fly.dev)!
 There are various kanji difficulty lists ranging from the lowest JLPT level (N5) all the way to the highest (N1). You can even mix and match them!
 
 <div align="center">
