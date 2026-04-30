@@ -9,9 +9,9 @@
 # 文字 (Moji)
 
 ![Build](https://github.com/CldStlkr/moji/actions/workflows/build.yml/badge.svg)
-![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)
-![Leptos](https://img.shields.io/badge/Leptos-EF3939?style=flat&logoColor=white)
-![Axum](https://img.shields.io/badge/Axum-000000?style=flat&logo=rust&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-CE422B?style=flat&logo=rust&logoColor=white)
+![Leptos](https://img.shields.io/badge/rust-Leptos-AD3F6E?style=flat&logo=rust&logoColor=white)
+![Axum](https://img.shields.io/badge/rust-Axum-000000?style=flat&logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat)
 
 **Live Site**: [moji.fly.dev](https://moji.fly.dev)
