@@ -10,15 +10,23 @@
 
 ![Build](https://github.com/CldStlkr/moji/actions/workflows/build.yml/badge.svg)
 ![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)
-![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=flat&logo=webassembly&logoColor=white)
+![Leptos](https://img.shields.io/badge/Leptos-EF3939?style=flat&logoColor=white)
+![Axum](https://img.shields.io/badge/Axum-000000?style=flat&logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat)
 
-### Live Site: [moji.fly.dev](https://moji.fly.dev)
+**Live Site**: [moji.fly.dev](https://moji.fly.dev)
 
-A high-performance, real-time multiplayer Japanese vocabulary and kanji engine built entirely in Rust. The application leverages a WebAssembly single-page application frontend interacting with a concurrent, lock-optimized Axum WebSocket backend to deliver low-latency game state synchronization.
+Moji is a real-time multiplayer Japanese kanji and vocabulary game with difficulty scaling across JLPT levels N5 through N1. 
+It is built entirely in Rust, with a Leptos frontend and a concurrent, lock-optimized Axum WebSocket backend for low-latency game state synchronization.
 
-If you have even basic knowledge of Japanese Kanji, you can try it out [here](https://moji.fly.dev)!
-There are various kanji difficulty lists ranging from the lowest JLPT level (N5) all the way to the highest (N1). You can even mix and match them!
+**Content Modes**
+- **Kanji** — a random kanji is drawn from your selected JLPT levels, and players must submit a valid word containing it.
+- **Vocab** — a random word is drawn from your selected JLPT levels, and players must provide the correct hiragana reading.
+
+**Game Modes**
+- **Deathmatch** — open submission, no turns. First player to reach the point threshold wins.
+- **Duel** — turn-based elimination. Each player has a set number of lives; last one standing wins.
+- **Zen** — no win condition. Play solo or with friends at your own pace. The session ends when everyone leaves or returns to lobby.
 
 <div align="center">
 
