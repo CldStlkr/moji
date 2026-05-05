@@ -40,6 +40,7 @@ pub fn LobbyPage() -> impl IntoView {
     let result = RwSignal::new(String::new());
     let typing_status = RwSignal::new(std::collections::HashMap::<shared::PlayerId, String>::new());
     let chat_messages = RwSignal::new(Vec::<shared::ChatMessage>::new());
+    let expires_at = RwSignal::new(None::<u64>);
 
     let navigate_kick = navigate.clone();
     let send_message = use_shared_socket(UseSharedSocketConfig {
@@ -50,6 +51,7 @@ pub fn LobbyPage() -> impl IntoView {
         set_result: result.write_only(),
         set_typing_status: typing_status.write_only(),
         chat_messages,
+        set_expires_at: expires_at.write_only(),
         on_kicked: Some(Callback::new(move |_| {
             navigate_kick("/", Default::default());
         })),
@@ -72,6 +74,8 @@ pub fn LobbyPage() -> impl IntoView {
         typing_status: typing_status.read_only(),
         set_typing_status: typing_status.write_only(),
         chat_messages,
+        expires_at: expires_at.read_only(),
+        set_expires_at: expires_at.write_only(),
         send_message: Callback::new(send_message),
     });
 

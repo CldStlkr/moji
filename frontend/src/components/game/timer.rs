@@ -5,42 +5,38 @@ use std::time::Duration;
 #[component]
 pub fn TimerBar() -> impl IntoView {
     let game_context = use_context::<GameContext>().expect("GameContext missing");
-    
     let lobby_info = game_context.lobby_info;
-    let prompt = game_context.prompt;
-
     let progress = RwSignal::new(100.0);
-    
-    let time_limit = Signal::derive(move || -> Option<u32> {
-        lobby_info.get().and_then(|info| {
-            if info.settings.mode != shared::GameMode::Zen {
-                info.settings.time_limit_seconds
-            } else {
-                None
-            }
-        })
+    let expires_at = game_context.expires_at;
+    let time_limit = Memo::new(move |_| {
+        lobby_info.get().and_then(|info| info.settings.time_limit_seconds)
     });
+    let is_active = Memo::new(move |_| time_limit.get().unwrap_or(0) > 0);
 
-    let is_active = Signal::derive(move || time_limit.get().is_some() && time_limit.get().unwrap_or(0) > 0);
-
-    Effect::new(move |_| {
-        let trigger = prompt.get();
+    Effect::new(move |prev_expires: Option<Option<u64>>| {
+        let current_expires = expires_at.get();
         let limit = time_limit.get();
-        if trigger.is_empty() || limit.is_none() || limit.unwrap_or(0) == 0 {
+
+        if current_expires.is_none() || limit.is_none() || limit.unwrap_or(0) == 0 {
             progress.set(100.0);
-            return;
+            return current_expires;
+        }
+
+        // If the expiration timestamp hasn't changed, don't restart the effect.
+        // This prevents visual resets on "Return to Lobby" or "Skip" if the backend timer persisted.
+        if prev_expires.as_ref() == Some(&current_expires) {
+            return current_expires;
         }
 
         let limit_secs = limit.unwrap() as f64;
-        let start_time = js_sys::Date::now();
-        progress.set(100.0);
+        let expires_ms = current_expires.unwrap() as f64;
 
         let handle = set_interval_with_handle(
             move || {
                 let now = js_sys::Date::now();
-                let elapsed = (now - start_time) / 1000.0;
-                let remaining = (limit_secs - elapsed).max(0.0);
-                let pct = (remaining / limit_secs) * 100.0;
+                let remaining_ms = (expires_ms - now).max(0.0);
+                let remaining_secs = remaining_ms / 1000.0;
+                let pct = (remaining_secs / limit_secs) * 100.0;
                 progress.set(pct);
             },
             Duration::from_millis(100),
@@ -49,6 +45,8 @@ pub fn TimerBar() -> impl IntoView {
         on_cleanup(move || {
             handle.clear();
         });
+
+        current_expires
     });
 
     let bar_color = Signal::derive(move || {

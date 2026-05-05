@@ -200,7 +200,7 @@ impl ApiContext for AppState {
 
         let prompt = match lobby.get_current_prompt_text() {
             Some(prompt) => prompt,
-            None => lobby.generate_random_prompt(true)?
+            None => lobby.generate_random_prompt(true, true)?
         };
         Ok(PromptResponse { prompt })
     }
@@ -208,7 +208,7 @@ impl ApiContext for AppState {
     async fn generate_new_prompt(&self, lobby_id: LobbyId) -> PromptResult {
         let lobby = self.get_lobby(&lobby_id)?;
 
-        let prompt = lobby.generate_random_prompt(true)?;
+        let prompt = lobby.generate_random_prompt(true, true)?;
         Ok(PromptResponse { prompt })
     }
 
@@ -508,6 +508,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
             prompt,
             status,
             scores,
+            timer_expires_at: lobby.timer_expires_at.read(|t| *t),
         }).unwrap_or_default();
         let _ = sender.send(Message::Text(game_msg.into())).await;
     }
