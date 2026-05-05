@@ -7,7 +7,8 @@ use moji::{
     db::init_db_pool,
     state::AppState,
 };
-use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{env, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use moji::models::user::User;
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -111,31 +112,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Frontend available at http://{}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    let app_state_for_db = app_state.clone();
-    tokio::spawn(async move {
-        let database_url = match env::var("DATABASE_URL") {
-            Ok(url) => url,
-            Err(_) => {
-                tracing::warn!("DATABASE_URL not set, running without database");
-                return;
-            }
-        };
-
+    if let Ok(database_url) = env::var("DATABASE_URL") {
         if let Err(e) = wait_for_db(&database_url).await {
             tracing::error!("Failed to connect to database: {:?}", e);
-            return;
-        }
+        } else {
+            match init_db_pool(&database_url).await {
+                Ok(pool) => {
+                    app_state.set_db(pool.clone()).await;
+                    tracing::info!("Database pool initialized successfully");
 
-        match init_db_pool(&database_url).await {
-            Ok(pool) => {
-                app_state_for_db.set_db(pool).await;
-                tracing::info!("Database pool initialized successfully");
-            }
-            Err(e) => {
-                tracing::error!("Failed to initialize database pool: {:?}", e);
+                    // Spawn periodic cleanup for inactive guest accounts
+                    let pool_clone = pool.clone();
+                    tokio::spawn(async move {
+                        let mut interval = tokio::time::interval(Duration::from_secs(3600)); // Every hour
+                        loop {
+                            interval.tick().await;
+                            match User::delete_inactive_guests(&pool_clone, 24).await {
+                                Ok(count) => {
+                                    if count > 0 {
+                                        tracing::info!("Cleaned up {} inactive guest accounts", count);
+                                    }
+                                }
+                                Err(e) => tracing::error!("Failed to clean up inactive guests: {:?}", e),
+                            }
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to initialize database pool: {:?}", e);
+                }
             }
         }
-    });
+    } else {
+        tracing::warn!("DATABASE_URL not set, running without database");
+    }
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
@@ -147,7 +157,7 @@ async fn wait_for_db(database_url: &str) -> Result<(), Box<dyn std::error::Error
     use std::time::Duration;
     use tokio::time::sleep;
 
-    let mut retries = 5;
+    let mut retries = 15;
     let mut wait_time = Duration::from_secs(1);
 
     while retries > 0 {
@@ -167,7 +177,7 @@ async fn wait_for_db(database_url: &str) -> Result<(), Box<dyn std::error::Error
                     retries
                 );
                 sleep(wait_time).await;
-                wait_time *= 2; // Exponential backoff
+                wait_time = std::cmp::min(wait_time * 2, Duration::from_secs(5)); // Exponential backoff capped at 5s
             }
         }
     }

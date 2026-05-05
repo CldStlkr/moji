@@ -189,4 +189,14 @@ impl User {
             .await?;
         Ok(rec.count.unwrap_or(0))
     }
+
+    pub async fn delete_inactive_guests(pool: &DbPool, hours: i64) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query!(
+            "DELETE FROM users WHERE is_guest = true AND last_seen_at < NOW() - ($1 || ' hours')::interval",
+            hours.to_string()
+        )
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }
