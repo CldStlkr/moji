@@ -8,7 +8,9 @@ pub type DbPool = Pool<Postgres>;
 pub async fn init_db_pool(database_url: &str) -> Result<Arc<DbPool>, sqlx::Error> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .acquire_timeout(Duration::from_secs(3))
+        .min_connections(1)
+        .acquire_timeout(Duration::from_secs(30))
+        .idle_timeout(Duration::from_secs(600))
         .connect(database_url)
         .await?;
 
