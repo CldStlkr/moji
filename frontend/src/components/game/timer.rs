@@ -13,18 +13,12 @@ pub fn TimerBar() -> impl IntoView {
     });
     let is_active = Memo::new(move |_| time_limit.get().unwrap_or(0) > 0);
 
-    Effect::new(move |prev_expires: Option<Option<u64>>| {
+    Effect::new(move |_| {
         let current_expires = expires_at.get();
         let limit = time_limit.get();
 
         if current_expires.is_none() || limit.is_none() || limit.unwrap_or(0) == 0 {
             progress.set(100.0);
-            return current_expires;
-        }
-
-        // If the expiration timestamp hasn't changed, don't restart the effect.
-        // This prevents visual resets on "Return to Lobby" or "Skip" if the backend timer persisted.
-        if prev_expires.as_ref() == Some(&current_expires) {
             return current_expires;
         }
 
