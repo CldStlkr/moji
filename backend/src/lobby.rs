@@ -42,6 +42,7 @@ pub struct LobbyState {
     pub db_pool: Option<Arc<crate::db::DbPool>>,
     pub reuse_prompt: Shared<bool>,
     pub cleanup_generation: Shared<u64>,
+    pub timer_expires_at: Shared<Option<u64>>,
 }
 
 impl LobbyState {
@@ -68,6 +69,7 @@ impl LobbyState {
             db_pool,
             reuse_prompt: Shared::new(false),
             cleanup_generation: Shared::new(0),
+            timer_expires_at: Shared::new(None),
         }
     }
 
@@ -213,7 +215,7 @@ impl LobbyState {
             });
         }
 
-        self.generate_random_prompt(false)?;
+        self.generate_random_prompt(false, true)?;
 
         self.game_status.write(|status| *status = GameStatus::Playing);
 
@@ -221,6 +223,7 @@ impl LobbyState {
             prompt: self.get_current_prompt_text().unwrap_or_default(),
             status: GameStatus::Playing,
             scores: self.get_all_players(),
+            timer_expires_at: self.timer_expires_at.read(|t| *t),
         });
 
         Ok(())
@@ -462,7 +465,7 @@ impl LobbyState {
     /// Generate a new random kanji and store it as current.
     /// If `broadcast` is true, a `PromptUpdate` WS message is sent to all clients.
     /// Pass `false` when the caller will send a more complete message (e.g. `GameState`).
-    pub fn generate_random_prompt(&self, broadcast: bool) -> Result<String> {
+    pub fn generate_random_prompt(&self, broadcast: bool, reset_timer: bool) -> Result<String> {
         let content_mode = self.settings.read(|s| s.content_mode.clone());
         let mut rng = rand::rng();
         let indices = self.active_level_indices.read(|i| i.clone());
@@ -510,22 +513,30 @@ impl LobbyState {
             }
         };
 
+        if reset_timer {
+            self.prompt_counter.write(|c| *c += 1);
+            self.skip_votes.write(|v| v.clear());
+
+            let time_limit = self.settings.read(|s| s.time_limit_seconds);
+            if let Some(secs) = time_limit {
+                let counter = self.prompt_counter.read(|c| *c);
+                let expires = Utc::now().timestamp_millis() as u64 + (secs as u64 * 1000);
+                self.timer_expires_at.write(|t| *t = Some(expires));
+
+                let lobby = self.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(secs as u64)).await;
+                    lobby.process_timeout(counter);
+                });
+            } else {
+                self.timer_expires_at.write(|t| *t = None);
+            }
+        }
+
         if broadcast {
             self.broadcast(shared::ServerMessage::PromptUpdate {
                 new_prompt: display_text.clone(),
-            });
-        }
-
-        self.prompt_counter.write(|c| *c += 1);
-        self.skip_votes.write(|v| v.clear());
-
-        let time_limit = self.settings.read(|s| s.time_limit_seconds);
-        if let Some(secs) = time_limit {
-            let counter = self.prompt_counter.read(|c| *c);
-            let lobby = self.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(secs as u64)).await;
-                lobby.process_timeout(counter);
+                timer_expires_at: self.timer_expires_at.read(|t| *t),
             });
         }
 
@@ -545,6 +556,7 @@ impl LobbyState {
             prompt: "".to_string(),
             status: GameStatus::Lobby,
             scores: self.get_all_players(),
+            timer_expires_at: None,
         });
 
         Ok(())
@@ -624,19 +636,19 @@ impl LobbyState {
                         message = "Winner!".to_string();
                     } else {
                         message = "Good guess!".to_string();
-                        let _ = self.generate_random_prompt(true);
+                        let _ = self.generate_random_prompt(true, true);
                         new_prompt_opt = self.get_current_prompt_text();
                     }
                 }
             } else if settings.mode == shared::GameMode::Duel {
                 message = "Good guess!".to_string();
-                let _ = self.generate_random_prompt(true);
+                let _ = self.generate_random_prompt(true, true);
                 new_prompt_opt = self.get_current_prompt_text();
                 self.reuse_prompt.write(|r| *r = false);
                 let _ = self.advance_turn();
             } else if settings.mode == shared::GameMode::Zen {
                 message = "Good guess!".to_string();
-                let _ = self.generate_random_prompt(true);
+                let _ = self.generate_random_prompt(true, true);
                 new_prompt_opt = self.get_current_prompt_text();
             }
         } else {
@@ -676,6 +688,7 @@ impl LobbyState {
                 error: if !is_correct { Some("Incorrect".into()) } else { None },
                 error_details,
                 prompt: new_prompt_opt,
+                timer_expires_at: self.timer_expires_at.read(|t| *t),
             },
         });
 
@@ -685,6 +698,7 @@ impl LobbyState {
                 prompt: self.get_current_prompt_text().unwrap_or_default(),
                 status: GameStatus::Finished,
                 scores: self.get_all_players(),
+                timer_expires_at: None,
             });
         }
 
@@ -734,14 +748,14 @@ impl LobbyState {
         if settings.duel_allow_kanji_reuse {
             let already_reused = self.reuse_prompt.read(|r| *r);
             if already_reused {
-                let _ = self.generate_random_prompt(true);
+                let _ = self.generate_random_prompt(true, true);
                 *new_prompt_opt = self.get_current_prompt_text();
                 self.reuse_prompt.write(|r| *r = false);
             } else {
                 self.reuse_prompt.write(|r| *r = true);
             }
         } else {
-            let _ = self.generate_random_prompt(true);
+            let _ = self.generate_random_prompt(true, true);
             *new_prompt_opt = self.get_current_prompt_text();
         }
 
@@ -804,6 +818,7 @@ impl LobbyState {
                         error: Some("Time's up!".into()),
                         error_details,
                         prompt: new_prompt_opt.clone(),
+                        timer_expires_at: self.timer_expires_at.read(|t| *t),
                     },
                 });
 
@@ -813,12 +828,13 @@ impl LobbyState {
                         prompt: self.get_current_prompt_text().unwrap_or_default(),
                         status: GameStatus::Finished,
                         scores: self.get_all_players(),
+                        timer_expires_at: None,
                     });
                 }
             }
         } else {
             // Deathmatch: Skip the prompt
-            let _ = self.generate_random_prompt(true);
+            let _ = self.generate_random_prompt(true, true);
             self.broadcast(shared::ServerMessage::WordChecked {
                 player_id: PlayerId::default(), // Nobody in particular
                 result: shared::CheckWordResponse {
@@ -827,6 +843,7 @@ impl LobbyState {
                     error: Some("Time's up!".into()),
                     error_details,
                     prompt: self.get_current_prompt_text(),
+                    timer_expires_at: self.timer_expires_at.read(|t| *t),
                 },
             });
         }
@@ -871,6 +888,7 @@ impl LobbyState {
                     error: Some("Skipped!".into()),
                     error_details,
                     prompt: new_prompt_opt,
+                    timer_expires_at: self.timer_expires_at.read(|t| *t),
                 },
             });
 
@@ -880,6 +898,7 @@ impl LobbyState {
                     prompt: self.get_current_prompt_text().unwrap_or_default(),
                     status: GameStatus::Finished,
                     scores: self.get_all_players(),
+                    timer_expires_at: None,
                 });
             }
 
@@ -898,7 +917,7 @@ impl LobbyState {
             });
 
             if skip_passed {
-                let _ = self.generate_random_prompt(true);
+                let _ = self.generate_random_prompt(true, true);
                 self.broadcast(shared::ServerMessage::WordChecked {
                     player_id: PlayerId::default(),
                     result: shared::CheckWordResponse {
@@ -907,6 +926,7 @@ impl LobbyState {
                         error: Some("Skipped!".into()),
                         error_details,
                         prompt: self.get_current_prompt_text(),
+                        timer_expires_at: self.timer_expires_at.read(|t| *t),
                     },
                 });
             } else {
@@ -950,6 +970,7 @@ impl LobbyState {
                 prompt: "".to_string(),
                 status: GameStatus::Lobby,
                 scores: self.get_all_players(),
+                timer_expires_at: None,
             });
         } else {
             let score = self.get_player_score(player_id).unwrap_or(0);
@@ -961,6 +982,7 @@ impl LobbyState {
                     error: Some(format!("Return to Lobby vote registered ({}/{})", votes, required)),
                     error_details: None,
                     prompt: None,
+                    timer_expires_at: self.timer_expires_at.read(|t| *t),
                 },
             });
         }

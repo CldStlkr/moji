@@ -22,6 +22,7 @@ pub struct UseSharedSocketConfig {
     pub set_result: WriteSignal<String>,
     pub set_typing_status: WriteSignal<HashMap<PlayerId, String>>,
     pub chat_messages: RwSignal<Vec<shared::ChatMessage>>,
+    pub set_expires_at: WriteSignal<Option<u64>>,
     pub on_kicked: Option<Callback<()>>,
 }
 
@@ -35,6 +36,7 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
     let set_result = config.set_result;
     let set_typing_status = config.set_typing_status;
     let chat_messages = config.chat_messages;
+    let set_expires_at = config.set_expires_at;
     let on_kicked = config.on_kicked;
 
     Effect::new(move |_| {
@@ -97,9 +99,10 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                 match serde_json::from_str::<ServerMessage>(&text) {
                                     Ok(server_msg) => {
                                     match server_msg {
-                                        ServerMessage::GameState { prompt: new_prompt, status, scores } => {
+                                        ServerMessage::GameState { prompt: new_prompt, status, scores, timer_expires_at } => {
                                             leptos::logging::debug_warn!("[WS] GameState received: status={:?}, players={}", status, scores.len());
                                             set_prompt.set(new_prompt);
+                                            set_expires_at.set(timer_expires_at);
 
                                             lobby_info_signal.update(|info_opt| {
                                                 let mut info = info_opt.clone().unwrap_or_else(|| LobbyInfo {
@@ -135,10 +138,12 @@ pub fn use_shared_socket(config: UseSharedSocketConfig) -> impl Fn(ClientMessage
                                             if let Some(k) = res.prompt {
                                                 set_prompt.set(k);
                                             }
+                                            set_expires_at.set(res.timer_expires_at);
                                         },
-                                        ServerMessage::PromptUpdate { new_prompt} => {
+                                        ServerMessage::PromptUpdate { new_prompt, timer_expires_at } => {
                                             set_result.set(String::new());
                                             set_prompt.set(new_prompt);
+                                            set_expires_at.set(timer_expires_at);
                                             set_typing_status.update(|m| m.clear());
                                         },
                                         ServerMessage::PlayerListUpdate { players: new_players } => {

@@ -82,6 +82,7 @@ pub enum ServerMessage {
         prompt: String,
         status: GameStatus,
         scores: Vec<PlayerData>,
+        timer_expires_at: Option<u64>,
     },
 
     /// Broadcast when another player is typing
@@ -97,7 +98,10 @@ pub enum ServerMessage {
     },
 
     /// Broadcast immediately when a correct word is found
-    PromptUpdate { new_prompt: String },
+    PromptUpdate { 
+        new_prompt: String,
+        timer_expires_at: Option<u64>,
+    },
     PlayerListUpdate { players: Vec<PlayerData> },
     SettingsUpdate { settings: GameSettings },
     LeaderUpdate { leader_id: PlayerId },
@@ -250,6 +254,7 @@ pub struct CheckWordResponse {
     pub error_details: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
+    pub timer_expires_at: Option<u64>,
 }
 
 

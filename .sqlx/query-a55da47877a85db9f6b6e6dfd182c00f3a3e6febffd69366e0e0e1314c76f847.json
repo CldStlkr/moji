@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM users WHERE is_guest = true AND last_seen_at < NOW() - ($1 || ' hours')::interval",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a55da47877a85db9f6b6e6dfd182c00f3a3e6febffd69366e0e0e1314c76f847"
+}

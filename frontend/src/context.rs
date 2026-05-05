@@ -36,6 +36,8 @@ pub struct GameContext {
     pub typing_status: ReadSignal<std::collections::HashMap<shared::PlayerId, String>>,
     pub set_typing_status: WriteSignal<std::collections::HashMap<shared::PlayerId, String>>,
     pub chat_messages: RwSignal<Vec<shared::ChatMessage>>,
+    pub expires_at: ReadSignal<Option<u64>>,
+    pub set_expires_at: WriteSignal<Option<u64>>,
     pub send_message: Callback<shared::ClientMessage>,
 }
 
