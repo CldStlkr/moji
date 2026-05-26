@@ -2094,7 +2094,6 @@ dependencies = [
  "jsonwebtoken",
  "leptos",
  "leptos_axum",
- "moji-macros",
  "parking_lot",
  "rand 0.10.0",
  "rustrict",
@@ -2134,15 +2133,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
-]
-
-[[package]]
-name = "moji-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
