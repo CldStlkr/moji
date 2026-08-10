@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres # DNS name that the app will use (equivalent to docker's "postgres:5432")
+  namespace: moji
+spec:
+  selector:
+    app: postgres # Routes to pods with this label
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None # "Headless" service; for StatefulSets this gives stable DNS
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: moji
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres # Must match the Service selector above
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: moji-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: moji-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: moji-secrets
+                  key: POSTGRES_DB
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  # volumeClaimTemplates are how StatefulSets get persistent storage
+  # K8s will create a PersistentVolumeClaim for each replica automatically
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"] # One pod can read/write at a time (correct for Postgres)
+        resources:
+          requests:
+            storage: 5Gi
+
+
+

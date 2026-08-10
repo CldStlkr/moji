@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moji-app
+  namespace: moji
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moji-app
+  template:
+    metadata:
+      labels:
+        app: moji-app
+    spec:
+      containers:
+        - name: moji-app
+          image: moji:local
+          imagePullPolicy: Never # Don't try to pull from a registry
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: moji-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: moji-secrets
+                  key: DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: moji-secrets
+                  key: JWT_SECRET
+          livenessProbe:
+            httpGet:
+              path: /api/stats
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/stats
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moji-app
+  namespace: moji
+spec:
+  selector:
+    app: moji-app
+  ports:
+    - port: 80
+      targetPort: 8080

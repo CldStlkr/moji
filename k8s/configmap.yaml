@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: moji-config
+  namespace: moji
+data:
+  PRODUCTION: "1"
+  HOST: "0.0.0.0"
+  PORT: "8080"
+  RUST_LOG: "info"
+  RUST_BACKTRACE: "1"
