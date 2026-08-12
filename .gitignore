@@ -36,6 +36,9 @@ Thumbs.db
 # Docker
 .dockerignore
 
+# Kubernetes
+k8s/secrets.yaml
+
 # Database
 *.db
 *.sqlite
