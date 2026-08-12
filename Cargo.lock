@@ -390,6 +390,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "186dce98367766de751c42c4f03970fc60fc012296e706ccbb9d5df9b6c1e271"
 
 [[package]]
+name = "combine"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "memchr",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2096,6 +2110,7 @@ dependencies = [
  "leptos_axum",
  "parking_lot",
  "rand 0.10.0",
+ "redis",
  "rustrict",
  "serde",
  "serde_json",
@@ -2846,6 +2861,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "redis"
+version = "0.32.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "014cc767fefab6a3e798ca45112bccad9c6e0e218fbd49720042716c73cfef44"
+dependencies = [
+ "bytes",
+ "cfg-if",
+ "combine",
+ "futures-util",
+ "itoa",
+ "num-bigint",
+ "percent-encoding",
+ "pin-project-lite",
+ "ryu",
+ "sha1_smol",
+ "socket2",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3314,6 +3351,12 @@ dependencies = [
  "cpufeatures 0.2.17",
  "digest",
 ]
+
+[[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"

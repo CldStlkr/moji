@@ -34,7 +34,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish()
         .unwrap();
 
-    let app_state = Arc::new(AppState::create()?);
+    let mut app_state = AppState::create()?;
+
+    if let Ok(redis_url) = env::var("REDIS_URL") {
+        match redis::Client::open(redis_url) {
+            Ok(client) => {
+                app_state.set_redis(client);
+                tracing::info!("Redis client initialized");
+            },
+            Err(e) => tracing::error!("Failed to initialize Redis client: {:?}", e),
+        }
+    }
+
+    let app_state = Arc::new(app_state);
+
 
     let is_prod = env::var("PRODUCTION").is_ok();
     let cors = if is_prod {

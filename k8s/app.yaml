@@ -33,6 +33,11 @@ spec:
                 secretKeyRef:
                   name: moji-secrets
                   key: JWT_SECRET
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: moji-secrets
+                  key: REDIS_URL
           livenessProbe:
             httpGet:
               path: /api/stats

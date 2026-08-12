@@ -1,21 +1,20 @@
-use crate::{error::AppError};
+use crate::error::AppError;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 use parking_lot::RwLock;
 use shared::PlayerId;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
-// Newtype wrapper for Arc<RwLock<T>>
+// Newtype wrapper for Arc<RwLock<T>> — kept for any remaining non-lobby uses
 #[derive(Clone)]
 pub struct Shared<T>(Arc<RwLock<T>>);
 
 impl<T> Shared<T> {
-    /// Create a new shared value
     pub fn new(value: T) -> Self {
         Self(Arc::new(RwLock::new(value)))
     }
 
-    /// Execute a closure with mutable access to the shared value
     pub fn write<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R,
@@ -24,7 +23,6 @@ impl<T> Shared<T> {
         f(&mut *guard)
     }
 
-    /// Execute a closure with read-only access to the shared value
     pub fn read<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&T) -> R,
@@ -32,10 +30,10 @@ impl<T> Shared<T> {
         let guard = self.0.read();
         f(&*guard)
     }
-
 }
 
-#[derive(Clone, Debug)]
+// Serialize/Deserialize required so PlayerData can be stored as JSON in Redis.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlayerData {
     pub id: PlayerId,
     pub name: String,

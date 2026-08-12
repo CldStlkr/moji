@@ -7,7 +7,7 @@ use crate::{
     },
     error::AppError,
     state::AppState,
-    lobby::LobbyState,
+    lobby::LobbyData,
 };
 use axum::{
     extract::{Path, State, WebSocketUpgrade, Query, ws::{Message, WebSocket}},
@@ -80,25 +80,21 @@ impl ApiContext for AppState {
         let player_id: PlayerId = generate_player_id();
         let pool_guard = self.db_pool.read().await;
 
+        // Record game session in DB if available
         let game_session_id = if let Some(db_pool) = pool_guard.as_ref() {
-            let default_settings = shared::GameSettings::default();
-            let session = GameSession::create(db_pool, &lobby_id, 1, default_settings).await?;
+            let session = GameSession::create(db_pool, &lobby_id, 1, shared::GameSettings::default()).await?;
             Some(session.id)
         } else {
             None
         };
+        drop(pool_guard);
 
-        let lobby_state = Arc::new(LobbyState::new(
-            Arc::clone(&self.kanji_data),
-            Arc::clone(&self.word_data),
-            Arc::clone(&self.dict_data),
-            game_session_id,
-            self.db_pool.read().await.clone()
-        ));
+        // Write initial (empty) lobby state to Redis, then add the creator
+        let mut initial_data = LobbyData::default();
+        initial_data.game_session_id = game_session_id;
 
-        let _ = lobby_state.add_player(player_id.clone(), request.player_name)?;
-
-        self.lobbies.write(|lobbies| { lobbies.insert(lobby_id.clone(), lobby_state); });
+        let lobby = self.create_lobby_handle(lobby_id.clone(), initial_data).await?;
+        lobby.add_player(player_id.clone(), request.player_name).await?;
 
         Ok(json!({
             "message": "Lobby created successfully!",
@@ -108,19 +104,19 @@ impl ApiContext for AppState {
     }
 
     async fn get_lobby_info(&self, lobby_id: LobbyId) -> LobbyResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-        Ok(lobby.get_lobby_info(&lobby_id))
+        let lobby = self.get_lobby(&lobby_id).await?;
+        lobby.get_lobby_info().await.map_err(Into::into)
     }
 
     async fn update_lobby_settings(&self, lobby_id: LobbyId, request: UpdateSettingsRequest) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-        lobby.update_settings(&request.player_id, request.settings)?;
+        let lobby = self.get_lobby(&lobby_id).await?;
+        lobby.update_settings(&request.player_id, request.settings).await?;
         Ok(json!({ "message": "Settings updated successfully" }))
     }
 
     async fn start_game(&self, lobby_id: LobbyId, request: StartGameRequest) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-        lobby.start_game(&request.player_id)?;
+        let lobby = self.get_lobby(&lobby_id).await?;
+        lobby.start_game(&request.player_id).await?;
 
         let pool_guard = self.db_pool.read().await;
         if let Some(pool) = pool_guard.as_ref() {
@@ -131,56 +127,43 @@ impl ApiContext for AppState {
     }
 
     async fn reset_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-
-        lobby.reset_lobby(&player_id)?;
+        let lobby = self.get_lobby(&lobby_id).await?;
+        lobby.reset_lobby(&player_id).await?;
         Ok(json!({ "message": "Lobby reset successfully" }))
     }
 
     async fn get_lobby_players(&self, lobby_id: LobbyId) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-
-        let players = lobby.get_all_players();
-
-        let player_data: Vec<_> = players.into_iter().map(|p| {
-            json!({
-                "id": p.id,
-                "name": p.name,
-                "score": p.score,
-                "joined_at": p.joined_at
-            })
+        let lobby = self.get_lobby(&lobby_id).await?;
+        let data = lobby.get_data().await?;
+        let player_data: Vec<_> = data.get_all_players().into_iter().map(|p| {
+            json!({ "id": p.id, "name": p.name, "score": p.score, "joined_at": p.joined_at })
         }).collect();
-
         Ok(json!({ "players": player_data }))
     }
 
     async fn join_lobby(&self, lobby_id: LobbyId, request: JoinLobbyRequest) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
+        let lobby = self.get_lobby(&lobby_id).await?;
 
-        // If joining from the public list, verify visibility
         if request.joining_from_public_list {
-            let is_public = lobby.settings.read(|s| s.is_public);
-            if !is_public {
+            let data = lobby.get_data().await?;
+            if !data.settings.is_public {
                 return Err(AppError::InvalidInput("This lobby is now private".into()).into());
             }
         }
 
         let player_id = request.player_id.unwrap_or_else(generate_player_id);
-        let _ = lobby.add_player(player_id.clone(), request.player_name.clone())?;
+        lobby.add_player(player_id.clone(), request.player_name.clone()).await?;
 
-        if let Some(game_id) = lobby.game_session_id {
+        // Log join action to DB if we have a session
+        let data = lobby.get_data().await?;
+        if let Some(game_id) = data.game_session_id {
             let pool_guard = self.db_pool.read().await;
             if let Some(db_pool) = pool_guard.as_ref() {
                 let db = Arc::clone(db_pool);
                 let name = request.player_name.clone();
                 let pid = player_id.to_string();
-
                 tokio::spawn(async move {
-                    let action_data = json!({
-                        "player_id": pid,
-                        "player_name": name
-                    });
-
+                    let action_data = json!({ "player_id": pid, "player_name": name });
                     if let Err(e) = GameAction::create(&db, game_id, None, "player_joined", action_data).await {
                         tracing::error!("Failed to log player join: {:?}", e);
                     }
@@ -196,52 +179,40 @@ impl ApiContext for AppState {
     }
 
     async fn get_prompt(&self, lobby_id: LobbyId) -> PromptResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-
-        let prompt = match lobby.get_current_prompt_text() {
-            Some(prompt) => prompt,
-            None => lobby.generate_random_prompt(true, true)?
+        let lobby = self.get_lobby(&lobby_id).await?;
+        let data = lobby.get_data().await?;
+        let prompt = match data.get_current_prompt_text() {
+            Some(p) => p,
+            None => lobby.generate_random_prompt(true, true).await?,
         };
         Ok(PromptResponse { prompt })
     }
 
     async fn generate_new_prompt(&self, lobby_id: LobbyId) -> PromptResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-
-        let prompt = lobby.generate_random_prompt(true, true)?;
+        let lobby = self.get_lobby(&lobby_id).await?;
+        let prompt = lobby.generate_random_prompt(true, true).await?;
         Ok(PromptResponse { prompt })
     }
 
     async fn check_username(&self, username: String) -> JsonResult {
         validate_username(&username)?;
-
         let pool_guard = self.db_pool.read().await;
         let db_pool = pool_guard.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
-
         let user = User::find_by_username(db_pool, &username).await?;
-
         if let Some(user) = user {
-            Ok(json!({
-                "available": false,
-                "is_guest": user.is_guest
-            }))
+            Ok(json!({ "available": false, "is_guest": user.is_guest }))
         } else {
-            Ok(json!({
-                "available": true,
-                "is_guest": false
-            }))
+            Ok(json!({ "available": true, "is_guest": false }))
         }
     }
 
     async fn authenticate(&self, request: shared::AuthRequest) -> JsonResult {
         validate_username(&request.username)?;
-
         let pool_guard = self.db_pool.read().await;
         let db_pool = pool_guard.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
-        let existing_user = User::find_by_username(db_pool, &request.username).await
-            ?;
+        let existing_user = User::find_by_username(db_pool, &request.username).await?;
 
         if let Some(user) = existing_user {
             if let Some(password) = request.password {
@@ -249,85 +220,59 @@ impl ApiContext for AppState {
                     let parsed_hash = PasswordHash::new(hash)
                         .map_err(|e| ServerFnError::new(e.to_string()))?;
                     if Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok() {
-                        Ok(json!({
-                            "message": "Login successful",
-                            "user": &user,
-                            "token": generate_jwt(&user.id.to_string())?
-                        }))
+                        Ok(json!({ "message": "Login successful", "user": &user, "token": generate_jwt(&user.id.to_string())? }))
                     } else {
                         Err(ServerFnError::new("Invalid password"))
                     }
                 } else {
-                    // It's a guest account
                     Err(ServerFnError::new("Name currently in use"))
                 }
             } else {
-                // Name is taken, but no password was provided to check ownership
                 Err(ServerFnError::new("Name currently in use"))
             }
         } else if request.create_guest {
             let user = User::create(db_pool, &request.username, None, true).await?;
-            Ok(json!({
-                "message": "Guest account created",
-                "user": &user,
-                "token": generate_jwt(&user.id.to_string())?
-            }))
+            Ok(json!({ "message": "Guest account created", "user": &user, "token": generate_jwt(&user.id.to_string())? }))
         } else if let Some(password) = request.password {
             let salt = SaltString::generate(&mut OsRng);
             let password_hash = Argon2::default()
                 .hash_password(password.as_bytes(), &salt)
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-                .to_string();
+                .map_err(|e| ServerFnError::new(e.to_string()))?.to_string();
             let user = User::create(db_pool, &request.username, Some(password_hash), false).await?;
-            Ok(json!({
-                "message": "Account created",
-                "user": &user,
-                "token": generate_jwt(&user.id.to_string())?
-            }))
+            Ok(json!({ "message": "Account created", "user": &user, "token": generate_jwt(&user.id.to_string())? }))
         } else {
             Err(ServerFnError::new("Password required to register"))
         }
     }
 
     async fn get_player_info(&self, lobby_id: LobbyId, player_id: PlayerId) -> PlayerResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-
-        let players = lobby.get_all_players();
-        let player = players.into_iter().find(|p| p.id == player_id)
-            .ok_or_else(|| ServerFnError::new(format!("Player not found: {}", player_id)))?;
-
-        Ok(player)
+        let lobby = self.get_lobby(&lobby_id).await?;
+        let data = lobby.get_data().await?;
+        data.get_all_players().into_iter().find(|p| p.id == player_id)
+            .ok_or_else(|| ServerFnError::new(format!("Player not found: {}", player_id)))
     }
 
     async fn leave_lobby(&self, lobby_id: LobbyId, player_id: PlayerId) -> JsonResult {
-        let lobby = match self.get_lobby(&lobby_id) {
+        let lobby = match self.get_lobby(&lobby_id).await {
             Ok(l) => l,
-            Err(AppError::LobbyNotFound(_)) => {
-                // If the lobby is already gone (e.g. WS cleanup finished first), this is fine.
-                return Ok(json!({ "message": "Lobby already cleaned up" }));
-            }
+            Err(AppError::LobbyNotFound(_)) => return Ok(json!({ "message": "Lobby already cleaned up" })),
             Err(e) => return Err(e.into()),
         };
 
-        lobby.remove_player(&player_id);
+        lobby.remove_player(&player_id).await?;
 
-        let is_empty = lobby.players.read(|players| players.is_empty());
-        let actually_removed = if is_empty {
-            self.lobbies.write(|lobbies| {
-                lobbies.remove(&lobby_id).is_some()
-            })
-        } else {
-            false
-        };
-
-        if actually_removed {
-            if let Some(game_id) = lobby.game_session_id {
+        // If lobby is now empty, end the game session and delete from Redis
+        let data = lobby.get_data().await.unwrap_or_default();
+        if data.players.is_empty() {
+            use redis::AsyncCommands;
+            if let Ok(mut conn) = lobby.redis.get_multiplexed_async_connection().await {
+                let _: () = conn.del(format!("lobby:{}", lobby_id.0)).await.unwrap_or(());
+            }
+            if let Some(game_id) = data.game_session_id {
                 let pool_guard = self.db_pool.read().await;
                 if let Some(db_pool) = pool_guard.as_ref() {
                     let pool = Arc::clone(db_pool);
-                    tokio::spawn(async move {
-                        let _ = GameSession::end_session(&pool, game_id).await;
-                    });
+                    tokio::spawn(async move { let _ = GameSession::end_session(&pool, game_id).await; });
                 }
             }
         }
@@ -339,91 +284,86 @@ impl ApiContext for AppState {
         let pool_guard = self.db_pool.read().await;
         let db_pool = pool_guard.as_ref()
             .ok_or_else(|| ServerFnError::new("Database not configured"))?;
-
         User::delete_guest_by_username(db_pool, &username).await?;
-
         Ok(json!({ "message": "Logged out" }))
     }
 
     async fn set_player_connected(&self, lobby_id: LobbyId, player_id: PlayerId, is_connected: bool) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-        lobby.set_player_connected(&player_id, is_connected);
+        let lobby = match self.get_lobby(&lobby_id).await {
+            Ok(l) => l,
+            Err(AppError::LobbyNotFound(_)) => return Ok(json!({ "message": "Lobby not found" })),
+            Err(e) => return Err(e.into()),
+        };
 
-        if !is_connected && lobby.all_disconnected() {
-            let generation = lobby.cleanup_generation.read(|g| *g);
-            let lobbies = self.lobbies.clone();
-            let lobby_ref = lobby.clone();
-            let lid = lobby_id.clone();
-            let db_pool = self.db_pool.read().await.clone();
+        lobby.set_player_connected(&player_id, is_connected).await?;
 
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        if !is_connected {
+            let all_gone = lobby.all_disconnected().await.unwrap_or(false);
+            if all_gone {
+                // Read cleanup_generation before spawning
+                let generation = lobby.get_data().await.map(|d| d.cleanup_generation).unwrap_or(0);
+                let lobby_clone = lobby.clone();
+                let lid = lobby_id.clone();
+                let db_pool = self.db_pool.read().await.clone();
 
-                let current_gen = lobby_ref.cleanup_generation.read(|g| *g);
-                if current_gen != generation {
-                    tracing::info!("Lobby {} cleanup cancelled: player reconnected", lid.0);
-                    return;
-                }
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
 
-                if !lobby_ref.all_disconnected() {
-                    return;
-                }
-
-                tracing::info!("Lobby {} inactive for 60s with all players disconnected, cleaning up", lid.0);
-                lobbies.write(|l| { l.remove(&lid); });
-
-                if let Some(game_id) = lobby_ref.game_session_id {
-                    if let Some(pool) = db_pool.as_ref() {
-                        let _ = crate::models::game::GameSession::end_session(pool, game_id).await;
+                    // Cancel if a player reconnected (cleanup_generation changed)
+                    let current_gen = lobby_clone.get_data().await
+                        .map(|d| d.cleanup_generation).unwrap_or(0);
+                    if current_gen != generation {
+                        tracing::info!("Lobby {} cleanup cancelled: player reconnected", lid.0);
+                        return;
                     }
-                }
-            });
+
+                    if !lobby_clone.all_disconnected().await.unwrap_or(false) {
+                        return;
+                    }
+
+                    tracing::info!("Lobby {} cleaned up after 60s idle", lid.0);
+                    let data = lobby_clone.get_data().await.unwrap_or_default();
+
+                    use redis::AsyncCommands;
+                    if let Ok(mut conn) = lobby_clone.redis.get_multiplexed_async_connection().await {
+                        let _: () = conn.del(format!("lobby:{}", lid.0)).await.unwrap_or(());
+                    }
+
+                    if let Some(game_id) = data.game_session_id {
+                        if let Some(pool) = db_pool.as_ref() {
+                            let _ = crate::models::game::GameSession::end_session(pool, game_id).await;
+                        }
+                    }
+                });
+            }
         }
 
         Ok(json!({ "message": "Connection status updated" }))
     }
 
     async fn kick_player(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-        lobby.kick_player(&requestor_id, &target_player_id)?;
+        let lobby = self.get_lobby(&lobby_id).await?;
+        lobby.kick_player(&requestor_id, &target_player_id).await?;
 
-        let is_empty = lobby.players.read(|players| players.is_empty());
-        if is_empty {
-            self.lobbies.write(|lobbies| { lobbies.remove(&lobby_id); });
+        let data = lobby.get_data().await?;
+        if data.players.is_empty() {
+            use redis::AsyncCommands;
+            if let Ok(mut conn) = lobby.redis.get_multiplexed_async_connection().await {
+                let _: () = conn.del(format!("lobby:{}", lobby_id.0)).await.unwrap_or(());
+            }
         }
 
         Ok(json!({ "message": "Player kicked" }))
     }
 
     async fn promote_leader(&self, lobby_id: LobbyId, requestor_id: PlayerId, target_player_id: PlayerId) -> JsonResult {
-        let lobby = self.get_lobby(&lobby_id)?;
-        lobby.promote_leader(&requestor_id, &target_player_id)?;
+        let lobby = self.get_lobby(&lobby_id).await?;
+        lobby.promote_leader(&requestor_id, &target_player_id).await?;
         Ok(json!({ "message": "Leader promoted" }))
     }
 
     async fn get_public_lobbies(&self) -> Result<Vec<shared::LobbySummary>, leptos::server_fn::error::ServerFnError> {
-        let mut summaries = Vec::new();
-        
-        self.lobbies.read(|lobbies| {
-            for (id, state) in lobbies.iter() {
-                let (is_public, mode, max_players) = state.settings.read(|s| (s.is_public, s.mode, s.max_players));
-                if is_public {
-                    let leader_id = state.lobby_leader.read(|l| l.clone());
-                    let leader_name = state.get_player_name(&leader_id).unwrap_or_else(|_| "Unknown".to_string());
-                    let player_count = state.players.read(|p| p.len());
-                    
-                    summaries.push(shared::LobbySummary {
-                        id: id.clone(),
-                        leader_name,
-                        player_count,
-                        max_players,
-                        mode,
-                    });
-                }
-            }
-        });
-        
-        Ok(summaries)
+        self.get_public_lobbies().await.map_err(Into::into)
     }
 }
 
@@ -484,7 +424,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
     tracing::info!("[WS:{}] Connected: player {} in lobby {}", conn_id, player_id.0, lobby_id.0);
     let (mut sender, mut receiver) = socket.split();
 
-    let lobby = match app_state.get_lobby(&lobby_id) {
+    let lobby = match app_state.get_lobby(&lobby_id).await {
         Ok(l) => l,
         Err(_) => {
             tracing::warn!("[WS:{}] Connect failed: lobby {} not found for player {}", conn_id, lobby_id.0, player_id.0);
@@ -492,52 +432,100 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
         }
     };
 
-    let mut rx = lobby.tx.subscribe();
+    // Subscribe to local fallback channel (used when Redis is not configured)
+    let local_rx = lobby.tx.subscribe();
 
     {
-        let players = lobby.get_all_players();
+        // One Redis read to get current state, sent immediately to the connecting client.
+        let data = lobby.get_data().await.unwrap_or_default();
+        let players = data.get_all_players();
+
         let init_msg = serde_json::to_string(&shared::ServerMessage::PlayerListUpdate {
-            players,
+            players: players.clone(),
         }).unwrap_or_default();
         let _ = sender.send(Message::Text(init_msg.into())).await;
 
-        let status = lobby.game_status.read(|s| *s);
-        let prompt = lobby.get_current_prompt_text().unwrap_or_default();
-        let scores = lobby.get_all_players();
         let game_msg = serde_json::to_string(&shared::ServerMessage::GameState {
-            prompt,
-            status,
-            scores,
-            timer_expires_at: lobby.timer_expires_at.read(|t| *t),
+            prompt: data.get_current_prompt_text().unwrap_or_default(),
+            status: data.game_status,
+            scores: players,
+            timer_expires_at: data.timer_expires_at,
         }).unwrap_or_default();
         let _ = sender.send(Message::Text(game_msg.into())).await;
     }
 
+    let redis_client = app_state.redis.clone();
+    let channel = format!("lobby:{}", lobby_id.0);
     let player_id_for_send = player_id.clone();
     let conn_id_for_send = conn_id.clone();
     let mut send_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    if sender.send(Message::Ping(Default::default())).await.is_err() {
-                        break;
+        let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(30));
+
+        if let Some(client) = redis_client {
+            // Redis path: subscribe to the lobby's pub/sub channel.
+            // Any pod that publishes to this channel will be received here,
+            // enabling cross-pod fan-out.
+            let mut pubsub = match client.get_async_pubsub().await {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::error!("[WS:{}] Redis pubsub connection failed: {:?}", conn_id_for_send, e);
+                    return;
+                }
+            };
+            if let Err(e) = pubsub.subscribe(&channel).await {
+                tracing::error!("[WS:{}] Redis subscribe failed for {}: {:?}", conn_id_for_send, channel, e);
+                return;
+            }
+            let mut stream = pubsub.on_message();
+            loop {
+                tokio::select! {
+                    _ = ping_interval.tick() => {
+                        if sender.send(Message::Ping(Default::default())).await.is_err() {
+                            break;
+                        }
+                    }
+                    msg = stream.next() => {
+                        match msg {
+                            Some(m) => {
+                                if let Ok(payload) = m.get_payload::<String>() {
+                                    tracing::debug!("[WS:{}] sending to player {}: {}...", conn_id_for_send, player_id_for_send.0, &payload[..payload.len().min(100)]);
+                                    if sender.send(Message::Text(payload.into())).await.is_err() {
+                                        tracing::warn!("[WS:{}] send failed for player {}, closing", conn_id_for_send, player_id_for_send.0);
+                                        break;
+                                    }
+                                }
+                            }
+                            None => break,
+                        }
                     }
                 }
-                result = rx.recv() => {
-                    match result {
-                        Ok(msg) => {
-                            tracing::debug!("[WS:{}] sending to player {}: {}...", conn_id_for_send, player_id_for_send.0, &msg[..msg.len().min(100)]);
-                            if sender.send(Message::Text(msg.into())).await.is_err() {
-                                tracing::warn!("[WS:{}] send failed for player {}, closing", conn_id_for_send, player_id_for_send.0);
+            }
+        } else {
+            // Fallback path: no Redis configured (tests, local dev without Redis).
+            // Uses the in-process broadcast channel — single-pod only.
+            let mut rx = local_rx;
+            loop {
+                tokio::select! {
+                    _ = ping_interval.tick() => {
+                        if sender.send(Message::Ping(Default::default())).await.is_err() {
+                            break;
+                        }
+                    }
+                    result = rx.recv() => {
+                        match result {
+                            Ok(msg) => {
+                                tracing::debug!("[WS:{}] sending to player {}: {}...", conn_id_for_send, player_id_for_send.0, &msg[..msg.len().min(100)]);
+                                if sender.send(Message::Text(msg.into())).await.is_err() {
+                                    tracing::warn!("[WS:{}] send failed for player {}, closing", conn_id_for_send, player_id_for_send.0);
+                                    break;
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                tracing::warn!("[WS:{}] receiver lagged behind by {} messages", conn_id_for_send, n);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                                 break;
                             }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!("[WS:{}] receiver lagged behind by {} messages", conn_id_for_send, n);
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            break;
                         }
                     }
                 }
@@ -569,10 +557,10 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                  if let Ok(client_msg) = serde_json::from_str::<shared::ClientMessage>(&text) {
                      match client_msg {
                          shared::ClientMessage::Typing { input } => {
-                            let _ = lobby_ref.tx.send(serde_json::to_string(&shared::ServerMessage::PlayerTyping {
+                            lobby_ref.broadcast(shared::ServerMessage::PlayerTyping {
                                 player_id: player_id_ref.clone(),
                                 input,
-                            }).unwrap_or_default());
+                            });
                          },
                          shared::ClientMessage::Submit { input, .. } => {
                              let pool_guard = app_state_for_recv.db_pool.read().await;
@@ -582,22 +570,22 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>, lobby_id: Lo
                                      let _ = User::update_last_seen_by_id(&pool_clone, uid).await;
                                  });
                              }
-                             if let Err(e) = lobby_ref.process_guess(&player_id_ref, &input) {
+                             if let Err(e) = lobby_ref.process_guess(&player_id_ref, &input).await {
                                   tracing::error!("Error processing guess: {:?}", e);
                              }
                          },
                          shared::ClientMessage::Skip => {
-                             if let Err(e) = lobby_ref.process_skip(&player_id_ref) {
+                             if let Err(e) = lobby_ref.process_skip(&player_id_ref).await {
                                  tracing::error!("Error processing skip: {:?}", e);
                              }
                          },
                          shared::ClientMessage::ReturnLobbyVote => {
-                             if let Err(e) = lobby_ref.process_return_lobby_vote(&player_id_ref) {
+                             if let Err(e) = lobby_ref.process_return_lobby_vote(&player_id_ref).await {
                                  tracing::error!("Error processing return to lobby vote: {:?}", e);
                              }
                          },
                          shared::ClientMessage::Chat { message } => {
-                             let name = lobby_ref.get_player_name(&player_id_ref).unwrap_or_else(|_| "Unknown".to_string());
+                             let name = lobby_ref.get_player_name(&player_id_ref).await.unwrap_or_else(|_| "Unknown".to_string());
                              // Apply profanity filter
                              let clean_message = message.censor();
                              lobby_ref.broadcast(shared::ServerMessage::ChatMessage(shared::ChatMessage {
