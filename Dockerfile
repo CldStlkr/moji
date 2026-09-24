@@ -22,7 +22,7 @@ RUN cargo build --release --bin moji-server
 FROM chef AS frontend-builder
 RUN apt-get update && apt-get install -y clang
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install trunk wasm-bindgen-cli # Pre-install wasm to avoid 503 errors
+RUN cargo install --locked trunk wasm-bindgen-cli # Pre-install wasm to avoid 503 errors
 
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | bash
